@@ -1,0 +1,25 @@
+{
+  "name": "clam",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Clam — Semantic Permission Layer & Zero-Retention MCP Firewall for Email",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @clam/server --filter @clam/web dev",
+    "dev:server": "pnpm --filter @clam/server dev",
+    "dev:web": "pnpm --filter @clam/web dev",
+    "build": "pnpm --filter @clam/shared build && pnpm --filter @clam/server build && pnpm --filter @clam/web build",
+    "typecheck": "pnpm --filter @clam/shared typecheck && pnpm --filter @clam/server typecheck && pnpm --filter @clam/web typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "pnpm": "^10.10.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

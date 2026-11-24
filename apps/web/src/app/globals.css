@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+[data-theme='dark'] {
+  --bg-canvas: #0a0b0d;
+  --bg-surface: #111316;
+  --bg-elevated: #171a1f;
+  --border-hairline: #23272f;
+  --text-primary: #f1f2f4;
+  --text-secondary: #949ba6;
+  --text-tertiary: #606773;
+  --accent-emerald-text: #10b981;
+  --accent-emerald-bg: #0b2920;
+  --accent-amber-text: #f59e0b;
+  --accent-amber-bg: #2c220b;
+  --accent-crimson-text: #ef4444;
+  --accent-crimson-bg: #2d1215;
+  --btn-primary-bg: #f1f2f4;
+  --btn-primary-fg: #0a0b0d;
+  --btn-primary-hover: #e2e4e8;
+}
+
+[data-theme='light'] {
+  --bg-canvas: #f6f7f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f0f2f5;
+  --border-hairline: #e1e4ea;
+  --text-primary: #111316;
+  --text-secondary: #586170;
+  --text-tertiary: #848d9c;
+  --accent-emerald-text: #059669;
+  --accent-emerald-bg: #ecfdf5;
+  --accent-amber-text: #d97706;
+  --accent-amber-bg: #fffbeb;
+  --accent-crimson-text: #dc2626;
+  --accent-crimson-bg: #fef2f2;
+  --btn-primary-bg: #111316;
+  --btn-primary-fg: #f8f9fa;
+  --btn-primary-hover: #23272f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.tracking-display {
+  letter-spacing: -0.02em;
+}
+
+/* Crisp matte primary button */
+.btn-primary {
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  transition: background-color 150ms ease-out, opacity 150ms ease-out;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--btn-primary-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Scrollbar restraint */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 3px;
+}
