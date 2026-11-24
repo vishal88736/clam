@@ -82,7 +82,13 @@ export default function AgentsStudioPage() {
   const loadAgents = useCallback(async () => {
     const res = await clamApi.getAgents();
     setAgents(res.agents);
-    if (!selectedId && res.agents.length > 0) {
+    const paramAgent =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('agent')
+        : null;
+    if (paramAgent && res.agents.some((a) => a.id === paramAgent)) {
+      setSelectedId(paramAgent);
+    } else if (!selectedId && res.agents.length > 0) {
       setSelectedId(res.agents[0].id);
     }
   }, [selectedId]);
@@ -111,7 +117,6 @@ export default function AgentsStudioPage() {
       .then((res) => setSnippets(res.snippets));
   }, [selectedAgent, revealedToken]);
 
-  // Live debounced compilation preview when editing English rules
   useEffect(() => {
     if (!selectedAgent) return;
     const handle = setTimeout(() => {
@@ -244,17 +249,19 @@ export default function AgentsStudioPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-display">Agents & Rules Studio</h1>
-          <p className="text-sm text-ink-secondary mt-0.5">
-            Write natural-English security policies, inspect compiled deterministic gates, and test live dry-runs.
+          <h2 className="text-lg font-semibold tracking-display text-ink-primary">
+            Agent Policy Profiles
+          </h2>
+          <p className="text-xs text-ink-secondary mt-0.5">
+            Write natural-English security rules, inspect deterministic IR gates, and run live simulations.
           </p>
         </div>
         <button
           onClick={() => setShowNewModal(true)}
-          className="btn-primary inline-flex items-center gap-1.5 px-3.5 py-2 rounded text-xs font-medium"
+          className="btn-primary inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold"
         >
           <Plus className="w-3.5 h-3.5" />
           New Agent
@@ -262,10 +269,10 @@ export default function AgentsStudioPage() {
       </div>
 
       {/* Master-Detail Split Pane */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Left Agent Rail */}
-        <div className="lg:col-span-3 border border-hairline rounded bg-surface divide-y divide-hairline">
-          <div className="px-3.5 py-2.5 text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+        <div className="lg:col-span-3 bento-card rounded-xl overflow-hidden divide-y divide-hairline">
+          <div className="px-4 py-2.5 text-[10px] font-mono uppercase tracking-wider text-ink-muted bg-canvas/60">
             Registered Agents ({agents.length})
           </div>
           {agents.map((ag) => {
@@ -277,24 +284,24 @@ export default function AgentsStudioPage() {
                   setRevealedToken(null);
                   setSelectedId(ag.id);
                 }}
-                className={`w-full text-left px-3.5 py-3 transition-colors duration-150 ${
-                  active ? 'bg-elevated' : 'hover:bg-elevated/40'
+                className={`btn-tactile w-full text-left px-4 py-3 ${
+                  active ? 'bg-elevated' : 'hover:bg-elevated/45'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-ink-primary truncate">
+                  <span className="text-[13px] font-medium text-ink-primary truncate">
                     {ag.name}
                   </span>
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${
-                      ag.status === 'active' ? 'bg-emerald-matte' : 'bg-ink-tertiary'
+                      ag.status === 'active' ? 'bg-emerald-matte' : 'bg-ink-muted'
                     }`}
                   />
                 </div>
                 <div className="text-xs text-ink-secondary mt-1 line-clamp-2">
                   {ag.description || ag.raw_rules}
                 </div>
-                <div className="flex items-center gap-2 mt-2 text-[11px] font-mono text-ink-tertiary tabular-nums">
+                <div className="flex items-center gap-2 mt-2 text-[11px] font-mono text-ink-muted tabular-nums">
                   <span>{ag.policy_ir.semantic_allow_scopes.length} scopes</span>
                   <span>·</span>
                   <span>{ag.policy_ir.hard_denied_actions.length} hard-deny</span>
@@ -306,13 +313,13 @@ export default function AgentsStudioPage() {
 
         {/* Right Workspace */}
         {selectedAgent ? (
-          <div className="lg:col-span-9 border border-hairline rounded bg-surface">
+          <div className="lg:col-span-9 bento-card rounded-xl overflow-hidden">
             {/* Agent Header */}
             <div className="p-4 lg:px-5 border-b border-hairline flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2.5">
-                  <h2 className="text-base font-semibold tracking-display">{selectedAgent.name}</h2>
-                  <span className="font-mono text-[11px] text-ink-tertiary px-1.5 py-0.5 rounded border border-hairline bg-canvas">
+                  <h3 className="text-base font-semibold tracking-display">{selectedAgent.name}</h3>
+                  <span className="font-mono text-[11px] text-ink-muted px-2 py-0.5 rounded border border-hairline bg-canvas">
                     {selectedAgent.id}
                   </span>
                 </div>
@@ -322,7 +329,7 @@ export default function AgentsStudioPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={toggleAgentStatus}
-                  className={`px-2.5 py-1.5 rounded border text-xs font-medium transition-colors duration-150 ${
+                  className={`btn-tactile px-3 py-1.5 rounded-md border text-xs font-medium ${
                     selectedAgent.status === 'active'
                       ? 'bg-emerald-fill text-emerald-matte border-emerald-matte/25'
                       : 'bg-elevated text-ink-secondary border-hairline'
@@ -333,7 +340,7 @@ export default function AgentsStudioPage() {
                 {agents.length > 1 && (
                   <button
                     onClick={handleDeleteAgent}
-                    className="p-1.5 rounded border border-hairline text-ink-secondary hover:text-crimson-matte hover:border-crimson-matte/30 transition-colors duration-150"
+                    className="btn-tactile p-1.5 rounded-md border border-hairline text-ink-secondary hover:text-crimson-matte hover:border-crimson-matte/30"
                     title="Delete Agent"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -343,7 +350,7 @@ export default function AgentsStudioPage() {
             </div>
 
             {/* 3 Workspace Tabs */}
-            <div className="px-4 lg:px-5 border-b border-hairline flex items-center gap-6 text-xs font-medium">
+            <div className="px-4 lg:px-5 border-b border-hairline flex items-center gap-6 text-xs font-medium bg-canvas/40">
               {(
                 [
                   { id: 'rules', label: 'Plain-English Rules' },
@@ -356,7 +363,7 @@ export default function AgentsStudioPage() {
                   onClick={() => setTab(t.id)}
                   className={`py-3 border-b-2 transition-colors duration-150 ${
                     tab === t.id
-                      ? 'border-ink-primary text-ink-primary'
+                      ? 'border-pearl text-ink-primary'
                       : 'border-transparent text-ink-secondary hover:text-ink-primary'
                   }`}
                 >
@@ -377,11 +384,11 @@ export default function AgentsStudioPage() {
                       value={draftRules}
                       onChange={(e) => setDraftRules(e.target.value)}
                       rows={6}
-                      className="w-full rounded border border-hairline bg-canvas px-3.5 py-3 text-sm text-ink-primary leading-relaxed focus:outline-none focus:border-ink-secondary"
+                      className="w-full rounded-lg border border-hairline bg-canvas px-3.5 py-3 text-sm text-ink-primary leading-relaxed focus:outline-none focus:border-ink-muted"
                       placeholder="e.g., Read flight, hotel and booking emails and build my itinerary. Draft replies to hosts for me to review. Never send."
                     />
                     <div className="flex items-center justify-between mt-3">
-                      <span className="text-[11px] font-mono text-ink-tertiary">
+                      <span className="text-[11px] font-mono text-ink-muted">
                         {previewIr?.compiler_mode === 'deterministic_heuristic'
                           ? 'Compiled offline (deterministic heuristic)'
                           : `Compiled via ${previewIr?.compiler_mode ?? 'heuristic'}`}
@@ -389,7 +396,7 @@ export default function AgentsStudioPage() {
                       <button
                         onClick={handleSaveRules}
                         disabled={savingRules}
-                        className="btn-primary px-3.5 py-1.5 rounded text-xs font-medium"
+                        className="btn-primary px-3.5 py-1.5 rounded-md text-xs font-semibold"
                       >
                         {savingRules ? 'Compiling…' : 'Save & Enforce Policy'}
                       </button>
@@ -402,7 +409,7 @@ export default function AgentsStudioPage() {
                   </div>
 
                   {previewIr && previewIr.warnings.length > 0 && (
-                    <div className="p-3 rounded border border-amber-matte/30 bg-amber-fill space-y-1">
+                    <div className="p-3 rounded-lg border border-amber-matte/30 bg-amber-fill space-y-1">
                       {previewIr.warnings.map((w, idx) => (
                         <div key={idx} className="flex items-start gap-2 text-xs text-amber-matte">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -413,13 +420,13 @@ export default function AgentsStudioPage() {
                   )}
 
                   {/* Sensitive Category Guard Overrides */}
-                  <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2.5">
+                  <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
                     <div className="flex items-center gap-2 text-xs font-medium text-ink-primary">
                       <Shield className="w-3.5 h-3.5 text-emerald-matte" />
                       Always-On Sensitive Category Protections
                     </div>
                     <p className="text-[11px] text-ink-secondary">
-                      Blocked deterministically unless explicitly overridden with confirmation below.
+                      Blocked deterministically unless explicitly overridden below.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
                       {DEFAULT_SENSITIVE_CATEGORIES.map((cat) => {
@@ -427,7 +434,7 @@ export default function AgentsStudioPage() {
                         return (
                           <label
                             key={cat}
-                            className="flex items-center justify-between px-2.5 py-1.5 rounded border border-hairline bg-surface text-xs cursor-pointer"
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded-md border border-hairline bg-surface text-xs cursor-pointer"
                           >
                             <span className="text-ink-primary">
                               {SENSITIVE_CATEGORY_META[cat].label}
@@ -454,9 +461,8 @@ export default function AgentsStudioPage() {
 
                   {previewIr && (
                     <div className="space-y-3.5">
-                      {/* Action Gates */}
-                      <div className="border border-hairline rounded bg-canvas p-3.5 space-y-3">
-                        <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+                      <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-3">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-ink-muted">
                           Deterministic Action Gates
                         </div>
                         <div className="space-y-2 text-xs">
@@ -473,7 +479,7 @@ export default function AgentsStudioPage() {
                                   </span>
                                 ))
                               ) : (
-                                <span className="text-ink-tertiary font-mono">none</span>
+                                <span className="text-ink-muted font-mono">none</span>
                               )}
                             </div>
                           </div>
@@ -491,7 +497,7 @@ export default function AgentsStudioPage() {
                                   </span>
                                 ))
                               ) : (
-                                <span className="text-ink-tertiary font-mono">none</span>
+                                <span className="text-ink-muted font-mono">none</span>
                               )}
                             </div>
                           </div>
@@ -509,20 +515,19 @@ export default function AgentsStudioPage() {
                                   </span>
                                 ))
                               ) : (
-                                <span className="text-ink-tertiary font-mono">none</span>
+                                <span className="text-ink-muted font-mono">none</span>
                               )}
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Semantic Allow Scopes */}
-                      <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2.5">
-                        <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+                      <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-ink-muted">
                           Semantic Allow Scopes ({previewIr.semantic_allow_scopes.length})
                         </div>
                         {previewIr.semantic_allow_scopes.length === 0 ? (
-                          <div className="text-xs text-ink-tertiary">
+                          <div className="text-xs text-ink-muted">
                             No semantic scopes matched. Default-deny blocks all reads.
                           </div>
                         ) : (
@@ -530,7 +535,7 @@ export default function AgentsStudioPage() {
                             {previewIr.semantic_allow_scopes.map((sc) => (
                               <div
                                 key={sc.id}
-                                className="px-3 py-2 rounded border border-hairline bg-surface"
+                                className="px-3 py-2 rounded-md border border-hairline bg-surface"
                               >
                                 <div className="flex items-center justify-between">
                                   <span className="text-xs font-medium text-ink-primary">
@@ -549,16 +554,15 @@ export default function AgentsStudioPage() {
                         )}
                       </div>
 
-                      {/* Clause Attribution */}
-                      <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2">
-                        <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+                      <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-ink-muted">
                           Clause Attribution
                         </div>
                         <div className="divide-y divide-hairline">
                           {previewIr.rule_clauses.map((c) => (
                             <div key={c.id} className="py-2 first:pt-0 last:pb-0 text-xs">
                               <div className="flex items-center justify-between">
-                                <span className="font-mono text-[11px] text-ink-tertiary">
+                                <span className="font-mono text-[11px] text-ink-muted">
                                   {c.id}
                                 </span>
                                 <span className="font-mono text-[11px] text-ink-secondary">
@@ -587,7 +591,7 @@ export default function AgentsStudioPage() {
                     <select
                       value={simTool}
                       onChange={(e) => setSimTool(e.target.value as McpToolName)}
-                      className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-xs font-mono text-ink-primary"
+                      className="w-full rounded-lg border border-hairline bg-canvas px-3 py-2 text-xs font-mono text-ink-primary"
                     >
                       <option value="read_email">read_email</option>
                       <option value="list_emails">list_emails</option>
@@ -599,40 +603,40 @@ export default function AgentsStudioPage() {
                   </div>
 
                   {simTool === 'create_draft' || simTool === 'send_email' ? (
-                    <div className="space-y-3 border border-hairline rounded bg-canvas p-3.5">
-                      <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+                    <div className="space-y-3 rounded-lg border border-hairline bg-canvas p-3.5">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-ink-muted">
                         Proposed Outbound Payload
                       </div>
                       <input
                         value={simOutbound.to}
                         onChange={(e) => setSimOutbound((s) => ({ ...s, to: e.target.value }))}
                         placeholder="To"
-                        className="w-full rounded border border-hairline bg-surface px-3 py-1.5 text-xs"
+                        className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs"
                       />
                       <input
                         value={simOutbound.subject}
                         onChange={(e) => setSimOutbound((s) => ({ ...s, subject: e.target.value }))}
                         placeholder="Subject"
-                        className="w-full rounded border border-hairline bg-surface px-3 py-1.5 text-xs"
+                        className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs"
                       />
                       <textarea
                         value={simOutbound.body}
                         onChange={(e) => setSimOutbound((s) => ({ ...s, body: e.target.value }))}
                         rows={4}
                         placeholder="Body"
-                        className="w-full rounded border border-hairline bg-surface px-3 py-1.5 text-xs"
+                        className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs"
                       />
                     </div>
                   ) : (
-                    <div className="space-y-3 border border-hairline rounded bg-canvas p-3.5">
+                    <div className="space-y-3 rounded-lg border border-hairline bg-canvas p-3.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-ink-muted">
                           Target Email Context
                         </span>
                         <div className="flex items-center gap-1 text-[11px]">
                           <button
                             onClick={() => setSimSourceMode('sandbox')}
-                            className={`px-2 py-0.5 rounded border ${
+                            className={`btn-tactile px-2 py-0.5 rounded border ${
                               simSourceMode === 'sandbox'
                                 ? 'bg-elevated border-hairline text-ink-primary'
                                 : 'border-transparent text-ink-secondary'
@@ -642,7 +646,7 @@ export default function AgentsStudioPage() {
                           </button>
                           <button
                             onClick={() => setSimSourceMode('custom')}
-                            className={`px-2 py-0.5 rounded border ${
+                            className={`btn-tactile px-2 py-0.5 rounded border ${
                               simSourceMode === 'custom'
                                 ? 'bg-elevated border-hairline text-ink-primary'
                                 : 'border-transparent text-ink-secondary'
@@ -657,7 +661,7 @@ export default function AgentsStudioPage() {
                         <select
                           value={simEmailId}
                           onChange={(e) => setSimEmailId(e.target.value)}
-                          className="w-full rounded border border-hairline bg-surface px-3 py-2 text-xs text-ink-primary"
+                          className="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-xs text-ink-primary"
                         >
                           {sandboxEmails.map((em) => (
                             <option key={em.id} value={em.id}>
@@ -673,7 +677,7 @@ export default function AgentsStudioPage() {
                               setCustomEmail((c) => ({ ...c, from: e.target.value }))
                             }
                             placeholder="From (e.g. billing@new-unknown-utility.io)"
-                            className="w-full rounded border border-hairline bg-surface px-3 py-1.5 text-xs font-mono"
+                            className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs font-mono"
                           />
                           <input
                             value={customEmail.subject}
@@ -681,7 +685,7 @@ export default function AgentsStudioPage() {
                               setCustomEmail((c) => ({ ...c, subject: e.target.value }))
                             }
                             placeholder="Subject"
-                            className="w-full rounded border border-hairline bg-surface px-3 py-1.5 text-xs"
+                            className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs"
                           />
                           <textarea
                             value={customEmail.body}
@@ -690,7 +694,7 @@ export default function AgentsStudioPage() {
                             }
                             rows={4}
                             placeholder="Email Body"
-                            className="w-full rounded border border-hairline bg-surface px-3 py-1.5 text-xs"
+                            className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs"
                           />
                         </div>
                       )}
@@ -700,7 +704,7 @@ export default function AgentsStudioPage() {
                   <button
                     onClick={handleRunSimulation}
                     disabled={simRunning}
-                    className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded text-xs font-medium"
+                    className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold"
                   >
                     <Play className="w-3.5 h-3.5" />
                     {simRunning ? 'Evaluating…' : 'Run Policy Check'}
@@ -714,12 +718,12 @@ export default function AgentsStudioPage() {
                   </div>
 
                   {!simTrace ? (
-                    <div className="border border-hairline rounded bg-canvas p-8 text-center text-xs text-ink-tertiary">
+                    <div className="rounded-lg border border-hairline bg-canvas p-8 text-center text-xs text-ink-muted">
                       Pick an email or tool call and click <strong>Run Policy Check</strong> to watch
                       Stage A → Stage B → Stage C execute live.
                     </div>
                   ) : (
-                    <div className="border border-hairline rounded bg-canvas p-4 space-y-4">
+                    <div className="rounded-lg border border-hairline bg-canvas p-4 space-y-4">
                       <div className="flex items-center justify-between">
                         <DecisionBadge decision={simTrace.decision} />
                         <span className="font-mono text-xs text-ink-secondary tabular-nums">
@@ -728,9 +732,9 @@ export default function AgentsStudioPage() {
                       </div>
 
                       <div className="space-y-2.5 text-xs">
-                        <div className="p-3 rounded border border-hairline bg-surface">
-                          <div className="flex items-center justify-between font-mono text-[11px]">
-                            <span className="text-ink-tertiary">STAGE A · DETERMINISTIC GATE</span>
+                        <div className="p-3 rounded-md border border-hairline bg-surface">
+                          <div className="flex items-center justify-between font-mono text-[10px]">
+                            <span className="text-ink-muted">STAGE A · DETERMINISTIC GATE</span>
                             <span
                               className={
                                 simTrace.stage_details.stage_a_passed
@@ -746,9 +750,9 @@ export default function AgentsStudioPage() {
                           </div>
                         </div>
 
-                        <div className="p-3 rounded border border-hairline bg-surface">
-                          <div className="flex items-center justify-between font-mono text-[11px]">
-                            <span className="text-ink-tertiary">STAGE B · SEMANTIC CLASSIFIER</span>
+                        <div className="p-3 rounded-md border border-hairline bg-surface">
+                          <div className="flex items-center justify-between font-mono text-[10px]">
+                            <span className="text-ink-muted">STAGE B · SEMANTIC CLASSIFIER</span>
                             <span className="text-ink-secondary tabular-nums">
                               {simTrace.stage_details.stage_b_executed
                                 ? `${Math.round(simTrace.confidence * 100)}% conf`
@@ -765,14 +769,14 @@ export default function AgentsStudioPage() {
                           )}
                         </div>
 
-                        <div className="p-3 rounded border border-hairline bg-surface">
-                          <div className="flex items-center justify-between font-mono text-[11px]">
-                            <span className="text-ink-tertiary">STAGE C · HITL APPROVAL GATE</span>
+                        <div className="p-3 rounded-md border border-hairline bg-surface">
+                          <div className="flex items-center justify-between font-mono text-[10px]">
+                            <span className="text-ink-muted">STAGE C · HITL APPROVAL GATE</span>
                             <span
                               className={
                                 simTrace.stage_details.stage_c_triggered
                                   ? 'text-amber-matte'
-                                  : 'text-ink-tertiary'
+                                  : 'text-ink-muted'
                               }
                             >
                               {simTrace.stage_details.stage_c_triggered
@@ -795,8 +799,7 @@ export default function AgentsStudioPage() {
             {/* TAB 3: Connect via MCP */}
             {tab === 'mcp' && (
               <div className="p-4 lg:p-5 space-y-5">
-                {/* Scoped Token Management */}
-                <div className="border border-hairline rounded bg-canvas p-4 space-y-3">
+                <div className="rounded-lg border border-hairline bg-canvas p-4 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
                       <div className="text-xs font-medium text-ink-primary flex items-center gap-1.5">
@@ -810,13 +813,13 @@ export default function AgentsStudioPage() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={handleIssueToken}
-                        className="btn-primary px-3 py-1.5 rounded text-xs font-medium"
+                        className="btn-primary px-3 py-1.5 rounded-md text-xs font-semibold"
                       >
                         Issue Token
                       </button>
                       <button
                         onClick={handleRotateTokens}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-hairline bg-surface text-xs font-medium text-ink-primary hover:bg-elevated"
+                        className="btn-tactile inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-hairline bg-surface text-xs font-medium text-ink-primary hover:bg-elevated"
                       >
                         <RefreshCw className="w-3 h-3" />
                         Rotate All
@@ -825,7 +828,7 @@ export default function AgentsStudioPage() {
                   </div>
 
                   {revealedToken && (
-                    <div className="p-3 rounded border border-emerald-matte/30 bg-emerald-fill flex items-center justify-between gap-3">
+                    <div className="p-3 rounded-md border border-emerald-matte/30 bg-emerald-fill flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-[11px] font-medium text-emerald-matte">
                           New Token Issued (shown once — injected into snippets below)
@@ -836,7 +839,7 @@ export default function AgentsStudioPage() {
                       </div>
                       <button
                         onClick={() => copyText('raw_tok', revealedToken)}
-                        className="px-2.5 py-1 rounded border border-emerald-matte/30 bg-surface text-xs font-medium inline-flex items-center gap-1 shrink-0"
+                        className="btn-tactile px-2.5 py-1 rounded border border-emerald-matte/30 bg-surface text-xs font-medium inline-flex items-center gap-1 shrink-0"
                       >
                         {copiedKey === 'raw_tok' ? (
                           <Check className="w-3 h-3 text-emerald-matte" />
@@ -848,7 +851,7 @@ export default function AgentsStudioPage() {
                     </div>
                   )}
 
-                  <div className="divide-y divide-hairline border border-hairline rounded bg-surface">
+                  <div className="divide-y divide-hairline rounded-md border border-hairline bg-surface">
                     {tokens.map((tok) => (
                       <div
                         key={tok.id}
@@ -870,7 +873,7 @@ export default function AgentsStudioPage() {
                               </span>
                               <button
                                 onClick={() => handleRevokeToken(tok.id)}
-                                className="text-ink-tertiary hover:text-crimson-matte text-[11px] font-medium"
+                                className="text-ink-muted hover:text-crimson-matte text-[11px] font-medium"
                               >
                                 Revoke
                               </button>
@@ -882,8 +885,7 @@ export default function AgentsStudioPage() {
                   </div>
                 </div>
 
-                {/* Copyable MCP Config Snippets */}
-                <div className="border border-hairline rounded bg-canvas overflow-hidden">
+                <div className="rounded-lg border border-hairline bg-canvas overflow-hidden">
                   <div className="px-3.5 border-b border-hairline flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-4 text-xs font-medium">
                       {(
@@ -899,7 +901,7 @@ export default function AgentsStudioPage() {
                           onClick={() => setConfigTab(ct.id)}
                           className={`py-2.5 border-b-2 transition-colors duration-150 ${
                             configTab === ct.id
-                              ? 'border-ink-primary text-ink-primary'
+                              ? 'border-pearl text-ink-primary'
                               : 'border-transparent text-ink-secondary hover:text-ink-primary'
                           }`}
                         >
@@ -911,7 +913,7 @@ export default function AgentsStudioPage() {
                     {snippets && (
                       <button
                         onClick={() => copyText(configTab, snippets[configTab].content)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-hairline bg-surface text-xs text-ink-primary hover:bg-elevated"
+                        className="btn-tactile inline-flex items-center gap-1 px-2.5 py-1 rounded border border-hairline bg-surface text-xs text-ink-primary hover:bg-elevated"
                       >
                         {copiedKey === configTab ? (
                           <Check className="w-3 h-3 text-emerald-matte" />
@@ -925,10 +927,10 @@ export default function AgentsStudioPage() {
 
                   {snippets && (
                     <div className="p-4">
-                      <div className="text-[11px] font-mono text-ink-tertiary mb-2">
+                      <div className="text-[11px] font-mono text-ink-muted mb-2">
                         {snippets[configTab].filename}
                       </div>
-                      <pre className="p-3.5 rounded border border-hairline bg-surface font-mono text-xs text-ink-primary overflow-x-auto leading-relaxed">
+                      <pre className="p-3.5 rounded-md border border-hairline bg-surface font-mono text-xs text-ink-primary overflow-x-auto leading-relaxed">
                         {snippets[configTab].content}
                       </pre>
                     </div>
@@ -938,7 +940,7 @@ export default function AgentsStudioPage() {
             )}
           </div>
         ) : (
-          <div className="lg:col-span-9 border border-hairline rounded bg-surface p-10 text-center text-sm text-ink-secondary">
+          <div className="lg:col-span-9 bento-card rounded-xl p-10 text-center text-sm text-ink-secondary">
             Select or create an agent to configure its semantic rules.
           </div>
         )}
@@ -947,13 +949,13 @@ export default function AgentsStudioPage() {
       {/* Create New Agent Modal */}
       {showNewModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           onClick={() => setShowNewModal(false)}
         >
           <form
             onSubmit={handleCreateAgent}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg border border-hairline rounded bg-surface p-5 space-y-4"
+            className="w-full max-w-lg bento-card rounded-xl p-5 space-y-4"
           >
             <h2 className="text-base font-semibold tracking-display">Create Scoped Agent</h2>
             <div className="space-y-3">
@@ -966,7 +968,7 @@ export default function AgentsStudioPage() {
                   value={newAgentForm.name}
                   onChange={(e) => setNewAgentForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="e.g. Quarterly Tax Assistant"
-                  className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -979,7 +981,7 @@ export default function AgentsStudioPage() {
                     setNewAgentForm((f) => ({ ...f, description: e.target.value }))
                   }
                   placeholder="Purpose of this MCP client"
-                  className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -991,7 +993,7 @@ export default function AgentsStudioPage() {
                   rows={4}
                   value={newAgentForm.raw_rules}
                   onChange={(e) => setNewAgentForm((f) => ({ ...f, raw_rules: e.target.value }))}
-                  className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -999,14 +1001,14 @@ export default function AgentsStudioPage() {
               <button
                 type="button"
                 onClick={() => setShowNewModal(false)}
-                className="px-3 py-1.5 rounded border border-hairline text-xs text-ink-secondary hover:text-ink-primary"
+                className="btn-tactile px-3 py-1.5 rounded-md border border-hairline text-xs text-ink-secondary hover:text-ink-primary"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={creatingAgent}
-                className="btn-primary px-4 py-1.5 rounded text-xs font-medium"
+                className="btn-primary px-4 py-1.5 rounded-md text-xs font-semibold"
               >
                 {creatingAgent ? 'Creating…' : 'Create & Issue Token'}
               </button>

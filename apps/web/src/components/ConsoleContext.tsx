@@ -5,9 +5,11 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import type { AuditLogEntry } from '@clam/shared';
+import type { ClamMascotState } from './ClamMascot';
 import { API_BASE, clamApi, type OverviewResponse } from '@/lib/api';
 
 interface ConsoleContextValue {
@@ -18,6 +20,8 @@ interface ConsoleContextValue {
   toggleTheme: () => void;
   refreshOverview: () => Promise<void>;
   lastEventTick: number;
+  mascotState: ClamMascotState;
+  pulseMascot: (state: ClamMascotState, durationMs?: number) => void;
 }
 
 const ConsoleContext = createContext<ConsoleContextValue | null>(null);
@@ -28,6 +32,22 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   const [sseConnected, setSseConnected] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [lastEventTick, setLastEventTick] = useState(0);
+  const [mascotState, setMascotState] = useState<ClamMascotState>('armed');
+  const mascotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const pulseMascot = useCallback((state: ClamMascotState, durationMs = 2500) => {
+    if (mascotTimerRef.current) {
+      clearTimeout(mascotTimerRef.current);
+      mascotTimerRef.current = null;
+    }
+    setMascotState(state);
+    if (state !== 'armed') {
+      mascotTimerRef.current = setTimeout(() => {
+        setMascotState('armed');
+        mascotTimerRef.current = null;
+      }, durationMs);
+    }
+  }, []);
 
   const refreshOverview = useCallback(async () => {
     try {
@@ -73,8 +93,22 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsed = JSON.parse((event as MessageEvent).data) as { data: AuditLogEntry };
         if (parsed?.data) {
-          setLiveFeed((prev) => [parsed.data, ...prev].slice(0, 60));
+          const entry = parsed.data;
+          setLiveFeed((prev) => [entry, ...prev].slice(0, 60));
           setLastEventTick((t) => t + 1);
+
+          if (entry.decision === 'ALLOW' || entry.decision === 'APPROVED') {
+            pulseMascot('allow', 2500);
+          } else if (
+            entry.decision === 'DENY' ||
+            entry.decision === 'REJECTED' ||
+            entry.decision === 'EXPIRED'
+          ) {
+            pulseMascot('blocked', 2500);
+          } else if (entry.decision === 'PENDING_APPROVAL') {
+            pulseMascot('pending', 2500);
+          }
+
           void clamApi.getOverview().then(setOverview).catch(() => {});
         }
       } catch {
@@ -82,13 +116,32 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    es.addEventListener('approval.created', () => {
+      pulseMascot('pending', 2500);
+      setLastEventTick((t) => t + 1);
+      void clamApi.getOverview().then(setOverview).catch(() => {});
+    });
+
+    es.addEventListener('approval.resolved', (event) => {
+      try {
+        const parsed = JSON.parse((event as MessageEvent).data) as {
+          data?: { approval?: { status?: string } };
+        };
+        const st = parsed?.data?.approval?.status;
+        if (st === 'APPROVED') pulseMascot('allow', 2500);
+        else if (st === 'REJECTED') pulseMascot('blocked', 2500);
+      } catch {
+        // ignore
+      }
+      setLastEventTick((t) => t + 1);
+      void clamApi.getOverview().then(setOverview).catch(() => {});
+    });
+
     const handleRefreshEvent = () => {
       setLastEventTick((t) => t + 1);
       void clamApi.getOverview().then(setOverview).catch(() => {});
     };
 
-    es.addEventListener('approval.created', handleRefreshEvent);
-    es.addEventListener('approval.resolved', handleRefreshEvent);
     es.addEventListener('approval.expired', handleRefreshEvent);
     es.addEventListener('agent.updated', handleRefreshEvent);
     es.addEventListener('settings.updated', handleRefreshEvent);
@@ -99,8 +152,9 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       es.close();
+      if (mascotTimerRef.current) clearTimeout(mascotTimerRef.current);
     };
-  }, []);
+  }, [pulseMascot]);
 
   return (
     <ConsoleContext.Provider
@@ -112,6 +166,8 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
         toggleTheme,
         refreshOverview,
         lastEventTick,
+        mascotState,
+        pulseMascot,
       }}
     >
       {children}

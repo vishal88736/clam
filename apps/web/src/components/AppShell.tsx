@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -10,10 +10,11 @@ import {
   FileSearch,
   Moon,
   Settings,
-  ShieldCheck,
   Sun,
 } from 'lucide-react';
+import { ClamMascot } from './ClamMascot';
 import { useConsole } from './ConsoleContext';
+import { clamApi } from '@/lib/api';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: Activity },
@@ -23,10 +24,31 @@ const NAV_ITEMS = [
   { href: '/settings', label: 'Connections', icon: Settings },
 ];
 
+const POSTURE_BADGE: Record<string, { label: string; cls: string }> = {
+  armed: {
+    label: 'ARMED',
+    cls: 'bg-emerald-fill text-emerald-matte border-emerald-matte/30',
+  },
+  allow: {
+    label: 'ALLOWED',
+    cls: 'bg-emerald-fill text-emerald-matte border-emerald-matte/30',
+  },
+  blocked: {
+    label: 'BLOCKED',
+    cls: 'bg-crimson-fill text-crimson-matte border-crimson-matte/30',
+  },
+  pending: {
+    label: 'ASK FIRST',
+    cls: 'bg-amber-fill text-amber-matte border-amber-matte/30',
+  },
+};
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { overview, sseConnected, theme, toggleTheme } = useConsole();
+  const { overview, sseConnected, theme, toggleTheme, mascotState, refreshOverview } =
+    useConsole();
+  const [switchingMode, setSwitchingMode] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -41,32 +63,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [pathname, router]);
 
+  const activeAgents = overview?.active_agents_count ?? 0;
   const pendingCount = overview?.pending_approvals_count ?? 0;
   const mailMode = overview?.mail_mode ?? 'sandbox';
+  const gmailConnected = overview?.gmail_status?.connected ?? false;
+  const posture = POSTURE_BADGE[mascotState] ?? POSTURE_BADGE.armed;
+
+  async function handleMailModeToggle() {
+    if (switchingMode) return;
+    const target = mailMode === 'sandbox' ? 'gmail' : 'sandbox';
+    if (target === 'gmail' && !gmailConnected) {
+      router.push('/settings');
+      return;
+    }
+    setSwitchingMode(true);
+    try {
+      await clamApi.setMailMode(target);
+      await refreshOverview();
+    } catch {
+      router.push('/settings');
+    } finally {
+      setSwitchingMode(false);
+    }
+  }
 
   return (
     <div className="min-h-screen flex bg-canvas text-ink-primary">
-      {/* Left Navigation Sidebar */}
-      <aside className="w-[232px] shrink-0 border-r border-hairline bg-surface flex flex-col justify-between hidden md:flex">
+      {/* Left Sidebar (#101114) */}
+      <aside className="w-[236px] shrink-0 h-screen sticky top-0 border-r border-hairline bg-sidebar hidden md:flex flex-col justify-between overflow-y-auto">
         <div>
-          <div className="h-[52px] px-4 border-b border-hairline flex items-center justify-between">
+          <div className="h-[52px] px-4 border-b border-hairline flex items-center gap-2.5">
             <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded border border-hairline bg-elevated flex items-center justify-center">
-                <svg
-                  viewBox="0 0 20 20"
-                  className="w-3.5 h-3.5 text-ink-primary"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                >
-                  <path d="M3 10.5C3 6.5 6.1 3.5 10 3.5C13.9 3.5 17 6.5 17 10.5" />
-                  <path d="M5 13.5H15" />
-                  <path d="M7.5 16.5H12.5" />
-                </svg>
-              </div>
+              <ClamMascot variant="glyph" size={26} />
               <div>
-                <div className="text-sm font-semibold tracking-display leading-none">Clam</div>
-                <div className="text-[10px] font-mono text-ink-tertiary tracking-wider mt-0.5">
+                <div className="text-[14px] font-semibold tracking-display leading-none">
+                  Clam
+                </div>
+                <div className="text-[10px] font-mono text-ink-muted tracking-wider mt-0.5">
                   MCP FIREWALL
                 </div>
               </div>
@@ -78,13 +111,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               const Icon = item.icon;
               const active =
                 item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center justify-between px-3 py-2 rounded text-[13px] font-medium transition-colors duration-150 ${
+                  className={`btn-tactile flex items-center justify-between px-3 py-2 rounded-md text-[13px] font-medium ${
                     active
-                      ? 'bg-elevated text-ink-primary border border-hairline'
+                      ? 'bg-elevated text-ink-primary border border-hairline shadow-bento'
                       : 'text-ink-secondary hover:text-ink-primary hover:bg-elevated/50 border border-transparent'
                   }`}
                 >
@@ -92,8 +126,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Icon className="w-4 h-4 shrink-0" />
                     {item.label}
                   </span>
-                  {item.href === '/approvals' && pendingCount > 0 && (
-                    <span className="px-1.5 py-0.5 rounded bg-amber-fill text-amber-matte font-mono text-[11px] tabular-nums leading-none">
+
+                  {item.href === '/agents' && (
+                    <span className="px-1.5 py-0.5 rounded border border-hairline bg-surface font-mono text-[10px] text-ink-secondary tabular-nums leading-none">
+                      {activeAgents}
+                    </span>
+                  )}
+
+                  {item.href === '/approvals' && (
+                    <span
+                      className={`px-1.5 py-0.5 rounded font-mono text-[10px] tabular-nums leading-none ${
+                        pendingCount > 0
+                          ? 'bg-amber-fill text-amber-matte border border-amber-matte/30'
+                          : 'border border-hairline bg-surface text-ink-muted'
+                      }`}
+                    >
                       {pendingCount}
                     </span>
                   )}
@@ -103,20 +150,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
 
-        <div className="p-3.5 border-t border-hairline">
-          <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
-            Memory Boundary
+        {/* Bottom Recessed Memory Boundary Card (28px live synced mascot) */}
+        <div className="p-3">
+          <div className="rounded-lg border border-hairline bg-surface p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ClamMascot state={mascotState} size={28} />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-ink-muted">
+                  Memory Boundary
+                </span>
+              </div>
+              <span
+                className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${posture.cls}`}
+              >
+                {posture.label}
+              </span>
+            </div>
+            <p className="text-[11px] text-ink-secondary leading-relaxed">
+              RAM-only email proxy. OAuth credentials AES-256-GCM sealed. 0 bytes retained.
+            </p>
           </div>
-          <p className="text-[11px] text-ink-secondary mt-1 leading-relaxed">
-            RAM-only email proxy. OAuth credentials AES-256-GCM sealed. 0 email bytes retained.
-          </p>
         </div>
       </aside>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Status Rail */}
-        <header className="h-[52px] shrink-0 border-b border-hairline bg-surface px-4 lg:px-6 flex items-center justify-between gap-3">
+        {/* Top Utility Rail */}
+        <header className="h-[52px] shrink-0 border-b border-hairline bg-sidebar px-4 lg:px-6 flex items-center justify-between gap-3">
           {/* Mobile nav pills */}
           <div className="flex items-center gap-1.5 md:hidden overflow-x-auto">
             {NAV_ITEMS.map((item) => {
@@ -138,13 +198,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </div>
 
-          <div className="hidden md:flex items-center gap-2.5">
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-medium ${
-                mailMode === 'gmail'
-                  ? 'bg-emerald-fill text-emerald-matte border-emerald-matte/25'
-                  : 'bg-elevated text-ink-primary border-hairline'
-              }`}
+          <div className="hidden md:flex items-center gap-2">
+            <button
+              type="button"
+              disabled={switchingMode}
+              onClick={handleMailModeToggle}
+              title={
+                gmailConnected
+                  ? 'Click to toggle Sandbox / Gmail mode'
+                  : 'Sandbox Mode active (configure Gmail OAuth in Connections)'
+              }
+              className="btn-tactile inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-hairline bg-surface hover:bg-elevated text-xs font-medium text-ink-primary"
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
@@ -152,39 +216,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }`}
               />
               {mailMode === 'gmail'
-                ? `Gmail Connected${overview?.gmail_status?.email ? ` (${overview.gmail_status.email})` : ''}`
+                ? `Gmail (${overview?.gmail_status?.email ?? 'Connected'})`
                 : 'Sandbox Mode'}
-            </span>
+            </button>
 
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-emerald-matte/25 bg-emerald-fill text-emerald-matte text-xs font-medium">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Zero-Retention Verified
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono text-[11px] font-medium ${posture.cls}`}
+            >
+              <ClamMascot state={mascotState} size={16} />
+              {posture.label}
             </span>
           </div>
 
-          <div className="flex items-center gap-3 ml-auto">
-            <div className="hidden sm:flex items-center gap-2 text-xs text-ink-secondary">
-              <span className="font-mono tabular-nums text-ink-primary">
-                {overview?.active_agents_count ?? 0}
-              </span>
-              <span>Active Agents</span>
-            </div>
-
-            <Link
-              href="/approvals"
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-medium transition-colors duration-150 ${
-                pendingCount > 0
-                  ? 'bg-amber-fill text-amber-matte border-amber-matte/25'
-                  : 'bg-elevated text-ink-secondary border-hairline hover:text-ink-primary'
-              }`}
-            >
-              <span className="font-mono tabular-nums">{pendingCount}</span>
-              <span>Pending</span>
-            </Link>
-
+          <div className="flex items-center gap-2 ml-auto">
             <div
-              className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded border border-hairline bg-canvas text-[11px] font-mono text-ink-secondary"
-              title={sseConnected ? 'Live SSE stream connected' : 'Reconnecting SSE stream'}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-hairline bg-surface font-mono text-[11px] text-emerald-matte"
+              title={sseConnected ? 'Live SSE stream connected' : 'Syncing SSE stream'}
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
@@ -195,17 +242,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <button
+              type="button"
               onClick={toggleTheme}
-              className="p-1.5 rounded border border-hairline bg-canvas text-ink-secondary hover:text-ink-primary hover:bg-elevated transition-colors duration-150"
+              className="btn-tactile p-1.5 rounded-md border border-hairline bg-surface text-ink-secondary hover:text-ink-primary hover:bg-elevated"
               aria-label="Toggle color theme"
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
-              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {theme === 'dark' ? (
+                <Sun className="w-3.5 h-3.5" />
+              ) : (
+                <Moon className="w-3.5 h-3.5" />
+              )}
             </button>
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 max-w-[1440px] w-full mx-auto">{children}</main>
+        <main className="flex-1 p-4 lg:p-6 max-w-[1360px] w-full mx-auto">{children}</main>
       </div>
     </div>
   );

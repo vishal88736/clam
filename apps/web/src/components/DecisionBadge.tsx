@@ -5,27 +5,27 @@ import React from 'react';
 const STYLE_MAP: Record<string, { label: string; classes: string }> = {
   ALLOW: {
     label: 'ALLOW',
-    classes: 'bg-emerald-fill text-emerald-matte border-emerald-matte/25',
+    classes: 'bg-emerald-fill text-emerald-matte border-emerald-matte/30',
   },
   APPROVED: {
     label: 'APPROVED',
-    classes: 'bg-emerald-fill text-emerald-matte border-emerald-matte/25',
+    classes: 'bg-emerald-fill text-emerald-matte border-emerald-matte/30',
   },
   PENDING_APPROVAL: {
     label: 'ASK FIRST',
-    classes: 'bg-amber-fill text-amber-matte border-amber-matte/25',
+    classes: 'bg-amber-fill text-amber-matte border-amber-matte/30',
   },
   PENDING: {
     label: 'PENDING',
-    classes: 'bg-amber-fill text-amber-matte border-amber-matte/25',
+    classes: 'bg-amber-fill text-amber-matte border-amber-matte/30',
   },
   DENY: {
-    label: 'DENY',
-    classes: 'bg-crimson-fill text-crimson-matte border-crimson-matte/25',
+    label: 'BLOCKED',
+    classes: 'bg-crimson-fill text-crimson-matte border-crimson-matte/30',
   },
   REJECTED: {
     label: 'REJECTED',
-    classes: 'bg-crimson-fill text-crimson-matte border-crimson-matte/25',
+    classes: 'bg-crimson-fill text-crimson-matte border-crimson-matte/30',
   },
   EXPIRED: {
     label: 'EXPIRED',
@@ -41,7 +41,7 @@ export function DecisionBadge({ decision }: { decision: string }) {
 
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded border font-mono text-[11px] font-medium tracking-wide uppercase tabular-nums ${style.classes}`}
+      className={`inline-flex items-center justify-center min-w-[74px] px-2 py-0.5 rounded border font-mono text-[10px] font-medium tracking-wider uppercase tabular-nums ${style.classes}`}
     >
       {style.label}
     </span>

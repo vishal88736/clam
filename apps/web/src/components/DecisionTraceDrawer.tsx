@@ -16,7 +16,7 @@ export function DecisionTraceDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/45"
+      className="fixed inset-0 z-50 flex justify-end bg-black/55"
       onClick={onClose}
       role="dialog"
       aria-label="Decision Trace"
@@ -28,7 +28,7 @@ export function DecisionTraceDrawer({
         <div>
           <div className="flex items-center justify-between px-5 py-4 border-b border-hairline">
             <div>
-              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-muted">
                 Decision Trace
               </div>
               <div className="text-sm font-medium text-ink-primary font-mono mt-0.5 tabular-nums">
@@ -37,7 +37,7 @@ export function DecisionTraceDrawer({
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded border border-hairline text-ink-secondary hover:text-ink-primary hover:bg-elevated transition-colors duration-150"
+              className="btn-tactile p-1.5 rounded-md border border-hairline text-ink-secondary hover:text-ink-primary hover:bg-elevated"
               aria-label="Close trace drawer"
             >
               <X className="w-4 h-4" />
@@ -52,8 +52,8 @@ export function DecisionTraceDrawer({
               </span>
             </div>
 
-            <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2">
-              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+            <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-ink-muted">
                 Rule Citation
               </div>
               <p className="text-sm text-ink-primary leading-relaxed">
@@ -66,7 +66,7 @@ export function DecisionTraceDrawer({
               )}
             </div>
 
-            <dl className="divide-y divide-hairline border border-hairline rounded bg-surface">
+            <dl className="divide-y divide-hairline rounded-lg border border-hairline bg-canvas">
               <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
                 <dt className="text-ink-secondary">Agent</dt>
                 <dd className="font-medium text-ink-primary">{entry.agent_name}</dd>
@@ -118,7 +118,7 @@ export function DecisionTraceDrawer({
             <ShieldCheck className="w-4 h-4 text-emerald-matte shrink-0 mt-0.5" />
             <div>
               <div className="font-medium text-ink-primary">Zero-Retention Confirmed</div>
-              <p className="text-ink-tertiary mt-0.5 leading-relaxed">
+              <p className="text-ink-muted mt-0.5 leading-relaxed">
                 0 email subject, body, sender, or attachment bytes were written to disk or
                 audit storage. Only the one-way HMAC message hash and policy metadata remain.
               </p>

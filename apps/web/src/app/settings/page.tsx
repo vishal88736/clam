@@ -12,7 +12,6 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
-  // LLM form
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('local_heuristic');
   const [llmModel, setLlmModel] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
@@ -20,7 +19,6 @@ export default function SettingsPage() {
   const [geminiKey, setGeminiKey] = useState('');
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://127.0.0.1:11434');
 
-  // Channels forms
   const [slackForm, setSlackForm] = useState({
     botToken: '',
     channelId: '',
@@ -161,31 +159,24 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div>
-        <h1 className="text-xl font-semibold tracking-display">Connections & Channels</h1>
-        <p className="text-sm text-ink-secondary mt-0.5">
-          Configure Gmail OAuth, semantic classifier provider, and Slack / Telegram / WhatsApp HITL webhooks.
-        </p>
-      </div>
-
+    <div className="space-y-5 max-w-5xl">
       {notice && (
-        <div className="px-4 py-2.5 rounded border border-hairline bg-surface text-xs text-ink-primary">
+        <div className="bento-card rounded-xl px-4 py-2.5 text-xs text-ink-primary">
           {notice}
         </div>
       )}
 
       {/* 1. Mail Source Card */}
-      <section className="border border-hairline rounded bg-surface p-5 space-y-4">
+      <section className="bento-card rounded-xl p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded border border-hairline bg-canvas text-ink-primary">
+            <div className="p-2 rounded-lg border border-hairline bg-canvas text-ink-primary">
               <Mail className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold">Mail Provider Boundary</h2>
+              <h2 className="text-sm font-semibold tracking-display">Mail Provider Boundary</h2>
               <p className="text-xs text-ink-secondary mt-0.5">
-                Switch seamlessly between the 18-email Sandbox Inbox and Google Gmail OAuth 2.0.
+                Switch between the 18-email Sandbox Inbox and Google Gmail OAuth 2.0.
               </p>
             </div>
           </div>
@@ -193,9 +184,9 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => switchMailMode('sandbox')}
-              className={`px-3 py-1.5 rounded border text-xs font-medium ${
+              className={`btn-tactile px-3 py-1.5 rounded-md border text-xs font-medium ${
                 settings?.gmail.mode === 'sandbox'
-                  ? 'btn-primary border-transparent'
+                  ? 'btn-primary border-transparent font-semibold'
                   : 'border-hairline bg-canvas text-ink-secondary hover:text-ink-primary'
               }`}
             >
@@ -204,7 +195,7 @@ export default function SettingsPage() {
             <button
               onClick={() => switchMailMode('gmail')}
               disabled={!settings?.gmail.connected}
-              className={`px-3 py-1.5 rounded border text-xs font-medium ${
+              className={`btn-tactile px-3 py-1.5 rounded-md border text-xs font-medium ${
                 settings?.gmail.mode === 'gmail'
                   ? 'bg-emerald-fill text-emerald-matte border-emerald-matte/30'
                   : 'border-hairline bg-canvas text-ink-secondary disabled:opacity-45'
@@ -215,7 +206,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="border border-hairline rounded bg-canvas p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+        <div className="rounded-lg border border-hairline bg-canvas p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
           <div className="space-y-1">
             <div className="font-medium text-ink-primary">
               {settings?.gmail.connected
@@ -232,7 +223,7 @@ export default function SettingsPage() {
           {settings?.gmail.connected ? (
             <button
               onClick={handleDisconnectGmail}
-              className="px-3 py-1.5 rounded border border-crimson-matte/30 bg-crimson-fill text-crimson-matte text-xs font-medium"
+              className="btn-tactile px-3 py-1.5 rounded-md border border-crimson-matte/30 bg-crimson-fill text-crimson-matte text-xs font-medium"
             >
               Disconnect & Wipe Token
             </button>
@@ -240,7 +231,7 @@ export default function SettingsPage() {
             <button
               onClick={handleConnectGmail}
               disabled={!settings?.gmail.oauthConfigured}
-              className="btn-primary px-3.5 py-1.5 rounded text-xs font-medium"
+              className="btn-primary px-3.5 py-1.5 rounded-md text-xs font-semibold"
             >
               Connect Gmail OAuth
             </button>
@@ -249,16 +240,15 @@ export default function SettingsPage() {
       </section>
 
       {/* 2. Semantic Classifier Provider */}
-      <form
-        onSubmit={handleSaveLlm}
-        className="border border-hairline rounded bg-surface p-5 space-y-4"
-      >
+      <form onSubmit={handleSaveLlm} className="bento-card rounded-xl p-5 space-y-4">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded border border-hairline bg-canvas text-ink-primary">
+          <div className="p-2 rounded-lg border border-hairline bg-canvas text-ink-primary">
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold">Fail-Closed Semantic Classifier Provider</h2>
+            <h2 className="text-sm font-semibold tracking-display">
+              Fail-Closed Semantic Classifier Provider
+            </h2>
             <p className="text-xs text-ink-secondary mt-0.5">
               Defaults to zero-key Local Semantic Heuristic. External LLMs strictly fail closed on timeout or malformed JSON.
             </p>
@@ -271,7 +261,7 @@ export default function SettingsPage() {
             <select
               value={llmProvider}
               onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}
-              className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
             >
               <option value="local_heuristic">local_heuristic (Zero-Setup Offline)</option>
               <option value="openai">openai</option>
@@ -286,7 +276,7 @@ export default function SettingsPage() {
               value={llmModel}
               onChange={(e) => setLlmModel(e.target.value)}
               placeholder="e.g. gpt-4o-mini / claude-3-5-haiku-latest / gemini-2.5-flash"
-              className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
             />
           </div>
 
@@ -300,7 +290,7 @@ export default function SettingsPage() {
                 value={openaiKey}
                 onChange={(e) => setOpenaiKey(e.target.value)}
                 placeholder="sk-..."
-                className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
               />
             </div>
           )}
@@ -315,7 +305,7 @@ export default function SettingsPage() {
                 value={anthropicKey}
                 onChange={(e) => setAnthropicKey(e.target.value)}
                 placeholder="sk-ant-..."
-                className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
               />
             </div>
           )}
@@ -330,7 +320,7 @@ export default function SettingsPage() {
                 value={geminiKey}
                 onChange={(e) => setGeminiKey(e.target.value)}
                 placeholder="AIza..."
-                className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
               />
             </div>
           )}
@@ -341,31 +331,33 @@ export default function SettingsPage() {
               <input
                 value={ollamaBaseUrl}
                 onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                className="w-full rounded border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
               />
             </div>
           )}
         </div>
 
         <div className="flex justify-end">
-          <button type="submit" className="btn-primary px-3.5 py-1.5 rounded text-xs font-medium">
+          <button
+            type="submit"
+            className="btn-primary px-3.5 py-1.5 rounded-md text-xs font-semibold"
+          >
             Save Classifier Settings
           </button>
         </div>
       </form>
 
       {/* 3. HITL Channels (Slack, Telegram, WhatsApp) */}
-      <form
-        onSubmit={handleSaveChannels}
-        className="border border-hairline rounded bg-surface p-5 space-y-5"
-      >
+      <form onSubmit={handleSaveChannels} className="bento-card rounded-xl p-5 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded border border-hairline bg-canvas text-ink-primary">
+            <div className="p-2 rounded-lg border border-hairline bg-canvas text-ink-primary">
               <Shield className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold">HITL Notification & Callback Bridges</h2>
+              <h2 className="text-sm font-semibold tracking-display">
+                HITL Notification & Callback Bridges
+              </h2>
               <p className="text-xs text-ink-secondary mt-0.5">
                 Approve or deny Stage C actions directly from Slack, Telegram, or WhatsApp interactive buttons.
               </p>
@@ -376,7 +368,7 @@ export default function SettingsPage() {
             type="button"
             onClick={handleSendTestApproval}
             disabled={testingApproval}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded border border-hairline bg-canvas text-xs font-medium text-ink-primary hover:bg-elevated"
+            className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md border border-hairline bg-canvas text-xs font-medium text-ink-primary hover:bg-elevated"
           >
             <Send className="w-3.5 h-3.5" />
             {testingApproval ? 'Dispatching…' : 'Send Test Approval'}
@@ -388,9 +380,9 @@ export default function SettingsPage() {
             {Object.entries(testResult).map(([ch, res]) => (
               <div
                 key={ch}
-                className="p-2.5 rounded border border-hairline bg-canvas space-y-0.5"
+                className="p-2.5 rounded-lg border border-hairline bg-canvas space-y-0.5"
               >
-                <div className="flex items-center justify-between font-mono uppercase text-[11px]">
+                <div className="flex items-center justify-between font-mono uppercase text-[10px]">
                   <span>{ch}</span>
                   <span
                     className={
@@ -398,7 +390,7 @@ export default function SettingsPage() {
                         ? 'text-emerald-matte'
                         : res.status === 'failed'
                           ? 'text-crimson-matte'
-                          : 'text-ink-tertiary'
+                          : 'text-ink-muted'
                     }
                   >
                     {res.status}
@@ -414,14 +406,14 @@ export default function SettingsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs">
           {/* Slack */}
-          <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2.5">
+          <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-semibold">Slack</span>
               <span
-                className={`font-mono text-[11px] ${
+                className={`font-mono text-[10px] ${
                   settings?.channels.slack.configured
                     ? 'text-emerald-matte'
-                    : 'text-ink-tertiary'
+                    : 'text-ink-muted'
                 }`}
               >
                 {settings?.channels.slack.configured ? 'CONFIGURED' : 'NOT SET'}
@@ -447,39 +439,39 @@ export default function SettingsPage() {
               value={slackForm.webhookUrl}
               onChange={(e) => setSlackForm((f) => ({ ...f, webhookUrl: e.target.value }))}
               placeholder="Webhook URL (or use Bot Token below)"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               type="password"
               value={slackForm.botToken}
               onChange={(e) => setSlackForm((f) => ({ ...f, botToken: e.target.value }))}
               placeholder="Slack Bot Token (xoxb-...)"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               value={slackForm.channelId}
               onChange={(e) => setSlackForm((f) => ({ ...f, channelId: e.target.value }))}
               placeholder="Channel ID (C0123...)"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               type="password"
               value={slackForm.signingSecret}
               onChange={(e) => setSlackForm((f) => ({ ...f, signingSecret: e.target.value }))}
               placeholder="Signing Secret"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
           </div>
 
           {/* Telegram */}
-          <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2.5">
+          <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-semibold">Telegram</span>
               <span
-                className={`font-mono text-[11px] ${
+                className={`font-mono text-[10px] ${
                   settings?.channels.telegram.configured
                     ? 'text-emerald-matte'
-                    : 'text-ink-tertiary'
+                    : 'text-ink-muted'
                 }`}
               >
                 {settings?.channels.telegram.configured ? 'CONFIGURED' : 'NOT SET'}
@@ -505,13 +497,13 @@ export default function SettingsPage() {
               value={telegramForm.botToken}
               onChange={(e) => setTelegramForm((f) => ({ ...f, botToken: e.target.value }))}
               placeholder="Bot Token (123456:ABC...)"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               value={telegramForm.chatId}
               onChange={(e) => setTelegramForm((f) => ({ ...f, chatId: e.target.value }))}
               placeholder="Target Chat ID"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               type="password"
@@ -520,19 +512,19 @@ export default function SettingsPage() {
                 setTelegramForm((f) => ({ ...f, webhookSecret: e.target.value }))
               }
               placeholder="Webhook Secret Token"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
           </div>
 
           {/* WhatsApp */}
-          <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2.5">
+          <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-semibold">WhatsApp Cloud</span>
               <span
-                className={`font-mono text-[11px] ${
+                className={`font-mono text-[10px] ${
                   settings?.channels.whatsapp.configured
                     ? 'text-emerald-matte'
-                    : 'text-ink-tertiary'
+                    : 'text-ink-muted'
                 }`}
               >
                 {settings?.channels.whatsapp.configured ? 'CONFIGURED' : 'NOT SET'}
@@ -560,7 +552,7 @@ export default function SettingsPage() {
                 setWhatsappForm((f) => ({ ...f, accessToken: e.target.value }))
               }
               placeholder="Meta Access Token"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               value={whatsappForm.phoneNumberId}
@@ -568,7 +560,7 @@ export default function SettingsPage() {
                 setWhatsappForm((f) => ({ ...f, phoneNumberId: e.target.value }))
               }
               placeholder="Phone Number ID"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               value={whatsappForm.recipientNumber}
@@ -576,7 +568,7 @@ export default function SettingsPage() {
                 setWhatsappForm((f) => ({ ...f, recipientNumber: e.target.value }))
               }
               placeholder="Recipient Phone (+1...)"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
             <input
               type="password"
@@ -585,13 +577,16 @@ export default function SettingsPage() {
                 setWhatsappForm((f) => ({ ...f, verifyToken: e.target.value }))
               }
               placeholder="Webhook Verify Token"
-              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
+              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
             />
           </div>
         </div>
 
         <div className="flex justify-end">
-          <button type="submit" className="btn-primary px-4 py-1.5 rounded text-xs font-medium">
+          <button
+            type="submit"
+            className="btn-primary px-4 py-1.5 rounded-md text-xs font-semibold"
+          >
             Save Channel Credentials
           </button>
         </div>

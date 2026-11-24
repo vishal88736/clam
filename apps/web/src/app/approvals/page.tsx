@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, Clock, Edit3, ShieldCheck, X } from 'lucide-react';
+import { Check, Clock, Edit3, X } from 'lucide-react';
 import type { ApprovalView } from '@clam/shared';
+import { ClamMascot } from '@/components/ClamMascot';
 import { useConsole } from '@/components/ConsoleContext';
 import { DecisionBadge } from '@/components/DecisionBadge';
 import { clamApi } from '@/lib/api';
@@ -78,7 +79,6 @@ export default function ApprovalsPage() {
     [loadApprovals, refreshOverview]
   );
 
-  // Keyboard shortcuts: A = approve, D = deny, ArrowUp/ArrowDown = navigate
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -107,29 +107,51 @@ export default function ApprovalsPage() {
   }, [pending, selectedIdx, handleApprove, handleDeny]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold tracking-display">Approval Queue</h1>
-          <p className="text-sm text-ink-secondary mt-0.5">
-            Stage C human-in-the-loop sign-off. Proposed payloads live encrypted in RAM and wipe upon resolution.
-          </p>
+    <div className="space-y-5">
+      {/* Queue Header Card with Reactive Mascot */}
+      <div className="bento-card rounded-xl p-4 lg:px-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="rounded-lg border border-hairline bg-canvas p-1.5 shrink-0">
+            <ClamMascot
+              state={pending.length > 0 ? 'pending' : 'armed'}
+              size={44}
+              interactive
+            />
+          </div>
+          <div>
+            <div className="text-sm font-semibold tracking-display text-ink-primary">
+              {pending.length > 0
+                ? `${pending.length} Action${pending.length === 1 ? '' : 's'} Held for Human Sign-Off`
+                : 'Approval Queue Clear — Watchful'}
+            </div>
+            <p className="text-xs text-ink-secondary mt-0.5">
+              {pending.length > 0
+                ? 'Proposed drafts and outbound actions stay encrypted in RAM until resolved or expired.'
+                : 'Actions matching "ask me first" rules pause here with Slack, Telegram, and WhatsApp delivery.'}
+            </p>
+          </div>
         </div>
-        <div className="text-[11px] font-mono text-ink-tertiary">
-          Shortcuts: <span className="px-1.5 py-0.5 rounded border border-hairline bg-surface">A</span> Approve ·{' '}
-          <span className="px-1.5 py-0.5 rounded border border-hairline bg-surface">D</span> Deny
+
+        <div className="text-[11px] font-mono text-ink-muted shrink-0">
+          Shortcuts:{' '}
+          <span className="px-1.5 py-0.5 rounded border border-hairline bg-canvas text-ink-primary">
+            A
+          </span>{' '}
+          Approve ·{' '}
+          <span className="px-1.5 py-0.5 rounded border border-hairline bg-canvas text-ink-primary">
+            D
+          </span>{' '}
+          Deny
         </div>
       </div>
 
       {/* Pending Requests */}
       {pending.length === 0 ? (
-        <div className="border border-hairline rounded bg-surface p-10 text-center space-y-2">
-          <div className="inline-flex p-2.5 rounded border border-hairline bg-canvas text-emerald-matte">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div className="text-sm font-medium text-ink-primary">No pending approvals</div>
+        <div className="bento-card rounded-xl p-10 text-center space-y-2">
+          <div className="text-sm font-medium text-ink-primary">No pending HITL tickets</div>
           <p className="text-xs text-ink-secondary">
-            Actions matching <span className="font-mono">ask_first_actions</span> will appear here in real time.
+            Trigger an <span className="font-mono">Ask First</span> scenario from Overview or send a
+            test approval in Connections.
           </p>
         </div>
       ) : (
@@ -143,8 +165,8 @@ export default function ApprovalsPage() {
               <div
                 key={item.id}
                 onClick={() => setSelectedIdx(idx)}
-                className={`border rounded bg-surface transition-colors duration-150 ${
-                  focused ? 'border-ink-secondary' : 'border-hairline'
+                className={`bento-card rounded-xl overflow-hidden transition-colors duration-150 ${
+                  focused ? 'border-ink-muted' : ''
                 }`}
               >
                 <div className="grid grid-cols-1 lg:grid-cols-12">
@@ -154,7 +176,7 @@ export default function ApprovalsPage() {
                       <div className="flex items-center gap-2.5">
                         <DecisionBadge decision={item.status} />
                         <span className="text-sm font-semibold">{item.agent_name}</span>
-                        <span className="font-mono text-xs px-2 py-0.5 rounded border border-hairline bg-canvas">
+                        <span className="font-mono text-[11px] px-2 py-0.5 rounded border border-hairline bg-canvas">
                           {item.mcp_tool}
                         </span>
                       </div>
@@ -164,15 +186,15 @@ export default function ApprovalsPage() {
                       </div>
                     </div>
 
-                    <div className="px-3 py-2 rounded border border-hairline bg-canvas text-xs text-ink-secondary">
-                      <span className="font-mono uppercase text-[10px] text-ink-tertiary mr-2">
+                    <div className="px-3 py-2 rounded-lg border border-hairline bg-canvas text-xs text-ink-secondary">
+                      <span className="font-mono uppercase text-[10px] text-ink-muted mr-2">
                         Trigger Rule
                       </span>
                       “{item.rule_citation}”
                     </div>
 
                     {preview && (
-                      <div className="border border-hairline rounded bg-canvas p-3.5 space-y-2 text-xs">
+                      <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2 text-xs">
                         {isEditing ? (
                           <div className="space-y-2">
                             <input
@@ -180,7 +202,7 @@ export default function ApprovalsPage() {
                               onChange={(e) =>
                                 setEditForm((f) => ({ ...f, to: e.target.value }))
                               }
-                              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs"
+                              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs"
                               placeholder="To"
                             />
                             <input
@@ -188,7 +210,7 @@ export default function ApprovalsPage() {
                               onChange={(e) =>
                                 setEditForm((f) => ({ ...f, subject: e.target.value }))
                               }
-                              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs"
+                              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs"
                               placeholder="Subject"
                             />
                             <textarea
@@ -197,20 +219,20 @@ export default function ApprovalsPage() {
                               onChange={(e) =>
                                 setEditForm((f) => ({ ...f, body: e.target.value }))
                               }
-                              className="w-full rounded border border-hairline bg-surface px-2.5 py-1.5 text-xs"
+                              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs"
                             />
                           </div>
                         ) : (
                           <>
                             {preview.to && (
                               <div>
-                                <span className="text-ink-tertiary font-mono mr-2">TO:</span>
+                                <span className="text-ink-muted font-mono mr-2">TO:</span>
                                 <span className="text-ink-primary font-mono">{preview.to}</span>
                               </div>
                             )}
                             {preview.subject && (
                               <div>
-                                <span className="text-ink-tertiary font-mono mr-2">SUBJECT:</span>
+                                <span className="text-ink-muted font-mono mr-2">SUBJECT:</span>
                                 <span className="text-ink-primary font-medium">
                                   {preview.subject}
                                 </span>
@@ -218,12 +240,12 @@ export default function ApprovalsPage() {
                             )}
                             {preview.label && (
                               <div>
-                                <span className="text-ink-tertiary font-mono mr-2">LABEL:</span>
+                                <span className="text-ink-muted font-mono mr-2">LABEL:</span>
                                 <span className="text-ink-primary font-mono">{preview.label}</span>
                               </div>
                             )}
                             {preview.body && (
-                              <pre className="whitespace-pre-wrap font-sans text-xs text-ink-secondary pt-1 border-t border-hairline">
+                              <pre className="whitespace-pre-wrap font-sans text-xs text-ink-secondary pt-1.5 border-t border-hairline">
                                 {preview.body}
                               </pre>
                             )}
@@ -236,7 +258,7 @@ export default function ApprovalsPage() {
                       <button
                         onClick={() => handleApprove(item)}
                         disabled={busyId === item.id}
-                        className="btn-primary inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-medium"
+                        className="btn-primary inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold"
                       >
                         <Check className="w-3.5 h-3.5" />
                         {isEditing ? 'Approve with Edit' : 'Approve'}
@@ -256,7 +278,7 @@ export default function ApprovalsPage() {
                               });
                             }
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-hairline bg-canvas text-xs text-ink-primary hover:bg-elevated"
+                          className="btn-tactile inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-hairline bg-canvas text-xs text-ink-primary hover:bg-elevated"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                           {isEditing ? 'Cancel Edit' : 'Edit Before Approve'}
@@ -266,7 +288,7 @@ export default function ApprovalsPage() {
                       <button
                         onClick={() => handleDeny(item)}
                         disabled={busyId === item.id}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded border border-crimson-matte/30 bg-crimson-fill text-crimson-matte text-xs font-medium hover:opacity-90"
+                        className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md border border-crimson-matte/30 bg-crimson-fill text-crimson-matte text-xs font-medium hover:opacity-90"
                       >
                         <X className="w-3.5 h-3.5" />
                         Deny
@@ -275,8 +297,8 @@ export default function ApprovalsPage() {
                   </div>
 
                   {/* Right: Channel Delivery Strip */}
-                  <div className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-hairline bg-canvas p-4 lg:p-5 space-y-3">
-                    <div className="text-[11px] font-mono uppercase tracking-wider text-ink-tertiary">
+                  <div className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-hairline bg-canvas/70 p-4 lg:p-5 space-y-3">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-ink-muted">
                       Channel Dispatch Status
                     </div>
                     <div className="space-y-2 text-xs">
@@ -290,16 +312,16 @@ export default function ApprovalsPage() {
                       ).map(([label, st]) => (
                         <div
                           key={label}
-                          className="flex items-center justify-between px-3 py-2 rounded border border-hairline bg-surface"
+                          className="flex items-center justify-between px-3 py-2 rounded-md border border-hairline bg-surface"
                         >
                           <span className="font-medium text-ink-primary">{label}</span>
                           <span
-                            className={`font-mono text-[11px] uppercase ${
+                            className={`font-mono text-[10px] uppercase ${
                               st.status === 'delivered'
                                 ? 'text-emerald-matte'
                                 : st.status === 'failed'
                                   ? 'text-crimson-matte'
-                                  : 'text-ink-tertiary'
+                                  : 'text-ink-muted'
                             }`}
                             title={st.detail}
                           >
@@ -308,7 +330,7 @@ export default function ApprovalsPage() {
                         </div>
                       ))}
                     </div>
-                    <div className="text-[11px] font-mono text-ink-tertiary pt-1">
+                    <div className="text-[11px] font-mono text-ink-muted pt-1">
                       Ticket: {item.id}
                     </div>
                   </div>
@@ -321,9 +343,9 @@ export default function ApprovalsPage() {
 
       {/* Resolved History */}
       {resolved.length > 0 && (
-        <div className="border border-hairline rounded bg-surface overflow-hidden">
+        <div className="bento-card rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
-            <h2 className="text-sm font-medium">Resolved & Expired History</h2>
+            <h2 className="text-sm font-semibold tracking-display">Resolved & Expired History</h2>
             <span className="text-[11px] font-mono text-emerald-matte">
               All resolved payloads wiped from RAM
             </span>
@@ -331,7 +353,7 @@ export default function ApprovalsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-hairline bg-canvas font-mono text-[11px] uppercase text-ink-tertiary">
+                <tr className="border-b border-hairline bg-canvas/70 font-mono text-[10px] uppercase tracking-wider text-ink-muted">
                   <th className="py-2.5 px-4 font-medium">Ticket</th>
                   <th className="py-2.5 px-4 font-medium">Agent</th>
                   <th className="py-2.5 px-4 font-medium">Tool</th>
@@ -354,7 +376,7 @@ export default function ApprovalsPage() {
                     <td className="py-2.5 px-4 font-mono text-ink-secondary">
                       {r.resolved_by ?? '—'}
                     </td>
-                    <td className="py-2.5 px-4 font-mono text-emerald-matte">
+                    <td className="py-2.5 px-4 font-mono text-[11px] text-emerald-matte">
                       {r.payload_wiped ? 'WIPED FROM RAM' : 'ACTIVE'}
                     </td>
                   </tr>
