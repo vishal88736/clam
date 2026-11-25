@@ -21,8 +21,33 @@ importers:
         specifier: ^3.1.4
         version: 3.2.7(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)
 
+  apps/agent:
+    dependencies:
+      '@clam/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.12.1
+        version: 1.32.2(zod@3.25.76)
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.3
+        version: 22.20.5
+      tsx:
+        specifier: ^4.19.4
+        version: 4.23.15
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   apps/server:
     dependencies:
+      '@clam/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@clam/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -545,7 +545,11 @@ export function createAgentMcpServer(
       });
     }
 
-    // Allowed directly
+    const dispatchHalt = await checkKillSwitchForTool(agent, params.tool);
+    if (dispatchHalt) return dispatchHalt;
+    if (!deps.mailService.legacyMutationAllowed()) {
+      return jsonContent({ error: 'USE_INBOX_EXECUTOR', decision: 'DENY' }, true);
+    }
     let result: unknown;
     if (params.tool === 'create_draft') {
       result = await provider.createDraft({
@@ -763,6 +767,9 @@ export function createAgentMcpServer(
       }
 
       await fs.mkdir(deps.artifactsDir, { recursive: true });
+      const dispatchHalt = await checkKillSwitchForTool(agent, 'save_itinerary_artifact');
+      if (dispatchHalt) return dispatchHalt;
+      if (!deps.mailService.legacyMutationAllowed()) return jsonContent({ error: 'USE_INBOX_EXECUTOR', decision: 'DENY' }, true);
       const targetPath = path.join(deps.artifactsDir, safeBase);
       await fs.writeFile(targetPath, content, 'utf8');
 

@@ -79,7 +79,7 @@ function parseRawEmlOrTxt(filename: string, raw: string): LoadedTrapCase {
 }
 
 export async function loadTrapPackCases(casesDir: string): Promise<LoadedTrapCase[]> {
-  const entries = await fs.readdir(casesDir, { withFileTypes: true }).catch(() => []);
+  const entries = await fs.readdir(casesDir, { withFileTypes: true });
   const files = entries
     .filter((e) => e.isFile() && /\.(json|eml|txt)$/i.test(e.name))
     .map((e) => e.name)

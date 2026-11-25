@@ -201,9 +201,13 @@ export interface EphemeralEmail {
   date: string;
   snippet: string;
   body: string;
+  html?: string;
+  replyTo?: string;
+  verifiedSender?: boolean;
   labels: string[];
   hasAttachments: boolean;
   attachmentNames?: string[];
+  attachmentParts?: { name: string; mime: string; data: string }[];
   isUnread?: boolean;
 }
 

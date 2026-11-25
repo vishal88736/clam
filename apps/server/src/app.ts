@@ -1,3 +1,4 @@
+import { existsSync, rmSync } from 'node:fs';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { AutonomousRunnerService } from './agents/runnerService.js';
@@ -6,6 +7,9 @@ import { ApprovalService } from './approvals/service.js';
 import { AuditLogger, RealtimeEventHub } from './audit/logger.js';
 import { loadConfig, type ClamConfig } from './config.js';
 import { createDatabase, type DbHandle } from './db/index.js';
+import { InboxEngine } from './inbox/engine.js';
+import { registerInboxRoutes } from './inbox/routes.js';
+import { LiveTarget } from './inbox/targets.js';
 import { KillSwitchService } from './killswitch/service.js';
 import { MailService } from './mail/service.js';
 import { CryptoVault } from './mail/vault.js';
@@ -27,6 +31,7 @@ export interface ClamRuntime {
   killSwitchService: KillSwitchService;
   runnerService: AutonomousRunnerService;
   hub: RealtimeEventHub;
+  inbox: InboxEngine;
   close(): Promise<void>;
 }
 
@@ -123,6 +128,36 @@ export async function createClamApp(overrides?: {
     getLlmConfig,
   });
 
+  const lockfile = config.databasePath === ':memory:' ? undefined : config.lockfile;
+  const inbox: InboxEngine = new InboxEngine({
+    databasePath: config.databasePath, tracesDir: config.tracesDir, lockfile,
+    externalHalt: () => killSwitchService.getState().status === 'HALTED',
+    onTrip: (reason, runId) => killSwitchService.engage({ reason, runId, triggerMode: 'circuit_breaker' }),
+    onRun: (id, controller) => killSwitchService.registerInFlight(id, 'ag_autonomous', controller),
+    modelReview: process.env.CLAM_INBOX_MODEL_REVIEW === 'true' ? {
+      config: getLlmConfig,
+      input: Math.max(0, Number(process.env.CLAM_MODEL_INPUT_USD_PER_M) || 0),
+      output: Math.max(0, Number(process.env.CLAM_MODEL_OUTPUT_USD_PER_M) || 0),
+    } : undefined,
+    live: config.inboxLive ? {
+      ready: () => mailService.getMode() === 'gmail',
+      target: (guard, store) => new LiveTarget(store, mailService.createGmailProvider(), config.calendarId, guard),
+      reader: async () => new LiveTarget(inbox.store, mailService.createGmailProvider(), config.calendarId, inbox.guard).readerMessages(),
+    } : undefined,
+  });
+  killSwitchService.attachExternalHalt(inbox.halted, () => {
+    if (lockfile) rmSync(lockfile, { force: true });
+    inbox.latch(false);
+  });
+  hub.on('event', (event) => {
+    if (event.type !== 'killswitch.changed') return;
+    const data = event.data as { status: string };
+    if (data.status === 'HALTED' || (lockfile && existsSync(lockfile))) inbox.latch(true);
+  });
+  if (inbox.halted()) inbox.latch(true);
+  inbox.startScheduler();
+  registerInboxRoutes(app, inbox, config, killSwitchService, lockfile);
+
   registerWebhookRoutes(app, approvalService);
 
   registerMcpRoutes(app, {
@@ -147,10 +182,12 @@ export async function createClamApp(overrides?: {
     killSwitchService,
     runnerService,
     hub,
+    inbox,
     close: async () => {
       approvalService.stopExpirySweeper();
       app.server.closeAllConnections?.();
       await app.close();
+      await inbox.close();
       dbHandle.close();
     },
   };

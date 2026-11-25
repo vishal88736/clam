@@ -1,0 +1,45 @@
+name: clam-inbox
+services:
+  api:
+    image: clam-inbox:local
+    pull_policy: build
+    build: .
+    command: [node, apps/server/dist/index.js]
+    environment:
+      CLAM_BIND_HOST: 0.0.0.0
+      CLAM_MAIL_MODE: sandbox
+      CLAM_LLM_PROVIDER: local_heuristic
+      CLAM_INBOX_LIVE: "false"
+      DATABASE_PATH: /app/data/clam.db
+      CLAM_ARTIFACTS_DIR: /app/data/artifacts
+      CLAM_TRACES_DIR: /app/data/traces
+      CLAM_KILLSWITCH_FILE: /app/data/.killswitch
+      CLAM_KEY_FILE: /app/data/.clam.key
+    volumes:
+      - sandbox:/app/data
+    ports:
+      - "127.0.0.1:${CLAM_API_PORT:-4000}:4000"
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4000/api/health').then(r=>{if(!r.ok) process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 12
+  web:
+    image: clam-inbox:local
+    pull_policy: never
+    command: [node, apps/web/node_modules/next/dist/bin/next, start, apps/web, -H, 0.0.0.0, -p, "3000"]
+    environment:
+      CLAM_INBOX_API_ORIGIN: http://api:4000
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CLAM_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/inbox/briefing').then(r=>{if(!r.ok) process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 12
+volumes:
+  sandbox:

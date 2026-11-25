@@ -2,7 +2,7 @@ import { createClamApp } from './app.js';
 
 async function main() {
   const runtime = await createClamApp();
-  await runtime.app.listen({ port: runtime.config.port, host: '0.0.0.0' });
+  await runtime.app.listen({ port: runtime.config.port, host: runtime.config.bindHost });
   console.log(
     `[clam-server] Listening on http://localhost:${runtime.config.port} (mode=${runtime.mailService.getMode()}, zero-retention=active)`
   );

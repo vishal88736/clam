@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { usePathname } from 'next/navigation';
 import type {
   AgentRunStep,
   AgentRunSummary,
@@ -40,6 +41,7 @@ interface ConsoleContextValue {
 const ConsoleContext = createContext<ConsoleContextValue | null>(null);
 
 export function ConsoleProvider({ children }: { children: React.ReactNode }) {
+  const legacyRoute = usePathname() !== '/';
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [liveFeed, setLiveFeed] = useState<AuditLogEntry[]>([]);
   const [killSwitch, setKillSwitch] = useState<KillSwitchState | null>(null);
@@ -47,7 +49,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   const [liveRunSteps, setLiveRunSteps] = useState<AgentRunStep[]>([]);
   const [trapReport, setTrapReport] = useState<TrapPackReport | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [lastEventTick, setLastEventTick] = useState(0);
   const [rawMascotState, setRawMascotState] = useState<ClamMascotState>('armed');
   const mascotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,7 +90,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const saved = window.localStorage.getItem('clam_theme');
-    const initial = saved === 'light' ? 'light' : 'dark';
+    const initial = saved === 'dark' ? 'dark' : 'light';
     setTheme(initial);
     document.documentElement.setAttribute('data-theme', initial);
   }, []);
@@ -103,10 +105,11 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refreshOverview();
-  }, [refreshOverview]);
+    if (legacyRoute) void refreshOverview();
+  }, [legacyRoute, refreshOverview]);
 
   useEffect(() => {
+    if (!legacyRoute) return;
     const es = new EventSource(`${API_BASE}/api/events/stream`);
 
     es.addEventListener('connected', () => {
@@ -247,7 +250,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       es.close();
       if (mascotTimerRef.current) clearTimeout(mascotTimerRef.current);
     };
-  }, [pulseMascot]);
+  }, [legacyRoute, pulseMascot]);
 
   const effectiveMascotState: ClamMascotState =
     killSwitch?.status === 'HALTED' ? 'halted' : rawMascotState;

@@ -331,6 +331,8 @@ export class ApprovalService {
     let executionResult: unknown = undefined;
 
     if (params.resolution === 'APPROVED' && ephemeral) {
+      if (!this.mailService.legacyMutationAllowed()) throw new Error('Use the Inbox approval queue for live mutations.');
+      if (this.killSwitchService?.isHalted(row.agentId)) throw new Error('KILL_SWITCH_ENGAGED');
       const effective: EphemeralApprovalPayload = {
         ...ephemeral,
         ...(params.editedPayload?.to !== undefined ? { to: params.editedPayload.to } : {}),

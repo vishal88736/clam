@@ -41,12 +41,6 @@ async function main() {
     });
     try {
       await runtime.app.listen({ port: 0, host: '127.0.0.1' });
-      if (runtime.killSwitchService.isHalted('ag_autonomous')) {
-        await runtime.killSwitchService.resume({
-          resumedBy: 'demo_cli',
-          reason: 'Preparing clean ARMED state for standalone demo run.',
-        });
-      }
       summary = await runtime.runnerService.startAutonomousRun({
         agentId: 'ag_autonomous',
       });

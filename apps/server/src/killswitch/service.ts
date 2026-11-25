@@ -31,6 +31,8 @@ export class KillSwitchService {
   private state: KillSwitchState;
   private readonly activeControllers = new Map<string, ActiveAbortRegistration>();
   private readonly violationTimestamps = new Map<string, number[]>();
+  private onGlobalResume: () => void = () => {};
+  private externalHalt: () => boolean = () => false;
   private readonly callTimestamps = new Map<string, number[]>();
 
   constructor(
@@ -138,9 +140,14 @@ export class KillSwitchService {
   }
 
   isHalted(agentId?: string): boolean {
-    if (this.state.status === 'HALTED') return true;
+    if (this.state.status === 'HALTED' || this.externalHalt()) return true;
     if (agentId && this.state.halted_agents.includes(agentId)) return true;
     return false;
+  }
+
+  attachExternalHalt(check: () => boolean, onResume: () => void) {
+    this.externalHalt = check;
+    this.onGlobalResume = onResume;
   }
 
   registerInFlight(runId: string, agentId: string, controller: AbortController): () => void {
@@ -240,7 +247,9 @@ export class KillSwitchService {
     if (params.agentId) {
       this.state.halted_agents = this.state.halted_agents.filter((a) => a !== params.agentId);
       this.violationTimestamps.delete(params.agentId);
-      this.callTimestamps.delete(params.agentId);
+      for (const key of this.callTimestamps.keys()) {
+        if (key === params.agentId || key.startsWith(params.agentId + ':')) this.callTimestamps.delete(key);
+      }
     } else {
       this.state.status = 'ARMED';
       this.state.trigger_mode = null;
@@ -253,6 +262,7 @@ export class KillSwitchService {
     }
 
     await this.persistState();
+    if (!params.agentId) this.onGlobalResume();
 
     await this.auditLogger.record({
       agentId: params.agentId ?? 'system_killswitch',
@@ -311,9 +321,13 @@ export class KillSwitchService {
 
     // 1. Track overall call velocity per minute (runaway loop detector)
     const minCutoff = now - 60_000;
-    const calls = (this.callTimestamps.get(input.agentId) ?? []).filter((ts) => ts > minCutoff);
+    const scope = input.runId ? input.agentId + ':' + input.runId : input.agentId;
+    for (const [key, timestamps] of this.callTimestamps) {
+      if (timestamps.at(-1)! <= minCutoff) this.callTimestamps.delete(key);
+    }
+    const calls = (this.callTimestamps.get(scope) ?? []).filter((ts) => ts > minCutoff);
     calls.push(now);
-    this.callTimestamps.set(input.agentId, calls);
+    this.callTimestamps.set(scope, calls);
 
     if (calls.length > cfg.max_calls_per_min) {
       await this.engage({

@@ -1,80 +1,57 @@
-# AGENT.md — Clam Autonomous Inbox & Itinerary Agent
+# Agentware Track 1 · Inbox & Calendar
 
-## 1. Overview & Architecture
+Clam runs inbox playbooks, verifies each mutation against its target, and exposes the policy decision and action receipt.
 
-Clam combines two tightly coupled systems in one monorepo:
-
-1. **Clam Firewall (`apps/server`)**: A zero-retention Model Context Protocol (`@modelcontextprotocol/sdk`) permission proxy supporting Streamable HTTP (`/mcp`) and SSE (`/mcp/sse`).
-2. **Clam Autonomous Inbox Agent (`apps/agent`)**: A standalone unattended worker (`Travel & Bills Triage Agent`, `ag_autonomous`) that connects **strictly over real MCP** with a scoped Bearer token (`clm_ag_...`) and holds zero Gmail OAuth credentials or direct database access.
-
-```text
-+-----------------------------------+       MCP (Streamable HTTP /mcp)       +----------------------------------------+
-|  Clam Autonomous Inbox Agent      |  --- Authorization: Bearer clm_ag_... -> |  Clam MCP Permission Firewall          |
-|  (@clam/agent)                    |  <-- Silently filtered SafeEmail JSON -- |  (apps/server)                         |
-|                                   |                                        |                                        |
-|  - Zero direct mail/DB access     |                                        |  0. Kill Switch & Circuit Breaker      |
-|  - Conflict resolution (latest ts)|                                        |  1. Stage A: Deterministic Hard Gates  |
-|  - Generates .md / .json / .ics   |                                        |  2. Stage B: Semantic + Injection Scan |
-|  - Creates safe review draft      |                                        |  3. Stage C: Conditional HITL Queue    |
-+-----------------------------------+                                        +-------------------+--------------------+
-                                                                                                 | Ephemeral RAM only
-                                                                                                 v
-                                                                             +----------------------------------------+
-                                                                             | Sandbox Inbox (20+ msgs) / Gmail OAuth |
-                                                                             +----------------------------------------+
+```mermaid
+flowchart LR
+    T[Trigger] --> R
+    subgraph A[Plane A · quarantined reader]
+        R[Read-only Gmail or SQLite] --> P[Sanitize and parse]
+        P --> I[Typed intents with evidence]
+    end
+    subgraph B[Plane B · policy and executor]
+        I --> L[Plan]
+        L --> G[Policy, taint and budgets]
+        G --> V[Approval Inbox]
+        G --> X[Reserve action and execute]
+        V --> X
+        X --> C[Read back and verify]
+        C --> E[Report, SSE and receipts]
+    end
 ```
 
-## 2. Supported Models & Providers
+The six run stages are `TRIGGER → PLAN → POLICY → ACT → CHECK → REPORT`. Parser outputs cross the boundary as validated Zod objects. Reader operations are limited to the sandbox’s read-only SQLite connection or a Gmail read function. The executor has no model tools. An optional confidence-only assessor can downgrade a parsed intent. Sandbox runs use the deterministic classifier and spend $0 in model tokens.
 
-| Provider | Env / Setting Value | Default Model | Notes |
-| --- | --- | --- | --- |
-| Local Heuristic (Default) | `local_heuristic` | Deterministic TS Extractor + Concept Scorer | Zero API keys, offline, fail-closed |
-| OpenAI | `openai` | `gpt-4o-mini` | Optional classifier + host reply polish |
-| Anthropic | `anthropic` | `claude-3-5-haiku-latest` | Optional classifier + host reply polish |
-| Gemini | `gemini` | `gemini-2.5-flash` | Optional classifier + host reply polish |
-| Ollama | `ollama` | `llama3.1` | Self-hosted local LLM (`OLLAMA_BASE_URL`) |
+## Playbook registry
 
-## 3. Exposed MCP Tools
+The registry in `apps/server/src/inbox/playbooks/index.ts` declares trigger, autonomy tiers, policy rules, verification, rollback, and budget costs.
 
-- `list_emails(query?, maxResults?)` — Evaluates every candidate email in ephemeral RAM and silently strips sensitive or injected emails without leaking counts or senders.
-- `search_emails(query, maxResults?)` — Same silent semantic & injection filtering over filtered search results.
-- `read_email(messageId)` — Re-verifies Stage A + Stage B + Indirect Prompt-Injection Detector before returning message content.
-- `create_draft(to, subject, body, threadId?)` — Scans outbound content for secrets/OTPs and prompt injections; executes or pauses at Stage C HITL depending on agent rules.
-- `send_email(to, subject, body, threadId?)` — Deterministically blocked (`HARD_DENIED_SEND`) whenever `Never send` is configured.
-- `delete_email(messageId)` — Deterministically blocked (`HARD_DENIED_DELETE` / `DEFAULT_DENY_DELETE`).
-- `archive_email(messageId)` / `apply_label(messageId, label)` — Subject to Stage C HITL (`ask_first`) on `ag_autonomous`.
-- `save_itinerary_artifact(filename, content)` — Scoped workspace export (`.md`, `.json`, `.ics`, `.txt`) guarded by path-traversal validation and `NO_CREDENTIALS_OR_OTP`.
+| Playbook | Effect |
+| --- | --- |
+| `travel_delay_cascade` | Update a matched flight, move a free flexible solo block, notify allowlisted attendees, and queue external changes. |
+| `autonomous_meeting_scheduler` | Resolve explicit time offsets, reserve a 15-minute prep block, and confirm qualifying bookings. |
+| `bills_trials_spoof_guard` | Record invoices and renewal reminders, flag changes or duplicates, and queue editable review drafts. |
+| `hostile_input_quarantine` | Read, classify, and quarantine suspected messages. A burst halts before actions execute. |
+| `pre_meeting_dossier` | Attach relevant thread references, commitments, and filenames to matched meetings. |
+| `commitment_radar_and_chaser` | Track deadlines, isolate conflicts, and follow up with permitted contacts. |
+| `order_delivery_tracker` | Reconcile tracking updates and keep a return deadline. |
+| `ephemeral_otp_expiry` | Archive aged one-time-code messages. Password-reset and security notices are exempt. |
+| `newsletter_outreach_rollup` | Group newsletter metadata and remove unsolicited outreach from the inbox. |
 
-## 4. Unattended Autonomous Loop (Zero Human Intervention)
+## Tool permission matrix
 
-From a single trigger (`pnpm agent:run`, `POST /api/agent-runs/start`, or UI **Run Unattended Agent** button), `runAutonomousInboxAgent` runs end-to-end without human pauses:
-
-1. Connects to `/mcp` via `StreamableHTTPClientTransport` with `X-Clam-Run-Id` and a Kill-Switch-linked `AbortSignal`.
-2. Calls `tools/list` and `list_emails(maxResults: 50)`. Sensitive messages (bank OTPs, wire alerts, password resets, medical labs, legal NDAs) and indirect prompt injections are silently stripped in RAM by Clam before the agent sees them.
-3. Calls `read_email` individually on every permitted message to re-verify Stage A + Stage B.
-4. Sorts permitted items chronologically and resolves conflicting updates using `LATEST_TIMESTAMP_WINS` (e.g., superseding Delta `DL 402` `08:30 AM EST` Gate `B24` with the newer `10:15 AM EST` Gate `B28` update).
-5. Extracts flights, stays, and bills/receipts (including unseen vendor domains such as `billing@new-unknown-utility.io`).
-6. Calls `create_draft` to stage a safe review reply to the Airbnb host (`kenji.host@airbnb-messages.example`) without ever calling `send_email`.
-7. Calls `save_itinerary_artifact` to write `artifacts/itinerary.md`, `artifacts/digest.json`, and `artifacts/trip.ics`.
-8. Exports metadata-only execution trace to `traces/latest-run.jsonl`.
-
-## 5. Autonomy vs. Human-in-the-Loop (HITL) Boundaries
-
-| Action | `Travel & Bills Triage Agent` (`ag_autonomous`) | `Travel Itinerary Agent` (`ag_travel`) |
+| Action | Reader | Executor |
 | --- | --- | --- |
-| Read permitted travel & bill emails | **Unattended (ALLOW)** | **Unattended (ALLOW)** |
-| Save `.md` / `.json` / `.ics` artifacts | **Unattended (ALLOW)** | **Unattended (ALLOW)** |
-| Create reply draft (`create_draft`) | **Unattended (ALLOW — never sends)** | **HITL Paused (Stage C `PENDING_APPROVAL`)** |
-| Archive or apply labels | **HITL Paused (Stage C `PENDING_APPROVAL`)** | **Denied (`DEFAULT_DENY`)** |
-| Send email / Delete email | **Hard Denied (`STAGE_A_DETERMINISTIC`)** | **Hard Denied (`STAGE_A_DETERMINISTIC`)** |
-| Read OTPs, resets, medical, legal, injections | **Hard/Semantic Denied & Stripped** | **Hard/Semantic Denied & Stripped** |
+| Parse message/body/attachment | Read-only | Receives typed intent |
+| Read calendar or write target | — | Read before dispatch and after mutation |
+| Calendar, labels, and tracking records | — | Tier 0/1 if reversible and within policy |
+| Send mail | — | Tier 1 only for allowlisted recipients and bounded content, or Tier 2 after approval |
+| External calendar mutations or billing reply drafts | — | Tier 2 with a recorded approval |
+| Tainted destinations and forbidden content | — | Blocked independently of approval |
+| Restore earlier state | — | Explicit operator rollback, guarded by current state and halt status |
 
-## 6. Per-Run Cost Breakdown
+Live Calendar uses a managed event’s private properties `clamKind`, `clamFlexible`, `clamBooking`, and `clamDomain` to recognize flights and flexible blocks. Writes use read-back verification. Dataset facts and billing conflicts come from the inbox and prior ledger state. The legacy scoped MCP sandbox still exposes mail tools under its own permission policies. Live mail mutation goes through the new executor.
 
-| Mode | Classifier + Synthesis Calls | Estimated Cost per Run |
-| --- | --- | ---: |
-| `local_heuristic` (Default Judge Mode) | 0 external LLM API calls | **$0.0000** |
-| `ollama` (Local Self-Hosted) | Local inference (`llama3.1`) | **$0.0000** |
-| `gemini` (`gemini-2.5-flash`) | ~14–20 small classification calls + 1 draft polish (~5k input / ~1k output tokens) | **~$0.0008 – $0.0015** |
-| `openai` (`gpt-4o-mini`) | ~14–20 small classification calls + 1 draft polish (~5k input / ~1k output tokens) | **~$0.0014 – $0.0022** |
-| `anthropic` (`claude-3-5-haiku-latest`) | ~14–20 small classification calls + 1 draft polish (~5k input / ~1k output tokens) | **~$0.0080 – $0.0120** |
+## Model configuration
+
+`local_heuristic` is deterministic. Optional assisted live confidence review uses the selected model in `CLAM_LLM_MODEL` for OpenAI, Anthropic, Gemini, or Ollama. The assessor receives typed structure, returns bounded JSON scores, and has no write capability. Provider failures downgrade confidence and are recorded in PLAN.

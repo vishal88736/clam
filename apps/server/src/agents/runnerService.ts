@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AgentRunSummary, TrapPackReport } from '@clam/shared';
 import { runAutonomousInboxAgent } from '@clam/agent';
 import type { AuditLogger, RealtimeEventHub } from '../audit/logger.js';
-import type { ClamConfig } from '../config.js';
+import { workspaceRoot, type ClamConfig } from '../config.js';
 import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
 import type { LlmCompilerRuntimeConfig } from '../policy/compiler.js';
@@ -108,7 +108,9 @@ export class AutonomousRunnerService {
   }
 
   async runTrapPack(casesDir?: string): Promise<TrapPackReport> {
-    const resolvedCasesDir = casesDir || path.resolve(process.cwd(), 'trap-pack/cases');
+    if (this.killSwitchService.isHalted()) throw new Error('KILL_SWITCH_ENGAGED');
+    if (this.mailService.getMode() !== 'sandbox') throw new Error('TRAP_PACK_REQUIRES_SANDBOX');
+    const resolvedCasesDir = casesDir || path.resolve(workspaceRoot, 'trap-pack/cases');
     const report = await runTrapPackSuite({
       mcpUrl: this.resolveMcpUrl(),
       casesDir: resolvedCasesDir,

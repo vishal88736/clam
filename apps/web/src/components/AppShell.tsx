@@ -19,7 +19,7 @@ import { useConsole } from './ConsoleContext';
 import { clamApi } from '@/lib/api';
 
 const NAV_ITEMS = [
-  { href: '/', label: 'Overview', icon: Activity },
+  { href: '/console', label: 'Overview', icon: Activity },
   { href: '/agents', label: 'Agents & Rules', icon: Bot },
   { href: '/approvals', label: 'Approval Queue', icon: CheckSquare },
   { href: '/audit', label: 'Audit Ledger', icon: FileSearch },
@@ -100,6 +100,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if ((pathname === '/' || pathname === '/about')) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -143,6 +144,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }
 
+  if ((pathname === '/' || pathname === '/about')) return children;
+
   return (
     <div className="min-h-screen flex bg-canvas text-ink-primary">
       {/* Left Sidebar (#101114) */}
@@ -165,13 +168,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="p-2.5 space-y-0.5" aria-label="Primary Navigation">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
-              const active =
-                item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+              const active = pathname === item.href;
 
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-current={active ? 'page' : undefined}
                   className={`btn-tactile flex items-center justify-between px-3 py-2 rounded-md text-[13px] font-medium ${
                     active
                       ? 'bg-elevated text-ink-primary border border-hairline shadow-bento'
@@ -238,12 +241,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* Mobile nav pills */}
           <div className="flex items-center gap-1.5 md:hidden overflow-x-auto">
             {NAV_ITEMS.map((item) => {
-              const active =
-                item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+              const active = pathname === item.href;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-current={active ? 'page' : undefined}
                   className={`px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${
                     active
                       ? 'bg-elevated text-ink-primary border border-hairline'

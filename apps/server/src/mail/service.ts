@@ -22,12 +22,12 @@ export class MailService {
     private readonly vault: CryptoVault,
     private readonly config: ClamConfig
   ) {
-    this.mode = config.defaultMailMode;
+    this.mode = config.inboxLive ? config.defaultMailMode : 'sandbox';
   }
 
   async init(): Promise<void> {
     const existingMode = await this.getVaultJson<{ mode: MailMode }>(VAULT_MAIL_MODE_KEY);
-    if (existingMode?.mode === 'gmail' || existingMode?.mode === 'sandbox') {
+    if ((this.config.inboxLive && existingMode?.mode === 'gmail') || existingMode?.mode === 'sandbox') {
       this.mode = existingMode.mode;
     }
   }
@@ -38,6 +38,7 @@ export class MailService {
 
   async setMode(mode: MailMode): Promise<MailMode> {
     if (mode === 'gmail') {
+      if (!this.config.inboxLive) throw new Error('Enable CLAM_INBOX_LIVE to connect Gmail.');
       const tokens = await this.getGmailTokens();
       if (!tokens) {
         throw new Error('Cannot switch to Gmail mode before completing Google OAuth connection.');
@@ -126,7 +127,7 @@ export class MailService {
     url: string;
     state: string;
   } {
-    if (!this.config.googleClientId || !this.config.googleClientSecret) {
+    if (!this.config.inboxLive || !this.config.googleClientId || !this.config.googleClientSecret) {
       throw new Error(
         'Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.'
       );
@@ -139,6 +140,7 @@ export class MailService {
     const chosen = (requestedScopes?.length ? requestedScopes : ['readonly', 'compose', 'modify'])
       .map((s) => scopeMap[s])
       .filter(Boolean);
+    if (this.config.inboxLive) chosen.push('https://www.googleapis.com/auth/calendar.events');
 
     const state = crypto.randomBytes(16).toString('hex');
     this.pendingOauthStates.set(state, { scopes: chosen, createdAt: Date.now() });
@@ -169,6 +171,10 @@ export class MailService {
     await this.deleteVaultKey(VAULT_GMAIL_KEY);
     this.mode = 'sandbox';
     await this.setVaultJson(VAULT_MAIL_MODE_KEY, { mode: 'sandbox' });
+  }
+
+  legacyMutationAllowed(): boolean {
+    return this.mode === 'sandbox';
   }
 
   getActiveProvider(): MailProvider {

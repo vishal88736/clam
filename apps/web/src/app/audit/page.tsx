@@ -72,7 +72,7 @@ export default function AuditLedgerPage() {
             Append-only inspection log. Strictly zero email subjects, bodies, or sender addresses stored.
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-wrap items-center gap-2 self-start">
           <a
             href={clamApi.getAuditExportUrl({
               agent_id: agentId || undefined,
@@ -93,11 +93,12 @@ export default function AuditLedgerPage() {
       </div>
 
       {/* Filters */}
-      <div className="bento-card rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-        <div className="relative lg:col-span-2">
+      <div className="bento-card rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2.5">
+        <div className="relative sm:col-span-2">
           <Search className="w-3.5 h-3.5 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             ref={searchRef}
+            aria-label="Search audit log"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search rule citation, scope, or hash ( / )"
@@ -106,6 +107,7 @@ export default function AuditLedgerPage() {
         </div>
 
         <select
+          aria-label="Filter by agent"
           value={agentId}
           onChange={(e) => setAgentId(e.target.value)}
           className="rounded-md border border-hairline bg-canvas px-2.5 py-1.5 text-xs text-ink-primary"
@@ -119,6 +121,7 @@ export default function AuditLedgerPage() {
         </select>
 
         <select
+          aria-label="Filter by decision"
           value={decision}
           onChange={(e) => setDecision(e.target.value)}
           className="rounded-md border border-hairline bg-canvas px-2.5 py-1.5 text-xs text-ink-primary"
@@ -135,11 +138,12 @@ export default function AuditLedgerPage() {
           <option value="KILL_SWITCH_RESUMED">KILL_SWITCH_RESUMED</option>
         </select>
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-2 sm:col-span-2">
           <select
+            aria-label="Filter by tool"
             value={tool}
             onChange={(e) => setTool(e.target.value)}
-            className="flex-1 rounded-md border border-hairline bg-canvas px-2.5 py-1.5 text-xs font-mono text-ink-primary"
+            className="rounded-md border border-hairline bg-canvas px-2.5 py-1.5 text-xs font-mono text-ink-primary"
           >
             <option value="">All Tools</option>
             <option value="list_emails">list_emails</option>
@@ -155,6 +159,7 @@ export default function AuditLedgerPage() {
           </select>
 
           <select
+            aria-label="Filter by time range"
             value={range}
             onChange={(e) => setRange(e.target.value as 'all' | '1h' | '24h' | '7d')}
             className="rounded-md border border-hairline bg-canvas px-2 py-1.5 text-xs text-ink-primary"

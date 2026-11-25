@@ -22,7 +22,7 @@ export interface GmailTokenStore {
 interface GmailMessagePart {
   mimeType?: string;
   filename?: string;
-  body?: { data?: string };
+  body?: { data?: string; attachmentId?: string; size?: number };
   parts?: GmailMessagePart[];
 }
 
@@ -35,7 +35,7 @@ interface GmailRawMessage {
   payload?: {
     mimeType?: string;
     headers?: { name: string; value: string }[];
-    body?: { data?: string };
+    body?: { data?: string; attachmentId?: string; size?: number };
     parts?: GmailMessagePart[];
   };
 }
@@ -87,6 +87,9 @@ function parseGmailMessage(raw: GmailRawMessage): EphemeralEmail {
     headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? '';
 
   const extracted = extractBodyAndAttachments(raw.payload);
+  const sender = getHeader('From').match(/@([a-z\d.-]+\.[a-z]+)/i)?.[1]?.toLowerCase();
+  const auth = headers.find((header) => header.name.toLowerCase() === 'authentication-results')?.value;
+  const dmarcDomain = auth?.match(/\bdmarc=pass\b[^;]*\bheader\.from=([a-z\d.-]+)/i)?.[1]?.toLowerCase();
   const plainBody =
     extracted.text ||
     extracted.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ||
@@ -107,6 +110,9 @@ function parseGmailMessage(raw: GmailRawMessage): EphemeralEmail {
     date: getHeader('Date') || new Date(Number(raw.internalDate || Date.now())).toISOString(),
     snippet: raw.snippet || plainBody.slice(0, 140),
     body: plainBody,
+    html: extracted.html || undefined,
+    replyTo: getHeader('Reply-To') || undefined,
+    verifiedSender: Boolean(sender && auth?.startsWith('mx.google.com;') && dmarcDomain === sender),
     labels: raw.labelIds ?? [],
     hasAttachments: extracted.attachments.length > 0,
     attachmentNames: extracted.attachments,
@@ -191,7 +197,7 @@ export class GmailMailProvider implements MailProvider {
     return tokens;
   }
 
-  private async getValidAccessToken(): Promise<string> {
+  async getValidAccessToken(): Promise<string> {
     const tokens = await this.tokenStore.getTokens();
     if (!tokens) {
       throw new Error('Gmail is not connected. Authorize via Settings -> Connect Gmail.');
@@ -270,6 +276,28 @@ export class GmailMailProvider implements MailProvider {
     } catch {
       return null;
     }
+  }
+
+  async listForInbox(query: string): Promise<EphemeralEmail[]> {
+    const list = await this.gmailFetch<{ messages?: { id: string }[] }>(
+      `/messages?${new URLSearchParams({ maxResults: '50', q: query })}`
+    );
+    return Promise.all((list.messages ?? []).map(async ({ id }) => {
+      const raw = await this.gmailFetch<GmailRawMessage>(`/messages/${encodeURIComponent(id)}?format=full`);
+      const message = parseGmailMessage(raw);
+      const collect = (part?: GmailMessagePart): GmailMessagePart[] => part
+        ? [...(part.filename && /\.(?:pdf|ics|txt)$/i.test(part.filename) ? [part] : []), ...(part.parts ?? []).flatMap(collect)]
+        : [];
+      message.attachmentParts = [];
+      for (const part of collect(raw.payload).slice(0, 3)) {
+        if ((part.body?.size ?? 0) > 750_000) { message.attachmentParts.push({ name: part.filename!, mime: part.mimeType ?? '', data: '' }); continue; }
+        const data = part.body?.data ?? (part.body?.attachmentId ? (
+          await this.gmailFetch<{ data: string }>(`/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(part.body.attachmentId)}`)
+        ).data : '');
+        message.attachmentParts.push({ name: part.filename!, mime: part.mimeType ?? '', data });
+      }
+      return message;
+    }));
   }
 
   private buildRawMime(input: { to: string; subject: string; body: string }): string {
