@@ -1,0 +1,2442 @@
+{
+  "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+  "steps": [
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:1",
+      "stage": "TRIGGER",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.819Z",
+      "detail": {
+        "trigger": "cli",
+        "mode": "sandbox",
+        "policy_version": 1
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 0,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "33f366f3937ba6a7bbc8f6698e04d00bc2a474023752937416c659a37e55f141"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:2",
+      "stage": "PLAN",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.829Z",
+      "detail": {
+        "sources": [
+          {
+            "msg_id": "flight-delay",
+            "kind": "flight_update",
+            "confidence": 0.94,
+            "evidence": "2026-12-07T16:45:00Z",
+            "evidence_hash": "3f0062bb0878a1ef4fc745167300107c18b3a10e8a8e646358e249ae448fa3cc",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "meeting-team",
+            "kind": "meeting_request",
+            "confidence": 0.94,
+            "evidence": "2026-12-08T10:00:00+01:00",
+            "evidence_hash": "b165f7a0167f7cb775c639428dc4b8201ec6afc1d370a8bee2385414df8c5c8c",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "meeting-external",
+            "kind": "meeting_request",
+            "confidence": 0.94,
+            "evidence": "2026-12-08T20:00:00Z",
+            "evidence_hash": "20b7e12316b2b7c78891cea35dbfda010613e12d4b386c3fe5688ec49debba08",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "bill-aws",
+            "kind": "bill_invoice",
+            "confidence": 0.94,
+            "evidence": "42.50 USD",
+            "evidence_hash": "16987f70f9672d9b3fb61a4dce2fc6274218fd228cd1a59d7f27f5b6f65e3654",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "bill-duplicate",
+            "kind": "bill_invoice",
+            "confidence": 0.94,
+            "evidence": "420.50 USD",
+            "evidence_hash": "1a6cf9264e7e85bbb0e19fff27a40e70cfceccdf78e64a3109053215a25e2beb",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "trial-renewal",
+            "kind": "subscription_notice",
+            "confidence": 0.94,
+            "evidence": "35.00 USD",
+            "evidence_hash": "d01db5e64043e4ac1cb0a73afc3bdeb17b10a5d0077499793226e31baaab9f43",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "deadline-a",
+            "kind": "commitment_deadline",
+            "confidence": 0.94,
+            "evidence": "2026-12-10",
+            "evidence_hash": "5aa6a647a19bb7850d14659588adcaed41ccab02772c51d4c6d1936c0117cd52",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "deadline-b",
+            "kind": "commitment_deadline",
+            "confidence": 0.94,
+            "evidence": "2026-12-11",
+            "evidence_hash": "8cf7e84e772af381bbdb0fbfa849bc4a11aa576b02ba494abe2a71c4cfafad12",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "order-confirmed",
+            "kind": "delivery_update",
+            "confidence": 0.94,
+            "evidence": "confirmed",
+            "evidence_hash": "9599915bd8cd62b6b42e6c37b5b681a76991a7c5be1fde9971278ce65b99d550",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "order-shipped",
+            "kind": "delivery_update",
+            "confidence": 0.94,
+            "evidence": "shipped",
+            "evidence_hash": "698310fadbfa5275b3cb493120be05841923760acc7d2dde8a8e26f38d125412",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "order-delivered",
+            "kind": "delivery_update",
+            "confidence": 0.94,
+            "evidence": "delivered",
+            "evidence_hash": "373e0712c83cffe15ff427b60e788b549f82496fe5fd5391f7921832b04c6b20",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "otp-one",
+            "kind": "otp_ephemeral",
+            "confidence": 0.94,
+            "evidence": "One-time verification code",
+            "evidence_hash": "79a3f0e497d731c922bd2757761943764da51784b6255e711f70b7827985c6f4",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "otp-two",
+            "kind": "otp_ephemeral",
+            "confidence": 0.94,
+            "evidence": "Login verification code",
+            "evidence_hash": "58911a56332c926ccfafa135ac50b06e2de5b62fba7e6c935725f40fb5c7bd4a",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "newsletter-design",
+            "kind": "newsletter_promo",
+            "confidence": 0.94,
+            "evidence": "Newsletter: Design weekly",
+            "evidence_hash": "59b302e81cee1c9328ed0e10d7cf58bdb8fe3d004f44cb7c076d0e28125b7592",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "newsletter-news",
+            "kind": "newsletter_promo",
+            "confidence": 0.94,
+            "evidence": "Newsletter: Industry weekly",
+            "evidence_hash": "723f9bc360d7cc4a2f86256ccdb8575e3d2faf96a09c2e80b59e5a592ad307f6",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "cold-outreach",
+            "kind": "cold_outreach",
+            "confidence": 0.94,
+            "evidence": "Cold outreach: Product demo",
+            "evidence_hash": "e276115b0da8b8f229db1aac695810a98ae42dfd2aa2b7684c104b205485f915",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "stale-nudge",
+            "kind": "commitment_deadline",
+            "confidence": 0.94,
+            "evidence": "2026-12-15",
+            "evidence_hash": "ed1c35150a3a580af5b22bc55b6b0fff3be9384f11af863e34474f300ff9a7ea",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "context-one",
+            "kind": "commitment_deadline",
+            "confidence": 0.94,
+            "evidence": "Notes for the rehearsal",
+            "evidence_hash": "ae128efbe3b22fd119f07defdae4429097e8253f4fb585e205c948b303c310c0",
+            "rule_ids": []
+          },
+          {
+            "msg_id": "context-two",
+            "kind": "commitment_deadline",
+            "confidence": 0.94,
+            "evidence": "Demo figures",
+            "evidence_hash": "669c060e55b771b96e24fe97f97b2db7df83a819261697e5d699ca30381409ca",
+            "rule_ids": []
+          }
+        ],
+        "actions": 28,
+        "conflicts": 2,
+        "model_review": "deterministic",
+        "blocked_and_quarantined": []
+      },
+      "prev_hash": "33f366f3937ba6a7bbc8f6698e04d00bc2a474023752937416c659a37e55f141",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "b6d527de3dba7ae1b483e89d65aa58afcd4792722b0359565f186486476c4d79"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:3",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.830Z",
+      "detail": {
+        "action": "calendar",
+        "target": "flight-clam42",
+        "playbook_id": "travel_delay_cascade",
+        "source_msg_id": "flight-delay",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "id": "flight-clam42",
+          "title": "Flight AC402",
+          "start": "2026-12-07T16:45:00.000Z",
+          "end": "2026-12-07T18:40:00.000Z",
+          "kind": "flight",
+          "guests": [],
+          "flexible": false,
+          "bookingRef": "CLAM42",
+          "domain": "airline.example"
+        }
+      },
+      "prev_hash": "b6d527de3dba7ae1b483e89d65aa58afcd4792722b0359565f186486476c4d79",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "0d95e93d14584aadee5c893615bc82c268b46fa7d236002cbe9cd6dede4f2bff"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:4",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.831Z",
+      "detail": {
+        "action_id": "2d86f6b88adbaccc43df62f61fa6856e13a0586cae83d3008588a85c5469ebc3",
+        "action": "calendar",
+        "target": "flight-clam42",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "flight-delay",
+        "before": {
+          "id": "flight-clam42",
+          "title": "Flight AC402",
+          "start": "2026-12-07T14:20:00Z",
+          "end": "2026-12-07T16:15:00Z",
+          "kind": "flight",
+          "guests": [],
+          "flexible": false,
+          "bookingRef": "CLAM42",
+          "domain": "airline.example"
+        },
+        "expected": {
+          "id": "flight-clam42",
+          "title": "Flight AC402",
+          "start": "2026-12-07T16:45:00.000Z",
+          "end": "2026-12-07T18:40:00.000Z",
+          "kind": "flight",
+          "guests": [],
+          "flexible": false,
+          "bookingRef": "CLAM42",
+          "domain": "airline.example"
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "0d95e93d14584aadee5c893615bc82c268b46fa7d236002cbe9cd6dede4f2bff",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 1,
+        "steps": 2,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "9ff007e94b67cbc6f9717eed88c9522559b8ae999875278a8ba3bdb5e71a967b"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:5",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.832Z",
+      "detail": {
+        "action_id": "2d86f6b88adbaccc43df62f61fa6856e13a0586cae83d3008588a85c5469ebc3",
+        "outcome": "VERIFIED",
+        "actual": {
+          "id": "flight-clam42",
+          "title": "Flight AC402",
+          "start": "2026-12-07T16:45:00.000Z",
+          "end": "2026-12-07T18:40:00.000Z",
+          "kind": "flight",
+          "guests": [],
+          "flexible": false,
+          "bookingRef": "CLAM42",
+          "domain": "airline.example"
+        }
+      },
+      "prev_hash": "9ff007e94b67cbc6f9717eed88c9522559b8ae999875278a8ba3bdb5e71a967b",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 1,
+        "steps": 4,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "bab709241b94206ea7a2a6f3a076da53795cd255a4f27f033a8228043355d4c7"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:6",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.832Z",
+      "detail": {
+        "action": "calendar",
+        "target": "focus-flexible",
+        "playbook_id": "travel_delay_cascade",
+        "source_msg_id": "flight-delay",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "id": "focus-flexible",
+          "title": "Solo focus block",
+          "start": "2026-12-07T16:00:00.000Z",
+          "end": "2026-12-07T16:30:00.000Z",
+          "kind": "focus",
+          "guests": [],
+          "flexible": true
+        }
+      },
+      "prev_hash": "bab709241b94206ea7a2a6f3a076da53795cd255a4f27f033a8228043355d4c7",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 1,
+        "steps": 4,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "149aa964d1fd3ae2187de4757210d3428fbf5ae19b446202f42b9a2d0ec258f0"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:7",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.833Z",
+      "detail": {
+        "action_id": "7c6323bbf47335062518492398f104af4f506694906a8b29e53fdc0a3fb158d2",
+        "action": "calendar",
+        "target": "focus-flexible",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "flight-delay",
+        "before": {
+          "id": "focus-flexible",
+          "title": "Solo focus block",
+          "start": "2026-12-07T16:30:00Z",
+          "end": "2026-12-07T17:00:00Z",
+          "kind": "focus",
+          "guests": [],
+          "flexible": true
+        },
+        "expected": {
+          "id": "focus-flexible",
+          "title": "Solo focus block",
+          "start": "2026-12-07T16:00:00.000Z",
+          "end": "2026-12-07T16:30:00.000Z",
+          "kind": "focus",
+          "guests": [],
+          "flexible": true
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "149aa964d1fd3ae2187de4757210d3428fbf5ae19b446202f42b9a2d0ec258f0",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 2,
+        "steps": 5,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "47b5e4a5d269ba709953b18249cd05a802ef8e01f8ef0afd043c6f65a5eb9f25"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:8",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.833Z",
+      "detail": {
+        "action_id": "7c6323bbf47335062518492398f104af4f506694906a8b29e53fdc0a3fb158d2",
+        "outcome": "VERIFIED",
+        "actual": {
+          "id": "focus-flexible",
+          "title": "Solo focus block",
+          "start": "2026-12-07T16:00:00.000Z",
+          "end": "2026-12-07T16:30:00.000Z",
+          "kind": "focus",
+          "guests": [],
+          "flexible": true
+        }
+      },
+      "prev_hash": "47b5e4a5d269ba709953b18249cd05a802ef8e01f8ef0afd043c6f65a5eb9f25",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 2,
+        "steps": 7,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "30bfc9b471fb20ce5bc3b0d86a032985b4e82765cbae0ec004e89e9558389249"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:9",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.833Z",
+      "detail": {
+        "action": "send",
+        "target": "9443f416603fe9605ce8a9bb",
+        "playbook_id": "travel_delay_cascade",
+        "source_msg_id": "flight-delay",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 1,
+        "planned": {
+          "subject": "Running late due to a travel change",
+          "text": "My travel schedule changed and may overlap our meeting. Could we confirm a new time?"
+        }
+      },
+      "prev_hash": "30bfc9b471fb20ce5bc3b0d86a032985b4e82765cbae0ec004e89e9558389249",
+      "budgets": {
+        "outbound": 0,
+        "calendar": 2,
+        "steps": 7,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "623a4c377741e616f94f99deadf9d9b2ea940d14df19504aa024b4c9ecfa4596"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:10",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.834Z",
+      "detail": {
+        "action_id": "255132c0852973ebb9ea6e6d2ebd8b0addbd2c9d0f223d89ac9887ca462fb62a",
+        "action": "send",
+        "target": "9443f416603fe9605ce8a9bb",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "source_msg_id": "flight-delay",
+        "before": null,
+        "expected": {
+          "recipient": "sam@team.example",
+          "subjectHash": "4ad5b06a03f46dd5b4841f4d3f309edf72a1abdfd8a7da02d4a9d1c0dd40883b",
+          "bodyHash": "ca57d642d40ce82895ed45d20da010b13b9c07578ae49627c12567f733908f78",
+          "disclosure": true,
+          "status": "SENT"
+        },
+        "rollback_handler": "manual_correction"
+      },
+      "prev_hash": "623a4c377741e616f94f99deadf9d9b2ea940d14df19504aa024b4c9ecfa4596",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 2,
+        "steps": 8,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "583c0e02d6f126748ea8a5bb9d6137f53e9231c2b6dbe1482e888e9cd00e83df"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:11",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.834Z",
+      "detail": {
+        "action_id": "255132c0852973ebb9ea6e6d2ebd8b0addbd2c9d0f223d89ac9887ca462fb62a",
+        "outcome": "VERIFIED",
+        "actual": {
+          "recipient": "sam@team.example",
+          "subjectHash": "4ad5b06a03f46dd5b4841f4d3f309edf72a1abdfd8a7da02d4a9d1c0dd40883b",
+          "bodyHash": "ca57d642d40ce82895ed45d20da010b13b9c07578ae49627c12567f733908f78",
+          "disclosure": true,
+          "status": "SENT"
+        }
+      },
+      "prev_hash": "583c0e02d6f126748ea8a5bb9d6137f53e9231c2b6dbe1482e888e9cd00e83df",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 2,
+        "steps": 10,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "60e7ee6cd3804923a9d82d52b4eab3e64aae6eb4be514fadba265f10f5df266a"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:12",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.835Z",
+      "detail": {
+        "action": "calendar",
+        "target": "vip-review",
+        "playbook_id": "travel_delay_cascade",
+        "source_msg_id": "flight-delay",
+        "rule_id": "EXTERNAL_CALENDAR_GUESTS",
+        "reason": "Changing an event with external attendees requires approval.",
+        "decision": "APPROVAL_REQUIRED",
+        "tier": 2,
+        "planned": {
+          "id": "vip-review",
+          "title": "Partner review",
+          "start": "2026-12-08T17:00:00.000Z",
+          "end": "2026-12-08T17:30:00.000Z",
+          "kind": "meeting",
+          "guests": [
+            "director@partner.example"
+          ],
+          "flexible": false
+        }
+      },
+      "prev_hash": "60e7ee6cd3804923a9d82d52b4eab3e64aae6eb4be514fadba265f10f5df266a",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 2,
+        "steps": 10,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "1c43145aa347ceb80b324b8ed34f91be336a87c7053f779192311e382d6ae291"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:13",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.835Z",
+      "detail": {
+        "action": "send",
+        "target": "f4701fcaaf620af9e283a5c3",
+        "playbook_id": "travel_delay_cascade",
+        "source_msg_id": "flight-delay",
+        "rule_id": "VIP_RECIPIENT",
+        "reason": "This recipient requires explicit review.",
+        "decision": "APPROVAL_REQUIRED",
+        "tier": 2,
+        "planned": {
+          "subject": "Running late due to a travel change",
+          "text": "My travel schedule changed and may overlap our meeting. Could we confirm a new time?"
+        }
+      },
+      "prev_hash": "1c43145aa347ceb80b324b8ed34f91be336a87c7053f779192311e382d6ae291",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 2,
+        "steps": 10,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "fa4920dced9efbfaff93ad75f3135438d9f4e8c20fb92398c219e53a1157570d"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:14",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.835Z",
+      "detail": {
+        "action": "calendar",
+        "target": "clam0507ecd75567dee26deecd66b",
+        "playbook_id": "autonomous_meeting_scheduler",
+        "source_msg_id": "meeting-team",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "id": "clam0507ecd75567dee26deecd66b",
+          "title": "Prep for Demo rehearsal",
+          "start": "2026-12-08T08:45:00.000Z",
+          "end": "2026-12-08T09:00:00.000Z",
+          "kind": "buffer",
+          "guests": [],
+          "flexible": false
+        }
+      },
+      "prev_hash": "fa4920dced9efbfaff93ad75f3135438d9f4e8c20fb92398c219e53a1157570d",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 2,
+        "steps": 10,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "6354d17146a4a832bc0826cd6c889e8715b9c94ae1c4081ada7f3004742acce5"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:15",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.835Z",
+      "detail": {
+        "action_id": "8dbee9ff527ac608310544f2cf2554091a28e1de1fc0e74e9d5cf34604bf0bf9",
+        "action": "calendar",
+        "target": "clam0507ecd75567dee26deecd66b",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "meeting-team",
+        "before": null,
+        "expected": {
+          "id": "clam0507ecd75567dee26deecd66b",
+          "title": "Prep for Demo rehearsal",
+          "start": "2026-12-08T08:45:00.000Z",
+          "end": "2026-12-08T09:00:00.000Z",
+          "kind": "buffer",
+          "guests": [],
+          "flexible": false
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "6354d17146a4a832bc0826cd6c889e8715b9c94ae1c4081ada7f3004742acce5",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 3,
+        "steps": 11,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "4ef51e7c45758e8d25676e5108c93563e33a3f7fbca46fc293af4c49ae9ec05b"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:16",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.836Z",
+      "detail": {
+        "action_id": "8dbee9ff527ac608310544f2cf2554091a28e1de1fc0e74e9d5cf34604bf0bf9",
+        "outcome": "VERIFIED",
+        "actual": {
+          "id": "clam0507ecd75567dee26deecd66b",
+          "title": "Prep for Demo rehearsal",
+          "start": "2026-12-08T08:45:00.000Z",
+          "end": "2026-12-08T09:00:00.000Z",
+          "kind": "buffer",
+          "guests": [],
+          "flexible": false
+        }
+      },
+      "prev_hash": "4ef51e7c45758e8d25676e5108c93563e33a3f7fbca46fc293af4c49ae9ec05b",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 3,
+        "steps": 13,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "83c0a634fa26846842595d0114a5daf449cda6bc01c4c025cedabeec8633fcb5"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:17",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.836Z",
+      "detail": {
+        "action": "calendar",
+        "target": "clam0507ecd75567dee26deecd66",
+        "playbook_id": "autonomous_meeting_scheduler",
+        "source_msg_id": "meeting-team",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 1,
+        "planned": {
+          "id": "clam0507ecd75567dee26deecd66",
+          "title": "Demo rehearsal",
+          "start": "2026-12-08T09:00:00.000Z",
+          "end": "2026-12-08T09:30:00.000Z",
+          "kind": "meeting",
+          "guests": [
+            "sam@team.example"
+          ],
+          "flexible": false,
+          "dossier": [
+            "Thread figures-notes · Commitment: Share the overview · File: overview.pdf",
+            "Thread figures-confirmation · Commitment: Confirm figures · File: figures.csv"
+          ]
+        }
+      },
+      "prev_hash": "83c0a634fa26846842595d0114a5daf449cda6bc01c4c025cedabeec8633fcb5",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 3,
+        "steps": 13,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "083fbd546f765dd974012e6ae2b2e7f610e8fba3c09e7b681a871086543f69fe"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:18",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.836Z",
+      "detail": {
+        "action_id": "b58dc772ced0f1a707d9f88782f9efd4b803210f4a523b5667920fa6e0018d1b",
+        "action": "calendar",
+        "target": "clam0507ecd75567dee26deecd66",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "source_msg_id": "meeting-team",
+        "before": null,
+        "expected": {
+          "id": "clam0507ecd75567dee26deecd66",
+          "title": "Demo rehearsal",
+          "start": "2026-12-08T09:00:00.000Z",
+          "end": "2026-12-08T09:30:00.000Z",
+          "kind": "meeting",
+          "guests": [
+            "sam@team.example"
+          ],
+          "flexible": false,
+          "dossier": [
+            "Thread figures-notes · Commitment: Share the overview · File: overview.pdf",
+            "Thread figures-confirmation · Commitment: Confirm figures · File: figures.csv"
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "083fbd546f765dd974012e6ae2b2e7f610e8fba3c09e7b681a871086543f69fe",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 4,
+        "steps": 14,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "7e579bab5d596e10653d74c60bb47af266c8875ba8f35c229488541902f11e0f"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:19",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.836Z",
+      "detail": {
+        "action_id": "b58dc772ced0f1a707d9f88782f9efd4b803210f4a523b5667920fa6e0018d1b",
+        "outcome": "VERIFIED",
+        "actual": {
+          "id": "clam0507ecd75567dee26deecd66",
+          "title": "Demo rehearsal",
+          "start": "2026-12-08T09:00:00.000Z",
+          "end": "2026-12-08T09:30:00.000Z",
+          "kind": "meeting",
+          "guests": [
+            "sam@team.example"
+          ],
+          "flexible": false,
+          "dossier": [
+            "Thread figures-notes · Commitment: Share the overview · File: overview.pdf",
+            "Thread figures-confirmation · Commitment: Confirm figures · File: figures.csv"
+          ]
+        }
+      },
+      "prev_hash": "7e579bab5d596e10653d74c60bb47af266c8875ba8f35c229488541902f11e0f",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 4,
+        "steps": 16,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "98fcbb703808f1c24260ac709d14f691c4eebdaf1a002b0366264ce0fd98454d"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:20",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.837Z",
+      "detail": {
+        "action": "send",
+        "target": "de3f557d4f19d2c16bc91da0",
+        "playbook_id": "autonomous_meeting_scheduler",
+        "source_msg_id": "meeting-team",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 1,
+        "planned": {
+          "subject": "Meeting time confirmed",
+          "text": "I reserved 2026-12-08T09:00:00.000Z for 30 minutes."
+        }
+      },
+      "prev_hash": "98fcbb703808f1c24260ac709d14f691c4eebdaf1a002b0366264ce0fd98454d",
+      "budgets": {
+        "outbound": 1,
+        "calendar": 4,
+        "steps": 16,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "4a5e0ff104cae2022ddae3487e560334d0d460e93dc05d34f90a4d369f95da69"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:21",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.837Z",
+      "detail": {
+        "action_id": "8ddf16f4b87bdab7b333096f47b443915ca9f19a73c8db64ccb2d9c3d403f819",
+        "action": "send",
+        "target": "de3f557d4f19d2c16bc91da0",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "source_msg_id": "meeting-team",
+        "before": null,
+        "expected": {
+          "recipient": "sam@team.example",
+          "subjectHash": "8e7f2c244a031d1400f4a73967dc16b1fae54b4fa0afbc004e6aa829765dcd20",
+          "bodyHash": "00fde61b9417458441bb2cf123eb87a75f632c5eea9793725619f9dd91fc8297",
+          "disclosure": true,
+          "status": "SENT"
+        },
+        "rollback_handler": "manual_correction"
+      },
+      "prev_hash": "4a5e0ff104cae2022ddae3487e560334d0d460e93dc05d34f90a4d369f95da69",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 17,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "493735e4e43390cefa7564ad45a0006dd8a37389bc244ad4c51d97f94de353fe"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:22",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.837Z",
+      "detail": {
+        "action_id": "8ddf16f4b87bdab7b333096f47b443915ca9f19a73c8db64ccb2d9c3d403f819",
+        "outcome": "VERIFIED",
+        "actual": {
+          "recipient": "sam@team.example",
+          "subjectHash": "8e7f2c244a031d1400f4a73967dc16b1fae54b4fa0afbc004e6aa829765dcd20",
+          "bodyHash": "00fde61b9417458441bb2cf123eb87a75f632c5eea9793725619f9dd91fc8297",
+          "disclosure": true,
+          "status": "SENT"
+        }
+      },
+      "prev_hash": "493735e4e43390cefa7564ad45a0006dd8a37389bc244ad4c51d97f94de353fe",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 19,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "7ad541cc6a0a81998437a6c194e39ac899ff4d20bc153fcf50a20933927b0124"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:23",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.838Z",
+      "detail": {
+        "action": "calendar",
+        "target": "clam5cde62dee9fa2e5dfc5047f9",
+        "playbook_id": "autonomous_meeting_scheduler",
+        "source_msg_id": "meeting-external",
+        "rule_id": "OFF_HOURS",
+        "reason": "This action requires operator review.",
+        "decision": "APPROVAL_REQUIRED",
+        "tier": 2,
+        "planned": {
+          "id": "clam5cde62dee9fa2e5dfc5047f9",
+          "title": "Intro call",
+          "start": "2026-12-08T20:00:00.000Z",
+          "end": "2026-12-08T21:30:00.000Z",
+          "kind": "meeting",
+          "guests": [
+            "new@outside.example"
+          ],
+          "flexible": false
+        }
+      },
+      "prev_hash": "7ad541cc6a0a81998437a6c194e39ac899ff4d20bc153fcf50a20933927b0124",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 19,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "af9b0bba15427b396d2adb88da020e22c4dc2272a5142b0200f7f9d56a6c3cf8"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:24",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.838Z",
+      "detail": {
+        "action": "bill",
+        "target": "aws:aws-1207",
+        "playbook_id": "bills_trials_spoof_guard",
+        "source_msg_id": "bill-aws",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "vendor": "AWS",
+          "invoice": "AWS-1207",
+          "amount": 42.5,
+          "currency": "USD",
+          "due": "2026-12-14",
+          "domain": "aws.example",
+          "accountFingerprint": "4d598a24c9b2aa35e8a9a1e22e7f8f4b2c7dd9cd46b72965142bbaaad2b25ccb",
+          "sourceId": "bill-aws",
+          "priceHike": false,
+          "previousAmount": null,
+          "type": "invoice"
+        }
+      },
+      "prev_hash": "af9b0bba15427b396d2adb88da020e22c4dc2272a5142b0200f7f9d56a6c3cf8",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 19,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "531d2f215e7f2ad6bec4ea29bd43f60a9279897b7f68a14bafffd2fdcd9099bc"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:25",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.838Z",
+      "detail": {
+        "action_id": "606e1fb057dcf1d7eee1a4d7041a1669ae8a4bdbcefd0f785ab00211fade1476",
+        "action": "bill",
+        "target": "aws:aws-1207",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "bill-aws",
+        "before": null,
+        "expected": {
+          "vendor": "AWS",
+          "invoice": "AWS-1207",
+          "amount": 42.5,
+          "currency": "USD",
+          "due": "2026-12-14",
+          "domain": "aws.example",
+          "accountFingerprint": "4d598a24c9b2aa35e8a9a1e22e7f8f4b2c7dd9cd46b72965142bbaaad2b25ccb",
+          "sourceId": "bill-aws",
+          "priceHike": false,
+          "previousAmount": null,
+          "type": "invoice"
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "531d2f215e7f2ad6bec4ea29bd43f60a9279897b7f68a14bafffd2fdcd9099bc",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 20,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "df87776c575d26898bd3e1b5e8b9acb23c5d7d53e54e8c1816b10603d05162e3"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:26",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.839Z",
+      "detail": {
+        "action_id": "606e1fb057dcf1d7eee1a4d7041a1669ae8a4bdbcefd0f785ab00211fade1476",
+        "outcome": "VERIFIED",
+        "actual": {
+          "vendor": "AWS",
+          "invoice": "AWS-1207",
+          "amount": 42.5,
+          "currency": "USD",
+          "due": "2026-12-14",
+          "domain": "aws.example",
+          "accountFingerprint": "4d598a24c9b2aa35e8a9a1e22e7f8f4b2c7dd9cd46b72965142bbaaad2b25ccb",
+          "sourceId": "bill-aws",
+          "priceHike": false,
+          "previousAmount": null,
+          "type": "invoice"
+        }
+      },
+      "prev_hash": "df87776c575d26898bd3e1b5e8b9acb23c5d7d53e54e8c1816b10603d05162e3",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 22,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "0f4012c40232f846c156f5b24a3d65889efc41de548c3972047578940953323e"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:27",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.839Z",
+      "detail": {
+        "action": "draft",
+        "target": "451ea0348cd9d28559b8e49c",
+        "playbook_id": "bills_trials_spoof_guard",
+        "source_msg_id": "bill-duplicate",
+        "rule_id": "DUPLICATE_OR_SPOOFED_INVOICE",
+        "reason": "This action requires operator review.",
+        "decision": "APPROVAL_REQUIRED",
+        "tier": 2,
+        "planned": {
+          "vendor": "AWS",
+          "invoice": "AWS-1207",
+          "previousAmount": 42.5,
+          "amount": 420.5,
+          "changedAccount": true,
+          "changedDomain": false,
+          "subject": "Please verify invoice AWS-1207",
+          "text": "Could you confirm the correct invoice amount and billing information through our usual channel?"
+        }
+      },
+      "prev_hash": "0f4012c40232f846c156f5b24a3d65889efc41de548c3972047578940953323e",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 22,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "8d47554776d9aa30e2db4b51948197354121bc5efc7d2aaf174de5c37ab4099a"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:28",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.839Z",
+      "detail": {
+        "action": "bill",
+        "target": "studio:studio-2026",
+        "playbook_id": "bills_trials_spoof_guard",
+        "source_msg_id": "trial-renewal",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "vendor": "Studio",
+          "invoice": "STUDIO-2026",
+          "amount": 35,
+          "currency": "USD",
+          "due": "2026-12-09",
+          "domain": "studio.example",
+          "sourceId": "trial-renewal",
+          "priceHike": true,
+          "previousAmount": 25,
+          "type": "subscription"
+        }
+      },
+      "prev_hash": "8d47554776d9aa30e2db4b51948197354121bc5efc7d2aaf174de5c37ab4099a",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 22,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "4fc5c04dc51c9554f52633fdedf4b74366eaac4baca68b50de42c7d089e04331"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:29",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.839Z",
+      "detail": {
+        "action_id": "d8f3f1ba0594e86280949b2331cdeb6d17bd0fb0ac9b5154cb156acc0a160cbf",
+        "action": "bill",
+        "target": "studio:studio-2026",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "trial-renewal",
+        "before": null,
+        "expected": {
+          "vendor": "Studio",
+          "invoice": "STUDIO-2026",
+          "amount": 35,
+          "currency": "USD",
+          "due": "2026-12-09",
+          "domain": "studio.example",
+          "sourceId": "trial-renewal",
+          "priceHike": true,
+          "previousAmount": 25,
+          "type": "subscription"
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "4fc5c04dc51c9554f52633fdedf4b74366eaac4baca68b50de42c7d089e04331",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 23,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "31c986db62f216632defeb6e316f8f678f7bc32ce7362949e2054bd07e647b6e"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:30",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.840Z",
+      "detail": {
+        "action_id": "d8f3f1ba0594e86280949b2331cdeb6d17bd0fb0ac9b5154cb156acc0a160cbf",
+        "outcome": "VERIFIED",
+        "actual": {
+          "vendor": "Studio",
+          "invoice": "STUDIO-2026",
+          "amount": 35,
+          "currency": "USD",
+          "due": "2026-12-09",
+          "domain": "studio.example",
+          "sourceId": "trial-renewal",
+          "priceHike": true,
+          "previousAmount": 25,
+          "type": "subscription"
+        }
+      },
+      "prev_hash": "31c986db62f216632defeb6e316f8f678f7bc32ce7362949e2054bd07e647b6e",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 25,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "5fb2c7fd2e6b2d9a8142cb90f28c48ef1c2ac67817d834ad3267e18ae865a137"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:31",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.840Z",
+      "detail": {
+        "action": "calendar",
+        "target": "clamfe529ffba7073623f4035300",
+        "playbook_id": "bills_trials_spoof_guard",
+        "source_msg_id": "trial-renewal",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "id": "clamfe529ffba7073623f4035300",
+          "title": "Renewal due · Studio",
+          "start": "2026-12-07T09:00:00.000Z",
+          "end": "2026-12-07T09:15:00.000Z",
+          "kind": "reminder",
+          "guests": [],
+          "flexible": true
+        }
+      },
+      "prev_hash": "5fb2c7fd2e6b2d9a8142cb90f28c48ef1c2ac67817d834ad3267e18ae865a137",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 4,
+        "steps": 25,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "26531749c6c509d3865cb8a6091bd8ea7fc41c52c323055a1639183518aeeecf"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:32",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.840Z",
+      "detail": {
+        "action_id": "db854bd2e069f962d52e56eede4f1915f7ed9412005caf06db2f6cbddf9d2c53",
+        "action": "calendar",
+        "target": "clamfe529ffba7073623f4035300",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "trial-renewal",
+        "before": null,
+        "expected": {
+          "id": "clamfe529ffba7073623f4035300",
+          "title": "Renewal due · Studio",
+          "start": "2026-12-07T09:00:00.000Z",
+          "end": "2026-12-07T09:15:00.000Z",
+          "kind": "reminder",
+          "guests": [],
+          "flexible": true
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "26531749c6c509d3865cb8a6091bd8ea7fc41c52c323055a1639183518aeeecf",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 26,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "30c37ecfce609c6afecb734a93defbf2257ba6c842915a8e5a1c32b2aa950ba2"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:33",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.840Z",
+      "detail": {
+        "action_id": "db854bd2e069f962d52e56eede4f1915f7ed9412005caf06db2f6cbddf9d2c53",
+        "outcome": "VERIFIED",
+        "actual": {
+          "id": "clamfe529ffba7073623f4035300",
+          "title": "Renewal due · Studio",
+          "start": "2026-12-07T09:00:00.000Z",
+          "end": "2026-12-07T09:15:00.000Z",
+          "kind": "reminder",
+          "guests": [],
+          "flexible": true
+        }
+      },
+      "prev_hash": "30c37ecfce609c6afecb734a93defbf2257ba6c842915a8e5a1c32b2aa950ba2",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 28,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "ca52446fc5c9460598e38ee6dae18891aba1a67981b3ee720680cbd9daa486be"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:34",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.841Z",
+      "detail": {
+        "action": "draft",
+        "target": "e979ca8bf0841ebf521090c6",
+        "playbook_id": "bills_trials_spoof_guard",
+        "source_msg_id": "trial-renewal",
+        "rule_id": "SUBSCRIPTION_PRICE_INCREASE",
+        "reason": "This action requires operator review.",
+        "decision": "APPROVAL_REQUIRED",
+        "tier": 2,
+        "planned": {
+          "vendor": "Studio",
+          "invoice": "STUDIO-2026",
+          "from": 25,
+          "to": 35,
+          "subject": "Confirm subscription renewal options",
+          "text": "Could you confirm the new renewal price and how to cancel before the next charge?"
+        }
+      },
+      "prev_hash": "ca52446fc5c9460598e38ee6dae18891aba1a67981b3ee720680cbd9daa486be",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 28,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "c0a44aeefa4c10e80d0f243b9260ea0887ef5addcec17d5ff700b01528daf7fc"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:35",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.841Z",
+      "detail": {
+        "action": "review",
+        "target": "launch-handoff",
+        "playbook_id": "commitment_radar_and_chaser",
+        "source_msg_id": "deadline-a",
+        "rule_id": "DEADLINE_CONFLICT",
+        "reason": "This action requires operator review.",
+        "decision": "APPROVAL_REQUIRED",
+        "tier": 2,
+        "planned": {
+          "project": "Launch handoff",
+          "deadlines": [
+            "2026-12-10",
+            "2026-12-11"
+          ]
+        }
+      },
+      "prev_hash": "c0a44aeefa4c10e80d0f243b9260ea0887ef5addcec17d5ff700b01528daf7fc",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 28,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "3dbef99fe7946d05fb17a75c1dea460e1062d7560328bb5534fc9f997bbf1dff"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:36",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.841Z",
+      "detail": {
+        "action": "commitment",
+        "target": "launch-notes",
+        "playbook_id": "commitment_radar_and_chaser",
+        "source_msg_id": "stale-nudge",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "project": "Launch notes",
+          "deadline": "2026-12-15",
+          "waitingOn": "priya@team.example",
+          "replied": false
+        }
+      },
+      "prev_hash": "3dbef99fe7946d05fb17a75c1dea460e1062d7560328bb5534fc9f997bbf1dff",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 28,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "91c5ee486f265bfa0d212c1f5acd6a8d0b0e3ea0be2c3a1a80ba096c5bef47c9"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:37",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.841Z",
+      "detail": {
+        "action_id": "355c729ea552d890414fa5ded77b09740c73cb7cf2d46be813d6fb08f317afa9",
+        "action": "commitment",
+        "target": "launch-notes",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "stale-nudge",
+        "before": null,
+        "expected": {
+          "project": "Launch notes",
+          "deadline": "2026-12-15",
+          "waitingOn": "priya@team.example",
+          "replied": false
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "91c5ee486f265bfa0d212c1f5acd6a8d0b0e3ea0be2c3a1a80ba096c5bef47c9",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 29,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "f5bbfb034ecff26007cbf570f02375e3e3cfcf22772c8d79741042e7d34c6e0f"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:38",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.841Z",
+      "detail": {
+        "action_id": "355c729ea552d890414fa5ded77b09740c73cb7cf2d46be813d6fb08f317afa9",
+        "outcome": "VERIFIED",
+        "actual": {
+          "project": "Launch notes",
+          "deadline": "2026-12-15",
+          "waitingOn": "priya@team.example",
+          "replied": false
+        }
+      },
+      "prev_hash": "f5bbfb034ecff26007cbf570f02375e3e3cfcf22772c8d79741042e7d34c6e0f",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 31,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "a6dcc4987a34a93c259715c97398c6ffc0b7172198c388398a7cd91ff4073adc"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:39",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.842Z",
+      "detail": {
+        "action": "send",
+        "target": "fcdacf9b38db8af3239afdbc",
+        "playbook_id": "commitment_radar_and_chaser",
+        "source_msg_id": "stale-nudge",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 1,
+        "planned": {
+          "subject": "Following up",
+          "text": "A quick follow-up on the item we discussed. Could you share an update when you have a chance?"
+        }
+      },
+      "prev_hash": "a6dcc4987a34a93c259715c97398c6ffc0b7172198c388398a7cd91ff4073adc",
+      "budgets": {
+        "outbound": 2,
+        "calendar": 5,
+        "steps": 31,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "715a371a0c0bc8f6016e5e8c0d0ccded964c65d50104c6abc585a70e01425c52"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:40",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.842Z",
+      "detail": {
+        "action_id": "eaaac6afaaa9fac71ceaff74b62b81caf6a07848adfb99334b021866fed73c82",
+        "action": "send",
+        "target": "fcdacf9b38db8af3239afdbc",
+        "rule_id": "ALLOWLISTED_BOUNDED_ACTION",
+        "source_msg_id": "stale-nudge",
+        "before": null,
+        "expected": {
+          "recipient": "priya@team.example",
+          "subjectHash": "ca1e208929a129c39eccf09cb47ac9a461f70523342dc64bf6c537fe33cc11b6",
+          "bodyHash": "7a76a355caaf82807525c71df64ddf6d8afc7041861beac57a0205391c1a8766",
+          "disclosure": true,
+          "status": "SENT"
+        },
+        "rollback_handler": "manual_correction"
+      },
+      "prev_hash": "715a371a0c0bc8f6016e5e8c0d0ccded964c65d50104c6abc585a70e01425c52",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 5,
+        "steps": 32,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "3b9b3fd1636e9de845c938b9e8972e6245789ca27677ac8bd64638cb293c21a9"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:41",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.842Z",
+      "detail": {
+        "action_id": "eaaac6afaaa9fac71ceaff74b62b81caf6a07848adfb99334b021866fed73c82",
+        "outcome": "VERIFIED",
+        "actual": {
+          "recipient": "priya@team.example",
+          "subjectHash": "ca1e208929a129c39eccf09cb47ac9a461f70523342dc64bf6c537fe33cc11b6",
+          "bodyHash": "7a76a355caaf82807525c71df64ddf6d8afc7041861beac57a0205391c1a8766",
+          "disclosure": true,
+          "status": "SENT"
+        }
+      },
+      "prev_hash": "3b9b3fd1636e9de845c938b9e8972e6245789ca27677ac8bd64638cb293c21a9",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 5,
+        "steps": 34,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "c5564cb0b40ebd621704dc147098cbd96926574b243dddebea7c4246a880de46"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:42",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.842Z",
+      "detail": {
+        "action": "delivery",
+        "target": "ORDER-500",
+        "playbook_id": "order_delivery_tracker",
+        "source_msg_id": "order-delivered",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "order": "ORDER-500",
+          "status": "delivered",
+          "returnBy": "2026-12-21"
+        }
+      },
+      "prev_hash": "c5564cb0b40ebd621704dc147098cbd96926574b243dddebea7c4246a880de46",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 5,
+        "steps": 34,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "0c5267853248e83552471b03d4ab9076ae344a92ec345ea2f108b8a8f5d953ee"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:43",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.842Z",
+      "detail": {
+        "action_id": "7b161b7be9d8b1e5b34a891456d22027665893b5d8a03775c28c363b3853c473",
+        "action": "delivery",
+        "target": "ORDER-500",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "order-delivered",
+        "before": null,
+        "expected": {
+          "order": "ORDER-500",
+          "status": "delivered",
+          "returnBy": "2026-12-21"
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "0c5267853248e83552471b03d4ab9076ae344a92ec345ea2f108b8a8f5d953ee",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 5,
+        "steps": 35,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "fc9971affb179ed9ed7b4e15524bf7bf39292157121013af13935f1d2d121058"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:44",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.843Z",
+      "detail": {
+        "action_id": "7b161b7be9d8b1e5b34a891456d22027665893b5d8a03775c28c363b3853c473",
+        "outcome": "VERIFIED",
+        "actual": {
+          "order": "ORDER-500",
+          "status": "delivered",
+          "returnBy": "2026-12-21"
+        }
+      },
+      "prev_hash": "fc9971affb179ed9ed7b4e15524bf7bf39292157121013af13935f1d2d121058",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 5,
+        "steps": 37,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "7edd0c6598194f394ddfa983fdef6fb3381ac2424c3d0b2a5b03bb02c5e46169"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:45",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.843Z",
+      "detail": {
+        "action": "calendar",
+        "target": "clamddd4f6a61f67d2a23af7076d",
+        "playbook_id": "order_delivery_tracker",
+        "source_msg_id": "order-delivered",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "id": "clamddd4f6a61f67d2a23af7076d",
+          "title": "Return deadline · ORDER-500",
+          "start": "2026-12-21T09:00:00.000Z",
+          "end": "2026-12-21T09:15:00.000Z",
+          "kind": "reminder",
+          "guests": [],
+          "flexible": true
+        }
+      },
+      "prev_hash": "7edd0c6598194f394ddfa983fdef6fb3381ac2424c3d0b2a5b03bb02c5e46169",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 5,
+        "steps": 37,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "b5793870ece3a2bd9a137e488550ed12235a2d33f5adaf07abab66931e29228c"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:46",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.843Z",
+      "detail": {
+        "action_id": "453eddb0b4fba5577743aafbad78b7972385fdd4ec12972c8cf962f922190ee1",
+        "action": "calendar",
+        "target": "clamddd4f6a61f67d2a23af7076d",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "order-delivered",
+        "before": null,
+        "expected": {
+          "id": "clamddd4f6a61f67d2a23af7076d",
+          "title": "Return deadline · ORDER-500",
+          "start": "2026-12-21T09:00:00.000Z",
+          "end": "2026-12-21T09:15:00.000Z",
+          "kind": "reminder",
+          "guests": [],
+          "flexible": true
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "b5793870ece3a2bd9a137e488550ed12235a2d33f5adaf07abab66931e29228c",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 38,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "423afdbb795149b5d8b2d55d8bd43a4e2d4b2ce20b15c3a8f79e5805c90c5128"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:47",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.844Z",
+      "detail": {
+        "action_id": "453eddb0b4fba5577743aafbad78b7972385fdd4ec12972c8cf962f922190ee1",
+        "outcome": "VERIFIED",
+        "actual": {
+          "id": "clamddd4f6a61f67d2a23af7076d",
+          "title": "Return deadline · ORDER-500",
+          "start": "2026-12-21T09:00:00.000Z",
+          "end": "2026-12-21T09:15:00.000Z",
+          "kind": "reminder",
+          "guests": [],
+          "flexible": true
+        }
+      },
+      "prev_hash": "423afdbb795149b5d8b2d55d8bd43a4e2d4b2ce20b15c3a8f79e5805c90c5128",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 40,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "d2ea6b707d8d05909829646bc05ad34f085aae09b1f32b0c975b2a1307aaa64f"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:48",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.844Z",
+      "detail": {
+        "action": "mail",
+        "target": "order-shipped",
+        "playbook_id": "order_delivery_tracker",
+        "source_msg_id": "order-shipped",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "labels": []
+        }
+      },
+      "prev_hash": "d2ea6b707d8d05909829646bc05ad34f085aae09b1f32b0c975b2a1307aaa64f",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 40,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "4bdccf1f3c7e83e2fda84201503f9776bc033fc158be04f4ff19cefcb77b1737"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:49",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.845Z",
+      "detail": {
+        "action_id": "bab3581c24b57d68432754b05a244f6dd3d2a969d47134cc302b535b5d53296e",
+        "action": "mail",
+        "target": "order-shipped",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "order-shipped",
+        "before": {
+          "labels": [
+            "INBOX"
+          ]
+        },
+        "expected": {
+          "labels": []
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "4bdccf1f3c7e83e2fda84201503f9776bc033fc158be04f4ff19cefcb77b1737",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 41,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "0e7bf033799d7f20c8ddd11bd1b9846376ff7e9317cc095c8540fe9b7e115a6f"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:50",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.845Z",
+      "detail": {
+        "action_id": "bab3581c24b57d68432754b05a244f6dd3d2a969d47134cc302b535b5d53296e",
+        "outcome": "VERIFIED",
+        "actual": {
+          "labels": []
+        }
+      },
+      "prev_hash": "0e7bf033799d7f20c8ddd11bd1b9846376ff7e9317cc095c8540fe9b7e115a6f",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 43,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "4bf78a54c990ab33a396067a38ed526f4358979df6eb216c09d071f60ea4fa93"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:51",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.845Z",
+      "detail": {
+        "action": "mail",
+        "target": "order-confirmed",
+        "playbook_id": "order_delivery_tracker",
+        "source_msg_id": "order-confirmed",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "labels": []
+        }
+      },
+      "prev_hash": "4bf78a54c990ab33a396067a38ed526f4358979df6eb216c09d071f60ea4fa93",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 43,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "e0d3092bb772ead8a3ef39f673e15d962822c450a5c1512aee393afcf71b2b6b"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:52",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.845Z",
+      "detail": {
+        "action_id": "144639f43bc498c98bfe372e98cb65955a6c59b912686c9456d91d9b6a08c9c3",
+        "action": "mail",
+        "target": "order-confirmed",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "order-confirmed",
+        "before": {
+          "labels": [
+            "INBOX"
+          ]
+        },
+        "expected": {
+          "labels": []
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "e0d3092bb772ead8a3ef39f673e15d962822c450a5c1512aee393afcf71b2b6b",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 44,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "f1305c4bde1c7ddb7cc4de68d0805b96346aac13e7d48dcf491a353475b3976b"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:53",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.846Z",
+      "detail": {
+        "action_id": "144639f43bc498c98bfe372e98cb65955a6c59b912686c9456d91d9b6a08c9c3",
+        "outcome": "VERIFIED",
+        "actual": {
+          "labels": []
+        }
+      },
+      "prev_hash": "f1305c4bde1c7ddb7cc4de68d0805b96346aac13e7d48dcf491a353475b3976b",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 46,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "211697f2479d6c799b1fbd9d470b33b55540afb56a79c1f59950ddf70757526e"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:54",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.846Z",
+      "detail": {
+        "action": "mail",
+        "target": "otp-one",
+        "playbook_id": "ephemeral_otp_expiry",
+        "source_msg_id": "otp-one",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "labels": [
+            "CLAM_EXPIRED_OTP"
+          ]
+        }
+      },
+      "prev_hash": "211697f2479d6c799b1fbd9d470b33b55540afb56a79c1f59950ddf70757526e",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 46,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "e2d93be573a41d74f28e9fdba5b9b8b88d9188b7db990e474354b3a9cd87c338"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:55",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.846Z",
+      "detail": {
+        "action_id": "08622c7815731733e2015d7801b784689659f6d1309553c35f3158feed816908",
+        "action": "mail",
+        "target": "otp-one",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "otp-one",
+        "before": {
+          "labels": [
+            "INBOX"
+          ]
+        },
+        "expected": {
+          "labels": [
+            "CLAM_EXPIRED_OTP"
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "e2d93be573a41d74f28e9fdba5b9b8b88d9188b7db990e474354b3a9cd87c338",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 47,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "0716f565c1d3e0da8436c4303fd6e1b85fe828ada313493a345371aeb39a29ca"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:56",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.846Z",
+      "detail": {
+        "action_id": "08622c7815731733e2015d7801b784689659f6d1309553c35f3158feed816908",
+        "outcome": "VERIFIED",
+        "actual": {
+          "labels": [
+            "CLAM_EXPIRED_OTP"
+          ]
+        }
+      },
+      "prev_hash": "0716f565c1d3e0da8436c4303fd6e1b85fe828ada313493a345371aeb39a29ca",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 49,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "640007bcc9075c268ed2a7c47a35d7b1b401435f797a5a4155bf2d385b1124a6"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:57",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.847Z",
+      "detail": {
+        "action": "mail",
+        "target": "otp-two",
+        "playbook_id": "ephemeral_otp_expiry",
+        "source_msg_id": "otp-two",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "labels": [
+            "CLAM_EXPIRED_OTP"
+          ]
+        }
+      },
+      "prev_hash": "640007bcc9075c268ed2a7c47a35d7b1b401435f797a5a4155bf2d385b1124a6",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 49,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "f2feca3eba78c60e169c65f57d82f254ec0254f1c0e02d1e95f89f6d2166156d"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:58",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.847Z",
+      "detail": {
+        "action_id": "fa3a74a30a9c2d9fe57eb23cb73f1fe8e3c983c89c21176998d9b9e27a6769bb",
+        "action": "mail",
+        "target": "otp-two",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "otp-two",
+        "before": {
+          "labels": [
+            "INBOX"
+          ]
+        },
+        "expected": {
+          "labels": [
+            "CLAM_EXPIRED_OTP"
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "f2feca3eba78c60e169c65f57d82f254ec0254f1c0e02d1e95f89f6d2166156d",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 50,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "b1d6fec73d9598bc47f250835781dfec62ff366426a4380231f3ebeb4b730efd"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:59",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.847Z",
+      "detail": {
+        "action_id": "fa3a74a30a9c2d9fe57eb23cb73f1fe8e3c983c89c21176998d9b9e27a6769bb",
+        "outcome": "VERIFIED",
+        "actual": {
+          "labels": [
+            "CLAM_EXPIRED_OTP"
+          ]
+        }
+      },
+      "prev_hash": "b1d6fec73d9598bc47f250835781dfec62ff366426a4380231f3ebeb4b730efd",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 52,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "d2378874dae763f1536819dfac0b59d4fb0452bd6ae3eb1d9d5544dbd89cc147"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:60",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.847Z",
+      "detail": {
+        "action": "newsletter",
+        "target": "newsletter-design",
+        "playbook_id": "newsletter_outreach_rollup",
+        "source_msg_id": "newsletter-design",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "title": "Newsletter: Design weekly",
+          "sender": "digest@design.example"
+        }
+      },
+      "prev_hash": "d2378874dae763f1536819dfac0b59d4fb0452bd6ae3eb1d9d5544dbd89cc147",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 52,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "606af815795fa4f356cdd0e9704085ed4ddf0cc59175e2bee0289f8fae35bc19"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:61",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.847Z",
+      "detail": {
+        "action_id": "f824ae8039dcc816d52bb968549b19d6750a8177d6f9f32d36e46b3b9b7dba4c",
+        "action": "newsletter",
+        "target": "newsletter-design",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "newsletter-design",
+        "before": null,
+        "expected": {
+          "title": "Newsletter: Design weekly",
+          "sender": "digest@design.example"
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "606af815795fa4f356cdd0e9704085ed4ddf0cc59175e2bee0289f8fae35bc19",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 53,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "3d26442dcb0ce9485d07ea2ed3ea479b70389e4cf68535aacef4f69e5a68a30f"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:62",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.848Z",
+      "detail": {
+        "action_id": "f824ae8039dcc816d52bb968549b19d6750a8177d6f9f32d36e46b3b9b7dba4c",
+        "outcome": "VERIFIED",
+        "actual": {
+          "title": "Newsletter: Design weekly",
+          "sender": "digest@design.example"
+        }
+      },
+      "prev_hash": "3d26442dcb0ce9485d07ea2ed3ea479b70389e4cf68535aacef4f69e5a68a30f",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 55,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "94eb61d1e9842d408cf069239624426e5ddfb9f1253809b34f2d1939d3ea3b5d"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:63",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.848Z",
+      "detail": {
+        "action": "mail",
+        "target": "newsletter-design",
+        "playbook_id": "newsletter_outreach_rollup",
+        "source_msg_id": "newsletter-design",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "labels": [
+            "CLAM_NEWSLETTER",
+            "INBOX"
+          ]
+        }
+      },
+      "prev_hash": "94eb61d1e9842d408cf069239624426e5ddfb9f1253809b34f2d1939d3ea3b5d",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 55,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "41c9ed9877399087913e55b9ffa080cc4df8175fd4e86d58cc831e940d9bf37c"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:64",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.848Z",
+      "detail": {
+        "action_id": "b3e8e1e9a48d0672d14c8609e1bfd74c7f01089cff4dc580e50189498542e916",
+        "action": "mail",
+        "target": "newsletter-design",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "newsletter-design",
+        "before": {
+          "labels": [
+            "INBOX"
+          ]
+        },
+        "expected": {
+          "labels": [
+            "CLAM_NEWSLETTER",
+            "INBOX"
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "41c9ed9877399087913e55b9ffa080cc4df8175fd4e86d58cc831e940d9bf37c",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 56,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "9eb507b715c4c1456b40291a75af57d082991b8f349abe9cf056417b003b18bb"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:65",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.848Z",
+      "detail": {
+        "action_id": "b3e8e1e9a48d0672d14c8609e1bfd74c7f01089cff4dc580e50189498542e916",
+        "outcome": "VERIFIED",
+        "actual": {
+          "labels": [
+            "CLAM_NEWSLETTER",
+            "INBOX"
+          ]
+        }
+      },
+      "prev_hash": "9eb507b715c4c1456b40291a75af57d082991b8f349abe9cf056417b003b18bb",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 58,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "0201bbb159107b068ce88186ba19be688aac4db8f4001cf42addc8c540735e92"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:66",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.848Z",
+      "detail": {
+        "action": "newsletter",
+        "target": "newsletter-news",
+        "playbook_id": "newsletter_outreach_rollup",
+        "source_msg_id": "newsletter-news",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "title": "Newsletter: Industry weekly",
+          "sender": "weekly@updates.example"
+        }
+      },
+      "prev_hash": "0201bbb159107b068ce88186ba19be688aac4db8f4001cf42addc8c540735e92",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 58,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "96d3fd603c08544a33f44c5923465200bc16f531df630a89f2485a4cb206dca1"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:67",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.849Z",
+      "detail": {
+        "action_id": "b3faadadc587a1a622bc16341586335dd471b58ca6abc832b456517356840d22",
+        "action": "newsletter",
+        "target": "newsletter-news",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "newsletter-news",
+        "before": null,
+        "expected": {
+          "title": "Newsletter: Industry weekly",
+          "sender": "weekly@updates.example"
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "96d3fd603c08544a33f44c5923465200bc16f531df630a89f2485a4cb206dca1",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 59,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "650bdbe33d7afb8df6f778d630823fa609902d219c756c23ecc6f2bd53da3def"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:68",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.849Z",
+      "detail": {
+        "action_id": "b3faadadc587a1a622bc16341586335dd471b58ca6abc832b456517356840d22",
+        "outcome": "VERIFIED",
+        "actual": {
+          "title": "Newsletter: Industry weekly",
+          "sender": "weekly@updates.example"
+        }
+      },
+      "prev_hash": "650bdbe33d7afb8df6f778d630823fa609902d219c756c23ecc6f2bd53da3def",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 61,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "6642b7d201f54b605bbd88a7819905fb4d1383b5f7bfc1e8cd8256e97090ea62"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:69",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.849Z",
+      "detail": {
+        "action": "mail",
+        "target": "newsletter-news",
+        "playbook_id": "newsletter_outreach_rollup",
+        "source_msg_id": "newsletter-news",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "labels": [
+            "CLAM_NEWSLETTER",
+            "INBOX"
+          ]
+        }
+      },
+      "prev_hash": "6642b7d201f54b605bbd88a7819905fb4d1383b5f7bfc1e8cd8256e97090ea62",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 61,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "7d727b9adf9f03328e91d7b45045214d701597010e53c9e0a4d62be9bd6ac751"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:70",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.849Z",
+      "detail": {
+        "action_id": "9cf6d7dcb546bcbf7f2f4d251a1e2aeed0ceb9a61f3fbf3f6e95b8f835d14d2a",
+        "action": "mail",
+        "target": "newsletter-news",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "newsletter-news",
+        "before": {
+          "labels": [
+            "INBOX"
+          ]
+        },
+        "expected": {
+          "labels": [
+            "CLAM_NEWSLETTER",
+            "INBOX"
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "7d727b9adf9f03328e91d7b45045214d701597010e53c9e0a4d62be9bd6ac751",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 62,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "08e02e808bdfaaf5f0314cbdabac3244a06c2f3cfa299fb7d4e4d3c0b7323278"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:71",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.849Z",
+      "detail": {
+        "action_id": "9cf6d7dcb546bcbf7f2f4d251a1e2aeed0ceb9a61f3fbf3f6e95b8f835d14d2a",
+        "outcome": "VERIFIED",
+        "actual": {
+          "labels": [
+            "CLAM_NEWSLETTER",
+            "INBOX"
+          ]
+        }
+      },
+      "prev_hash": "08e02e808bdfaaf5f0314cbdabac3244a06c2f3cfa299fb7d4e4d3c0b7323278",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 64,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "dfb2bdb07aa0f065104af951240ada3abc3fad190eba2c8bed00c597d72af9b0"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:72",
+      "stage": "POLICY",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.849Z",
+      "detail": {
+        "action": "mail",
+        "target": "cold-outreach",
+        "playbook_id": "newsletter_outreach_rollup",
+        "source_msg_id": "cold-outreach",
+        "rule_id": "REVERSIBLE_ACTION",
+        "reason": "Action meets the active policy.",
+        "decision": "AUTONOMOUS",
+        "tier": 0,
+        "planned": {
+          "labels": [
+            "CLAM_COLD_OUTREACH",
+            "MUTED"
+          ]
+        }
+      },
+      "prev_hash": "dfb2bdb07aa0f065104af951240ada3abc3fad190eba2c8bed00c597d72af9b0",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 64,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "67a20d424c9fd16cec1c2e3868423aecf002670f26c9fb89ad1a14437800efcc"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:73",
+      "stage": "ACT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.850Z",
+      "detail": {
+        "action_id": "5c33dcabbf4ed439e795bad288ba77fc1c614b7b7742face054672d52add7ddc",
+        "action": "mail",
+        "target": "cold-outreach",
+        "rule_id": "REVERSIBLE_ACTION",
+        "source_msg_id": "cold-outreach",
+        "before": {
+          "labels": [
+            "INBOX"
+          ]
+        },
+        "expected": {
+          "labels": [
+            "CLAM_COLD_OUTREACH",
+            "MUTED"
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "67a20d424c9fd16cec1c2e3868423aecf002670f26c9fb89ad1a14437800efcc",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 65,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "263177d662f39f1996eb51c8311a79f0e9774f108781336a8fd36fe7f75f389f"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:74",
+      "stage": "CHECK",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.850Z",
+      "detail": {
+        "action_id": "5c33dcabbf4ed439e795bad288ba77fc1c614b7b7742face054672d52add7ddc",
+        "outcome": "VERIFIED",
+        "actual": {
+          "labels": [
+            "CLAM_COLD_OUTREACH",
+            "MUTED"
+          ]
+        }
+      },
+      "prev_hash": "263177d662f39f1996eb51c8311a79f0e9774f108781336a8fd36fe7f75f389f",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 67,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "abb3242e15481ebd856fd4a18b67a80a20e469a661e12fd28e5bd8da3bcf042e"
+    },
+    {
+      "id": "55e05e55-0986-4569-8ce9-169ee2fd8697:75",
+      "stage": "REPORT",
+      "run_id": "55e05e55-0986-4569-8ce9-169ee2fd8697",
+      "timestamp": "2026-11-25T22:12:00.850Z",
+      "detail": {
+        "status": "COMPLETED",
+        "error": null,
+        "emails": 20,
+        "conflicts": 2,
+        "threats": 0,
+        "rollback_available": true
+      },
+      "prev_hash": "abb3242e15481ebd856fd4a18b67a80a20e469a661e12fd28e5bd8da3bcf042e",
+      "budgets": {
+        "outbound": 3,
+        "calendar": 6,
+        "steps": 67,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "527c936a5ea6a5669fcbd6cc2223fd1009f20ae03ad2b655b41784819fc1a035"
+    }
+  ],
+  "step_count": 75,
+  "head_hash": "527c936a5ea6a5669fcbd6cc2223fd1009f20ae03ad2b655b41784819fc1a035"
+}
