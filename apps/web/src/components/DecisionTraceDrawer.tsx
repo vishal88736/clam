@@ -68,6 +68,16 @@ export function DecisionTraceDrawer({
 
             <dl className="divide-y divide-hairline rounded-lg border border-hairline bg-canvas">
               <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
+                <dt className="text-ink-secondary">Trace ID</dt>
+                <dd className="font-mono text-ink-primary tabular-nums">{entry.trace_id}</dd>
+              </div>
+              {entry.run_id && (
+                <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
+                  <dt className="text-ink-secondary">Run ID</dt>
+                  <dd className="font-mono text-ink-primary tabular-nums">{entry.run_id}</dd>
+                </div>
+              )}
+              <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
                 <dt className="text-ink-secondary">Agent</dt>
                 <dd className="font-medium text-ink-primary">{entry.agent_name}</dd>
               </div>
@@ -81,6 +91,33 @@ export function DecisionTraceDrawer({
                   {entry.semantic_category ?? '—'}
                 </dd>
               </div>
+              <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
+                <dt className="text-ink-secondary">Injection Risk</dt>
+                <dd
+                  className={`font-mono tabular-nums ${
+                    entry.injection_risk_score >= 0.55
+                      ? 'text-crimson-matte'
+                      : 'text-ink-secondary'
+                  }`}
+                >
+                  {Math.round((entry.injection_risk_score ?? 0) * 100)}%
+                </dd>
+              </div>
+              {entry.injection_signals?.length > 0 && (
+                <div className="px-3.5 py-2.5 text-xs space-y-1.5">
+                  <dt className="text-ink-secondary">Injection Signals</dt>
+                  <dd className="flex flex-wrap gap-1">
+                    {entry.injection_signals.map((sig) => (
+                      <span
+                        key={sig}
+                        className="px-1.5 py-0.5 rounded bg-crimson-fill text-crimson-matte border border-crimson-matte/30 font-mono text-[10px]"
+                      >
+                        {sig}
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+              )}
               <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
                 <dt className="text-ink-secondary">Confidence Score</dt>
                 <dd className="font-mono text-ink-primary tabular-nums">

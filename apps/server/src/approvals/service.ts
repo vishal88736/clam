@@ -12,6 +12,7 @@ import type { AuditLogger, RealtimeEventHub } from '../audit/logger.js';
 import type { ClamConfig } from '../config.js';
 import type { ClamDatabase } from '../db/index.js';
 import { approvalRequests } from '../db/schema.js';
+import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
 import { EphemeralRamVault, hashOpaqueId, type EphemeralCipherBox } from '../mail/vault.js';
 import {
@@ -62,7 +63,8 @@ export class ApprovalService {
     private readonly mailService: MailService,
     private readonly auditLogger: AuditLogger,
     private readonly hub: RealtimeEventHub,
-    private readonly config: ClamConfig
+    private readonly config: ClamConfig,
+    private readonly killSwitchService?: KillSwitchService
   ) {}
 
   startExpirySweeper(): void {
@@ -318,6 +320,10 @@ export class ApprovalService {
 
     if (row.status !== 'PENDING') {
       throw new Error(`Approval "${params.id}" is already ${row.status}`);
+    }
+
+    if (params.resolution === 'APPROVED' && this.killSwitchService?.isHalted(row.agentId)) {
+      throw new Error('KILL_SWITCH_ENGAGED: Cannot execute approved mutation while Kill Switch is halted.');
     }
 
     const start = performance.now();

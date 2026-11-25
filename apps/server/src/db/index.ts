@@ -60,6 +60,8 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(sta
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
+  trace_id TEXT NOT NULL DEFAULT '',
+  run_id TEXT,
   timestamp TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   agent_name TEXT NOT NULL,
@@ -69,12 +71,27 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   rule_citation TEXT NOT NULL,
   semantic_category TEXT,
   confidence REAL,
+  injection_risk_score REAL NOT NULL DEFAULT 0,
+  injection_signals_json TEXT NOT NULL DEFAULT '[]',
   approval_id TEXT,
   message_id_hash TEXT,
   latency_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_agent ON audit_logs(agent_id);
+
+CREATE TABLE IF NOT EXISTS kill_switch_state (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'ARMED',
+  trigger_mode TEXT,
+  engaged_at TEXT,
+  engaged_by TEXT,
+  reason TEXT,
+  halted_agents_json TEXT NOT NULL DEFAULT '[]',
+  aborted_inflight_count INTEGER NOT NULL DEFAULT 0,
+  circuit_breaker_json TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS vault_secrets (
   key TEXT PRIMARY KEY,
@@ -92,6 +109,24 @@ export function createDatabase(databasePath: string): DbHandle {
 
   const sqlite = new DatabaseSync(databasePath);
   sqlite.exec(CREATE_TABLES_SQL);
+
+  // Safe additive migration for pre-existing local SQLite databases
+  const auditCols = sqlite.prepare(`PRAGMA table_info(audit_logs)`).all() as { name: string }[];
+  const colSet = new Set(auditCols.map((c) => c.name));
+  if (!colSet.has('trace_id')) {
+    sqlite.exec(`ALTER TABLE audit_logs ADD COLUMN trace_id TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!colSet.has('run_id')) {
+    sqlite.exec(`ALTER TABLE audit_logs ADD COLUMN run_id TEXT`);
+  }
+  if (!colSet.has('injection_risk_score')) {
+    sqlite.exec(`ALTER TABLE audit_logs ADD COLUMN injection_risk_score REAL NOT NULL DEFAULT 0`);
+  }
+  if (!colSet.has('injection_signals_json')) {
+    sqlite.exec(
+      `ALTER TABLE audit_logs ADD COLUMN injection_signals_json TEXT NOT NULL DEFAULT '[]'`
+    );
+  }
 
   const db = drizzle<typeof schema>(
     async (sql, params, method) => {

@@ -1,10 +1,12 @@
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { AutonomousRunnerService } from './agents/runnerService.js';
 import { AgentService } from './agents/service.js';
 import { ApprovalService } from './approvals/service.js';
 import { AuditLogger, RealtimeEventHub } from './audit/logger.js';
 import { loadConfig, type ClamConfig } from './config.js';
 import { createDatabase, type DbHandle } from './db/index.js';
+import { KillSwitchService } from './killswitch/service.js';
 import { MailService } from './mail/service.js';
 import { CryptoVault } from './mail/vault.js';
 import { registerMcpRoutes } from './mcp/server.js';
@@ -22,6 +24,8 @@ export interface ClamRuntime {
   mailService: MailService;
   approvalService: ApprovalService;
   auditLogger: AuditLogger;
+  killSwitchService: KillSwitchService;
+  runnerService: AutonomousRunnerService;
   hub: RealtimeEventHub;
   close(): Promise<void>;
 }
@@ -62,12 +66,21 @@ export async function createClamApp(overrides?: {
 
   const policyEngine = new PolicyEngine(getLlmConfig, overrides?.customClassifier);
   const auditLogger = new AuditLogger(dbHandle.db, hub);
+  const killSwitchService = new KillSwitchService(dbHandle.db, auditLogger, hub, {
+    violation_threshold: config.circuitBreaker.violationThreshold,
+    window_seconds: config.circuitBreaker.windowSeconds,
+    max_calls_per_min: config.circuitBreaker.maxCallsPerMin,
+    trip_on_critical_injection: config.circuitBreaker.tripOnCriticalInjection,
+  });
+  await killSwitchService.init();
+
   const approvalService = new ApprovalService(
     dbHandle.db,
     mailService,
     auditLogger,
     hub,
-    config
+    config,
+    killSwitchService
   );
   approvalService.startExpirySweeper();
 
@@ -75,9 +88,27 @@ export async function createClamApp(overrides?: {
   await app.register(cors, {
     origin: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Mcp-Session-Id', 'Last-Event-ID'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Mcp-Session-Id',
+      'Last-Event-ID',
+      'X-Clam-Run-Id',
+    ],
     exposedHeaders: ['Mcp-Session-Id'],
   });
+
+  const runnerService = new AutonomousRunnerService(
+    app,
+    config,
+    agentService,
+    mailService,
+    auditLogger,
+    killSwitchService,
+    hub,
+    getLlmConfig
+  );
 
   registerApiRoutes(app, {
     config,
@@ -86,6 +117,8 @@ export async function createClamApp(overrides?: {
     mailService,
     approvalService,
     auditLogger,
+    killSwitchService,
+    runnerService,
     hub,
     getLlmConfig,
   });
@@ -98,6 +131,8 @@ export async function createClamApp(overrides?: {
     mailService,
     approvalService,
     auditLogger,
+    killSwitchService,
+    artifactsDir: config.artifactsDir,
   });
 
   return {
@@ -109,6 +144,8 @@ export async function createClamApp(overrides?: {
     mailService,
     approvalService,
     auditLogger,
+    killSwitchService,
+    runnerService,
     hub,
     close: async () => {
       approvalService.stopExpirySweeper();

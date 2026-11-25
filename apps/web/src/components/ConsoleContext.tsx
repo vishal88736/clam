@@ -8,13 +8,23 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import type { AuditLogEntry } from '@clam/shared';
+import type {
+  AgentRunStep,
+  AgentRunSummary,
+  AuditLogEntry,
+  KillSwitchState,
+  TrapPackReport,
+} from '@clam/shared';
 import type { ClamMascotState } from './ClamMascot';
 import { API_BASE, clamApi, type OverviewResponse } from '@/lib/api';
 
 interface ConsoleContextValue {
   overview: OverviewResponse | null;
   liveFeed: AuditLogEntry[];
+  killSwitch: KillSwitchState | null;
+  latestRun: AgentRunSummary | null;
+  liveRunSteps: AgentRunStep[];
+  trapReport: TrapPackReport | null;
   sseConnected: boolean;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
@@ -22,6 +32,9 @@ interface ConsoleContextValue {
   lastEventTick: number;
   mascotState: ClamMascotState;
   pulseMascot: (state: ClamMascotState, durationMs?: number) => void;
+  setLatestRun: React.Dispatch<React.SetStateAction<AgentRunSummary | null>>;
+  setTrapReport: React.Dispatch<React.SetStateAction<TrapPackReport | null>>;
+  clearLiveRunSteps: () => void;
 }
 
 const ConsoleContext = createContext<ConsoleContextValue | null>(null);
@@ -29,10 +42,14 @@ const ConsoleContext = createContext<ConsoleContextValue | null>(null);
 export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [liveFeed, setLiveFeed] = useState<AuditLogEntry[]>([]);
+  const [killSwitch, setKillSwitch] = useState<KillSwitchState | null>(null);
+  const [latestRun, setLatestRun] = useState<AgentRunSummary | null>(null);
+  const [liveRunSteps, setLiveRunSteps] = useState<AgentRunStep[]>([]);
+  const [trapReport, setTrapReport] = useState<TrapPackReport | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [lastEventTick, setLastEventTick] = useState(0);
-  const [mascotState, setMascotState] = useState<ClamMascotState>('armed');
+  const [rawMascotState, setRawMascotState] = useState<ClamMascotState>('armed');
   const mascotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pulseMascot = useCallback((state: ClamMascotState, durationMs = 2500) => {
@@ -40,13 +57,17 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(mascotTimerRef.current);
       mascotTimerRef.current = null;
     }
-    setMascotState(state);
-    if (state !== 'armed') {
+    setRawMascotState(state);
+    if (state !== 'armed' && state !== 'halted') {
       mascotTimerRef.current = setTimeout(() => {
-        setMascotState('armed');
+        setRawMascotState('armed');
         mascotTimerRef.current = null;
       }, durationMs);
     }
+  }, []);
+
+  const clearLiveRunSteps = useCallback(() => {
+    setLiveRunSteps([]);
   }, []);
 
   const refreshOverview = useCallback(async () => {
@@ -57,6 +78,9 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       ]);
       setOverview(ov);
       setLiveFeed(audit.logs);
+      if (ov.kill_switch) setKillSwitch(ov.kill_switch);
+      if (ov.latest_run) setLatestRun(ov.latest_run);
+      if (ov.latest_trap_report) setTrapReport(ov.latest_trap_report);
     } catch {
       // Server may still be starting up; SSE reconnect handles recovery
     }
@@ -89,6 +113,70 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       setSseConnected(true);
     });
 
+    es.addEventListener('killswitch.changed', (event) => {
+      try {
+        const parsed = JSON.parse((event as MessageEvent).data) as { data: KillSwitchState };
+        if (parsed?.data) {
+          setKillSwitch(parsed.data);
+          setLastEventTick((t) => t + 1);
+          if (parsed.data.status === 'HALTED') {
+            setRawMascotState('halted');
+          } else {
+            setRawMascotState('armed');
+          }
+          void clamApi.getOverview().then(setOverview).catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+    });
+
+    es.addEventListener('agent.run.step', (event) => {
+      try {
+        const parsed = JSON.parse((event as MessageEvent).data) as {
+          data?: { run_id?: string; step?: AgentRunStep };
+        };
+        if (parsed?.data?.step) {
+          const st = parsed.data.step;
+          setLiveRunSteps((prev) => {
+            if (st.step === 1) return [st];
+            return [...prev, st];
+          });
+        }
+      } catch {
+        // ignore
+      }
+    });
+
+    const handleRunFinished = (event: Event) => {
+      try {
+        const parsed = JSON.parse((event as MessageEvent).data) as { data?: AgentRunSummary };
+        if (parsed?.data) {
+          setLatestRun(parsed.data);
+        }
+      } catch {
+        // ignore
+      }
+      setLastEventTick((t) => t + 1);
+      void clamApi.getOverview().then(setOverview).catch(() => {});
+    };
+
+    es.addEventListener('agent.run.completed', handleRunFinished);
+    es.addEventListener('agent.run.aborted', handleRunFinished);
+
+    es.addEventListener('trappack.completed', (event) => {
+      try {
+        const parsed = JSON.parse((event as MessageEvent).data) as { data?: TrapPackReport };
+        if (parsed?.data) {
+          setTrapReport(parsed.data);
+        }
+      } catch {
+        // ignore
+      }
+      setLastEventTick((t) => t + 1);
+      void clamApi.getOverview().then(setOverview).catch(() => {});
+    });
+
     es.addEventListener('audit.entry', (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent).data) as { data: AuditLogEntry };
@@ -97,7 +185,12 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
           setLiveFeed((prev) => [entry, ...prev].slice(0, 60));
           setLastEventTick((t) => t + 1);
 
-          if (entry.decision === 'ALLOW' || entry.decision === 'APPROVED') {
+          if (
+            entry.decision === 'KILL_SWITCH_ENGAGED' ||
+            entry.decision === 'CIRCUIT_BREAKER_TRIPPED'
+          ) {
+            pulseMascot('halted', 2500);
+          } else if (entry.decision === 'ALLOW' || entry.decision === 'APPROVED') {
             pulseMascot('allow', 2500);
           } else if (
             entry.decision === 'DENY' ||
@@ -156,18 +249,28 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
     };
   }, [pulseMascot]);
 
+  const effectiveMascotState: ClamMascotState =
+    killSwitch?.status === 'HALTED' ? 'halted' : rawMascotState;
+
   return (
     <ConsoleContext.Provider
       value={{
         overview,
         liveFeed,
+        killSwitch,
+        latestRun,
+        liveRunSteps,
+        trapReport,
         sseConnected,
         theme,
         toggleTheme,
         refreshOverview,
         lastEventTick,
-        mascotState,
+        mascotState: effectiveMascotState,
         pulseMascot,
+        setLatestRun,
+        setTrapReport,
+        clearLiveRunSteps,
       }}
     >
       {children}

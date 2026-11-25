@@ -31,6 +31,18 @@ const STYLE_MAP: Record<string, { label: string; classes: string }> = {
     label: 'EXPIRED',
     classes: 'bg-elevated text-ink-secondary border-hairline',
   },
+  KILL_SWITCH_ENGAGED: {
+    label: 'KILLED',
+    classes: 'bg-crimson-fill text-crimson-matte border-crimson-matte/45',
+  },
+  CIRCUIT_BREAKER_TRIPPED: {
+    label: 'TRIPPED',
+    classes: 'bg-crimson-fill text-crimson-matte border-crimson-matte/45',
+  },
+  KILL_SWITCH_RESUMED: {
+    label: 'RESUMED',
+    classes: 'bg-emerald-fill text-emerald-matte border-emerald-matte/30',
+  },
 };
 
 export function DecisionBadge({ decision }: { decision: string }) {

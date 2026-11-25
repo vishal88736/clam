@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
@@ -14,6 +16,7 @@ import type {
 import type { AgentService } from '../agents/service.js';
 import type { ApprovalService } from '../approvals/service.js';
 import type { AuditLogger } from '../audit/logger.js';
+import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
 import type { PolicyEngine } from '../policy/engine.js';
 
@@ -23,6 +26,8 @@ export interface McpDeps {
   mailService: MailService;
   approvalService: ApprovalService;
   auditLogger: AuditLogger;
+  killSwitchService: KillSwitchService;
+  artifactsDir: string;
 }
 
 function toSafeSummary(email: EphemeralEmail, semanticCategory: string | null): SafeEmailSummary {
@@ -60,7 +65,11 @@ function jsonContent(data: unknown, isError = false) {
   };
 }
 
-export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps): McpServer {
+export function createAgentMcpServer(
+  agentSnapshot: AgentRecord,
+  deps: McpDeps,
+  getRunId: () => string | null = () => null
+): McpServer {
   const server = new McpServer({
     name: 'clam-email-firewall',
     version: '1.0.0',
@@ -70,12 +79,42 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
     return (await deps.agentService.getAgent(agentSnapshot.id)) ?? agentSnapshot;
   };
 
+  const checkKillSwitchForTool = async (agent: AgentRecord, toolName: string) => {
+    if (!deps.killSwitchService.isHalted(agent.id)) return null;
+    const ks = deps.killSwitchService.getState();
+    await deps.auditLogger.record({
+      runId: getRunId(),
+      agentId: agent.id,
+      agentName: agent.name,
+      mcpTool: toolName,
+      decision: 'DENY',
+      matchedRuleId: 'kill_switch',
+      ruleCitation: `Kill Switch engaged (${ks.reason ?? 'HALTED'}): tool call rejected.`,
+      semanticCategory: 'kill_switch',
+      confidence: 1,
+      latencyMs: 1,
+    });
+    return jsonContent(
+      {
+        error: 'KILL_SWITCH_ENGAGED',
+        decision: 'DENY',
+        reasoning_code: 'KILL_SWITCH_ENGAGED',
+        reason: ks.reason,
+      },
+      true
+    );
+  };
+
   async function handleListOrSearch(
     toolName: 'list_emails' | 'search_emails',
     query?: string,
-    maxResults = 20
+    maxResults = 25
   ) {
     const agent = await getFreshAgent();
+    const haltedReply = await checkKillSwitchForTool(agent, toolName);
+    if (haltedReply) return haltedReply;
+
+    const runId = getRunId();
     const start = performance.now();
     const gateTrace = await deps.policyEngine.evaluate({
       agent,
@@ -84,6 +123,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
 
     if (gateTrace.decision === 'DENY') {
       await deps.auditLogger.record({
+        runId,
         agentId: agent.id,
         agentName: agent.name,
         mcpTool: toolName,
@@ -92,7 +132,18 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
         ruleCitation: gateTrace.rule_citation,
         semanticCategory: gateTrace.semantic_category,
         confidence: gateTrace.confidence,
+        injectionRiskScore: gateTrace.injection_risk_score,
+        injectionSignals: gateTrace.injection_signals,
         latencyMs: gateTrace.latency_ms,
+      });
+      await deps.killSwitchService.recordToolOutcome({
+        agentId: agent.id,
+        agentName: agent.name,
+        mcpTool: toolName,
+        decision: 'DENY',
+        reasoningCode: gateTrace.reasoning_code,
+        injectionRiskScore: gateTrace.injection_risk_score,
+        runId,
       });
       return jsonContent(
         {
@@ -108,7 +159,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
     const provider = deps.mailService.getActiveProvider();
     const candidates = await provider.listMessages(query, maxResults);
 
-    // SILENT FILTERING: Evaluate each ephemeral message in RAM and drop non-matching emails without leaking count or metadata.
+    // SILENT FILTERING: Evaluate each ephemeral message in RAM and drop non-matching/injected emails without leaking count or metadata.
     const permitted: SafeEmailSummary[] = [];
     for (const email of candidates) {
       const itemTrace = await deps.policyEngine.evaluate(
@@ -121,6 +172,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
       );
 
       await deps.auditLogger.record({
+        runId,
         agentId: agent.id,
         agentName: agent.name,
         mcpTool: toolName,
@@ -129,6 +181,8 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
         ruleCitation: itemTrace.rule_citation,
         semanticCategory: itemTrace.semantic_category,
         confidence: itemTrace.confidence,
+        injectionRiskScore: itemTrace.injection_risk_score,
+        injectionSignals: itemTrace.injection_signals,
         rawMessageId: email.id,
         latencyMs: itemTrace.latency_ms,
       });
@@ -140,6 +194,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
 
     if (candidates.length === 0) {
       await deps.auditLogger.record({
+        runId,
         agentId: agent.id,
         agentName: agent.name,
         mcpTool: toolName,
@@ -152,6 +207,16 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
       });
     }
 
+    await deps.killSwitchService.recordToolOutcome({
+      agentId: agent.id,
+      agentName: agent.name,
+      mcpTool: toolName,
+      decision: 'ALLOW',
+      reasoningCode: 'ALLOWED_BY_RULE',
+      injectionRiskScore: 0,
+      runId,
+    });
+
     return jsonContent({
       emails: permitted,
       returned: permitted.length,
@@ -162,7 +227,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
     'list_emails',
     {
       description:
-        'List emails permitted by your Clam policy. Unauthorized or sensitive emails are silently stripped.',
+        'List emails permitted by your Clam policy. Unauthorized, sensitive, or prompt-injected emails are silently stripped.',
       inputSchema: {
         query: z.string().optional().describe('Optional search filter'),
         maxResults: z.number().int().min(1).max(50).optional().describe('Max emails to return'),
@@ -175,7 +240,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
     'search_emails',
     {
       description:
-        'Search emails permitted by your Clam policy. Unauthorized or sensitive emails are silently stripped.',
+        'Search emails permitted by your Clam policy. Unauthorized, sensitive, or prompt-injected emails are silently stripped.',
       inputSchema: {
         query: z.string().min(1).describe('Search query'),
         maxResults: z.number().int().min(1).max(50).optional(),
@@ -188,13 +253,17 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
     'read_email',
     {
       description:
-        'Read a single email by messageId. Always re-verifies deterministic and semantic policy rules.',
+        'Read a single email by messageId. Always re-verifies deterministic, semantic, and prompt-injection checks.',
       inputSchema: {
         messageId: z.string().min(1).describe('Email message ID'),
       },
     },
     async ({ messageId }) => {
       const agent = await getFreshAgent();
+      const haltedReply = await checkKillSwitchForTool(agent, 'read_email');
+      if (haltedReply) return haltedReply;
+
+      const runId = getRunId();
       const stageACheck = await deps.policyEngine.evaluate({
         agent,
         tool: 'read_email',
@@ -202,6 +271,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
 
       if (stageACheck.decision === 'DENY') {
         await deps.auditLogger.record({
+          runId,
           agentId: agent.id,
           agentName: agent.name,
           mcpTool: 'read_email',
@@ -210,8 +280,19 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
           ruleCitation: stageACheck.rule_citation,
           semanticCategory: null,
           confidence: 1,
+          injectionRiskScore: stageACheck.injection_risk_score,
+          injectionSignals: stageACheck.injection_signals,
           rawMessageId: messageId,
           latencyMs: stageACheck.latency_ms,
+        });
+        await deps.killSwitchService.recordToolOutcome({
+          agentId: agent.id,
+          agentName: agent.name,
+          mcpTool: 'read_email',
+          decision: 'DENY',
+          reasoningCode: stageACheck.reasoning_code,
+          injectionRiskScore: stageACheck.injection_risk_score,
+          runId,
         });
         return jsonContent(
           {
@@ -227,6 +308,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
       const email = await deps.mailService.getActiveProvider().getMessage(messageId);
       if (!email) {
         await deps.auditLogger.record({
+          runId,
           agentId: agent.id,
           agentName: agent.name,
           mcpTool: 'read_email',
@@ -258,6 +340,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
       );
 
       await deps.auditLogger.record({
+        runId,
         agentId: agent.id,
         agentName: agent.name,
         mcpTool: 'read_email',
@@ -266,8 +349,20 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
         ruleCitation: trace.rule_citation,
         semanticCategory: trace.semantic_category,
         confidence: trace.confidence,
+        injectionRiskScore: trace.injection_risk_score,
+        injectionSignals: trace.injection_signals,
         rawMessageId: email.id,
         latencyMs: trace.latency_ms,
+      });
+
+      await deps.killSwitchService.recordToolOutcome({
+        agentId: agent.id,
+        agentName: agent.name,
+        mcpTool: 'read_email',
+        decision: trace.decision,
+        reasoningCode: trace.reasoning_code,
+        injectionRiskScore: trace.injection_risk_score,
+        runId,
       });
 
       if (trace.decision !== 'ALLOW') {
@@ -277,6 +372,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
             decision: 'DENY',
             reasoning_code: trace.reasoning_code,
             rule_citation: trace.rule_citation,
+            injection_risk_score: trace.injection_risk_score,
           },
           true
         );
@@ -288,6 +384,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
           matched_rule_id: trace.matched_rule_id,
           semantic_category: trace.semantic_category,
           confidence: trace.confidence,
+          injection_risk_score: trace.injection_risk_score,
         },
       });
     }
@@ -304,12 +401,16 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
     waitForApprovalMs?: number;
   }) {
     const agent = await getFreshAgent();
+    const haltedReply = await checkKillSwitchForTool(agent, params.tool);
+    if (haltedReply) return haltedReply;
+
+    const runId = getRunId();
     const provider = deps.mailService.getActiveProvider();
 
     let contextEmail: EphemeralEmail | null = null;
     if (params.messageId) {
       contextEmail = await provider.getMessage(params.messageId);
-      if (!contextEmail) {
+      if (!contextEmail && params.tool !== 'delete_email') {
         return jsonContent(
           {
             error: 'CLAM_POLICY_DENIED',
@@ -336,6 +437,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
 
     if (trace.decision === 'DENY') {
       await deps.auditLogger.record({
+        runId,
         agentId: agent.id,
         agentName: agent.name,
         mcpTool: params.tool,
@@ -344,9 +446,22 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
         ruleCitation: trace.rule_citation,
         semanticCategory: trace.semantic_category,
         confidence: trace.confidence,
+        injectionRiskScore: trace.injection_risk_score,
+        injectionSignals: trace.injection_signals,
         rawMessageId: params.messageId ?? params.threadId ?? null,
         latencyMs: trace.latency_ms,
       });
+
+      await deps.killSwitchService.recordToolOutcome({
+        agentId: agent.id,
+        agentName: agent.name,
+        mcpTool: params.tool,
+        decision: 'DENY',
+        reasoningCode: trace.reasoning_code,
+        injectionRiskScore: trace.injection_risk_score,
+        runId,
+      });
+
       return jsonContent(
         {
           error: 'CLAM_POLICY_DENIED',
@@ -354,6 +469,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
           stage: trace.stage,
           reasoning_code: trace.reasoning_code,
           rule_citation: trace.rule_citation,
+          injection_risk_score: trace.injection_risk_score,
         },
         true
       );
@@ -378,6 +494,7 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
       });
 
       await deps.auditLogger.record({
+        runId,
         agentId: agent.id,
         agentName: agent.name,
         mcpTool: params.tool,
@@ -386,6 +503,8 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
         ruleCitation: trace.rule_citation,
         semanticCategory: trace.semantic_category,
         confidence: trace.confidence,
+        injectionRiskScore: trace.injection_risk_score,
+        injectionSignals: trace.injection_signals,
         approvalId: approval.id,
         rawMessageId: params.messageId ?? params.threadId ?? approval.id,
         latencyMs: trace.latency_ms,
@@ -446,9 +565,20 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
       result = await provider.archiveMessage(params.messageId);
     } else if (params.tool === 'apply_label' && params.messageId && params.label) {
       result = await provider.applyLabel(params.messageId, params.label);
+    } else if (params.tool === 'delete_email') {
+      return jsonContent(
+        {
+          error: 'CLAM_POLICY_DENIED',
+          decision: 'DENY',
+          reasoning_code: 'DELETE_DISABLED_AT_GATEWAY',
+          rule_citation: 'Permanent email deletion is disabled at the Clam MCP gateway.',
+        },
+        true
+      );
     }
 
     await deps.auditLogger.record({
+      runId,
       agentId: agent.id,
       agentName: agent.name,
       mcpTool: params.tool,
@@ -457,8 +587,20 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
       ruleCitation: trace.rule_citation,
       semanticCategory: trace.semantic_category,
       confidence: trace.confidence,
+      injectionRiskScore: trace.injection_risk_score,
+      injectionSignals: trace.injection_signals,
       rawMessageId: params.messageId ?? params.threadId ?? null,
       latencyMs: trace.latency_ms,
+    });
+
+    await deps.killSwitchService.recordToolOutcome({
+      agentId: agent.id,
+      agentName: agent.name,
+      mcpTool: params.tool,
+      decision: 'ALLOW',
+      reasoningCode: trace.reasoning_code,
+      injectionRiskScore: trace.injection_risk_score,
+      runId,
     });
 
     return jsonContent({
@@ -523,17 +665,151 @@ export function createAgentMcpServer(agentSnapshot: AgentRecord, deps: McpDeps):
     async (args) => handleOutboundOrMutation({ tool: 'apply_label', ...args })
   );
 
+  server.registerTool(
+    'delete_email',
+    {
+      description:
+        'Delete an email permanently. Deterministically blocked when Never-Delete or default-deny rules apply.',
+      inputSchema: {
+        messageId: z.string().min(1),
+      },
+    },
+    async (args) => handleOutboundOrMutation({ tool: 'delete_email', ...args })
+  );
+
+  server.registerTool(
+    'save_itinerary_artifact',
+    {
+      description:
+        'Write a scoped itinerary or digest deliverable (.md, .json, .ics) into Clam artifacts workspace after outbound secret checks.',
+      inputSchema: {
+        filename: z.string().min(1),
+        content: z.string().min(1),
+      },
+    },
+    async ({ filename, content }) => {
+      const agent = await getFreshAgent();
+      const haltedReply = await checkKillSwitchForTool(agent, 'save_itinerary_artifact');
+      if (haltedReply) return haltedReply;
+
+      const runId = getRunId();
+      const safeBase = path.basename(filename);
+      if (
+        safeBase !== filename ||
+        !/^[a-zA-Z0-9._-]+\.(md|json|ics|txt)$/.test(safeBase)
+      ) {
+        await deps.auditLogger.record({
+          runId,
+          agentId: agent.id,
+          agentName: agent.name,
+          mcpTool: 'save_itinerary_artifact',
+          decision: 'DENY',
+          matchedRuleId: 'artifact_path_guard',
+          ruleCitation: 'Blocked invalid artifact filename or path traversal attempt.',
+          semanticCategory: null,
+          confidence: 1,
+          latencyMs: 1,
+        });
+        return jsonContent(
+          {
+            error: 'CLAM_POLICY_DENIED',
+            decision: 'DENY',
+            reasoning_code: 'INVALID_ARTIFACT_FILENAME',
+          },
+          true
+        );
+      }
+
+      const trace = await deps.policyEngine.evaluate({
+        agent,
+        tool: 'save_itinerary_artifact',
+        outbound: { subject: safeBase, body: content },
+      });
+
+      if (trace.decision !== 'ALLOW') {
+        await deps.auditLogger.record({
+          runId,
+          agentId: agent.id,
+          agentName: agent.name,
+          mcpTool: 'save_itinerary_artifact',
+          decision: 'DENY',
+          matchedRuleId: trace.matched_rule_id,
+          ruleCitation: trace.rule_citation,
+          semanticCategory: trace.semantic_category,
+          confidence: trace.confidence,
+          injectionRiskScore: trace.injection_risk_score,
+          injectionSignals: trace.injection_signals,
+          rawMessageId: safeBase,
+          latencyMs: trace.latency_ms,
+        });
+        await deps.killSwitchService.recordToolOutcome({
+          agentId: agent.id,
+          agentName: agent.name,
+          mcpTool: 'save_itinerary_artifact',
+          decision: 'DENY',
+          reasoningCode: trace.reasoning_code,
+          injectionRiskScore: trace.injection_risk_score,
+          runId,
+        });
+        return jsonContent(
+          {
+            error: 'CLAM_POLICY_DENIED',
+            decision: 'DENY',
+            reasoning_code: trace.reasoning_code,
+            rule_citation: trace.rule_citation,
+          },
+          true
+        );
+      }
+
+      await fs.mkdir(deps.artifactsDir, { recursive: true });
+      const targetPath = path.join(deps.artifactsDir, safeBase);
+      await fs.writeFile(targetPath, content, 'utf8');
+
+      await deps.auditLogger.record({
+        runId,
+        agentId: agent.id,
+        agentName: agent.name,
+        mcpTool: 'save_itinerary_artifact',
+        decision: 'ALLOW',
+        matchedRuleId: trace.matched_rule_id,
+        ruleCitation: trace.rule_citation,
+        semanticCategory: 'itinerary_artifact',
+        confidence: 1,
+        rawMessageId: safeBase,
+        latencyMs: trace.latency_ms,
+      });
+
+      return jsonContent({
+        status: 'EXECUTED',
+        filename: safeBase,
+        path: targetPath,
+        bytes: Buffer.byteLength(content, 'utf8'),
+      });
+    }
+  );
+
   return server;
 }
 
 export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
   const streamableSessions = new Map<
     string,
-    { agentId: string; transport: StreamableHTTPServerTransport; server: McpServer }
+    {
+      agentId: string;
+      transport: StreamableHTTPServerTransport;
+      server: McpServer;
+      setRunId: (id: string | null) => void;
+    }
   >();
   const sseSessions = new Map<
     string,
-    { agentId: string; transport: SSEServerTransport; server: McpServer }
+    {
+      agentId: string;
+      transport: SSEServerTransport;
+      server: McpServer;
+      setRunId: (id: string | null) => void;
+    }
   >();
 
   async function authenticateRequest(
@@ -569,6 +845,46 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     return agent;
   }
 
+  async function rejectIfHalted(
+    agent: AgentRecord,
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<boolean> {
+    if (!deps.killSwitchService.isHalted(agent.id)) return false;
+    const ks = deps.killSwitchService.getState();
+    const runIdHeader = request.headers['x-clam-run-id'];
+    const runId = typeof runIdHeader === 'string' && runIdHeader.trim() ? runIdHeader.trim() : null;
+
+    await deps.auditLogger.record({
+      runId,
+      agentId: agent.id,
+      agentName: agent.name,
+      mcpTool: 'mcp.transport',
+      decision: 'DENY',
+      matchedRuleId: 'kill_switch',
+      ruleCitation: `Rejected HTTP 423 Locked: Kill Switch engaged (${ks.reason ?? 'HALTED'}).`,
+      semanticCategory: 'kill_switch',
+      confidence: 1,
+      latencyMs: 1,
+    });
+
+    reply.code(423).send({
+      jsonrpc: '2.0',
+      error: {
+        code: -32023,
+        message: 'KILL_SWITCH_ENGAGED',
+        data: {
+          code: 'KILL_SWITCH_ENGAGED',
+          status: ks.status,
+          reason: ks.reason,
+          engaged_at: ks.engaged_at,
+        },
+      },
+      id: null,
+    });
+    return true;
+  }
+
   function hijackWithCors(reply: FastifyReply): void {
     for (const [k, v] of Object.entries(reply.getHeaders())) {
       if (v !== undefined) {
@@ -578,11 +894,18 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     reply.hijack();
   }
 
+  function extractRunId(request: FastifyRequest): string | null {
+    const hdr = request.headers['x-clam-run-id'];
+    return typeof hdr === 'string' && hdr.trim() ? hdr.trim() : null;
+  }
+
   // Primary Streamable HTTP endpoint (supports both stateful MCP sessions AND stateless one-shot JSON-RPC)
   const handleMcpHttp = async (request: FastifyRequest, reply: FastifyReply) => {
     const agent = await authenticateRequest(request, reply);
     if (!agent) return;
+    if (await rejectIfHalted(agent, request, reply)) return;
 
+    const reqRunId = extractRunId(request);
     const sessionId = request.headers['mcp-session-id'] as string | undefined;
 
     if (sessionId) {
@@ -595,6 +918,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
         });
         return;
       }
+      session.setRunId(reqRunId);
       hijackWithCors(reply);
       await session.transport.handleRequest(request.raw, reply.raw, request.body);
       return;
@@ -603,10 +927,13 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     const bodyObj = request.body as { method?: string } | undefined;
     const isInitialize = request.method === 'POST' && bodyObj?.method === 'initialize';
 
-    // If client calls initialize with Accept SSE or standard MCP Streamable HTTP session
     if (isInitialize && !request.headers['x-clam-stateless']) {
       let generatedId = '';
-      const server = createAgentMcpServer(agent, deps);
+      let activeRunId: string | null = reqRunId;
+      const setRunId = (id: string | null) => {
+        activeRunId = id;
+      };
+      const server = createAgentMcpServer(agent, deps, () => activeRunId);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => {
           generatedId = crypto.randomUUID();
@@ -614,7 +941,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
         },
         enableJsonResponse: true,
         onsessioninitialized: (sid) => {
-          streamableSessions.set(sid, { agentId: agent.id, transport, server });
+          streamableSessions.set(sid, { agentId: agent.id, transport, server, setRunId });
         },
         onsessionclosed: (sid) => {
           streamableSessions.delete(sid);
@@ -642,7 +969,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     }
 
     // Stateless JSON-RPC POST fallback (ideal for direct tools/list, tools/call & curl)
-    const server = createAgentMcpServer(agent, deps);
+    const server = createAgentMcpServer(agent, deps, () => reqRunId);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -664,11 +991,16 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
   app.get('/mcp/sse', async (request, reply) => {
     const agent = await authenticateRequest(request, reply);
     if (!agent) return;
+    if (await rejectIfHalted(agent, request, reply)) return;
 
+    let activeRunId: string | null = extractRunId(request);
+    const setRunId = (id: string | null) => {
+      activeRunId = id;
+    };
     hijackWithCors(reply);
-    const server = createAgentMcpServer(agent, deps);
+    const server = createAgentMcpServer(agent, deps, () => activeRunId);
     const transport = new SSEServerTransport('/mcp/messages', reply.raw);
-    sseSessions.set(transport.sessionId, { agentId: agent.id, transport, server });
+    sseSessions.set(transport.sessionId, { agentId: agent.id, transport, server, setRunId });
 
     reply.raw.on('close', () => {
       sseSessions.delete(transport.sessionId);
@@ -681,6 +1013,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
   app.post('/mcp/messages', async (request, reply) => {
     const agent = await authenticateRequest(request, reply);
     if (!agent) return;
+    if (await rejectIfHalted(agent, request, reply)) return;
 
     const sessionId = (request.query as { sessionId?: string }).sessionId;
     if (!sessionId) {
@@ -693,6 +1026,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
       return;
     }
 
+    session.setRunId(extractRunId(request));
     hijackWithCors(reply);
     await session.transport.handlePostMessage(request.raw, reply.raw, request.body);
   });
@@ -791,7 +1125,7 @@ export function buildMcpConfigSnippets(params: {
         `  -H "Accept: application/json, text/event-stream" \\`,
         `  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`,
         ``,
-        `# 2. Call list_emails (silent semantic filtering applied)`,
+        `# 2. Call list_emails (silent semantic & injection filtering applied)`,
         `curl -s -X POST "${mcpUrl}" \\`,
         `  -H "Authorization: Bearer ${token}" \\`,
         `  -H "Content-Type: application/json" \\`,

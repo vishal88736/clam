@@ -144,6 +144,10 @@ const ACTION_KEYWORDS: { action: AgentAction; regex: RegExp }[] = [
     regex: /\bread(?:ing|s)?\b|\bsummariz|\btriag(?:e|ing)\b|\bbuild\b|\banalyz|\bcheck\b|\bextract\b|\btrack/i,
   },
   { action: 'list', regex: /\blist(?:ing)?\b|\bsearch(?:ing)?\b|\bfind\b|\bscan\b/i },
+  {
+    action: 'write_artifact',
+    regex: /\b(?:itinerary|expense\s+digest|save\s+(?:itinerary\s+)?artifacts?|\.ics|calendar\s+export)\b/i,
+  },
 ];
 
 export interface LlmCompilerRuntimeConfig {
@@ -276,7 +280,9 @@ export function compilePolicyDeterministic(
     }
 
     if (isAskFirst) {
-      const targetActions = detectActionsInText(text).filter((a) => a !== 'read' && a !== 'list');
+      const targetActions = detectActionsInText(text).filter(
+        (a) => a !== 'read' && a !== 'list' && a !== 'write_artifact'
+      );
       // If sentence says "Ask me first before creating drafts or sending replies"
       const actionsToGate: AgentAction[] =
         targetActions.length > 0 ? targetActions : ['send', 'draft'];

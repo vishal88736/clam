@@ -1,16 +1,21 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, Copy, Mail, Send, Shield, Sparkles } from 'lucide-react';
+import { Check, Copy, Mail, Power, Send, Shield, Sparkles } from 'lucide-react';
 import type { ChannelDeliveryMap, LlmProvider, MailMode } from '@clam/shared';
 import { useConsole } from '@/components/ConsoleContext';
 import { clamApi, type SettingsResponse } from '@/lib/api';
 
 export default function SettingsPage() {
-  const { refreshOverview } = useConsole();
+  const { killSwitch, refreshOverview } = useConsole();
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+
+  const [cbThreshold, setCbThreshold] = useState(3);
+  const [cbWindow, setCbWindow] = useState(30);
+  const [cbMaxCalls, setCbMaxCalls] = useState(25);
+  const [cbTripCritical, setCbTripCritical] = useState(true);
 
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('local_heuristic');
   const [llmModel, setLlmModel] = useState('');
@@ -59,6 +64,26 @@ export default function SettingsPage() {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    if (!killSwitch) return;
+    setCbThreshold(killSwitch.circuit_breaker.violation_threshold);
+    setCbWindow(killSwitch.circuit_breaker.window_seconds);
+    setCbMaxCalls(killSwitch.circuit_breaker.max_calls_per_min);
+    setCbTripCritical(killSwitch.circuit_breaker.trip_on_critical_injection);
+  }, [killSwitch]);
+
+  async function handleSaveBreaker(e: React.FormEvent) {
+    e.preventDefault();
+    await clamApi.updateKillSwitchConfig({
+      violation_threshold: cbThreshold,
+      window_seconds: cbWindow,
+      max_calls_per_min: cbMaxCalls,
+      trip_on_critical_injection: cbTripCritical,
+    });
+    await refreshOverview();
+    setNotice('Auto-Trip Circuit Breaker thresholds updated.');
+  }
 
   async function switchMailMode(mode: MailMode) {
     setNotice(null);
@@ -176,7 +201,7 @@ export default function SettingsPage() {
             <div>
               <h2 className="text-sm font-semibold tracking-display">Mail Provider Boundary</h2>
               <p className="text-xs text-ink-secondary mt-0.5">
-                Switch between the 18-email Sandbox Inbox and Google Gmail OAuth 2.0.
+                Switch between the 20-email Sandbox Inbox (with flight conflict &amp; injection traps) and Google Gmail OAuth 2.0.
               </p>
             </div>
           </div>
@@ -588,6 +613,80 @@ export default function SettingsPage() {
             className="btn-primary px-4 py-1.5 rounded-md text-xs font-semibold"
           >
             Save Channel Credentials
+          </button>
+        </div>
+      </form>
+
+      {/* 4. Kill Switch & Auto-Trip Circuit Breaker Thresholds */}
+      <form onSubmit={handleSaveBreaker} className="bento-card rounded-xl p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg border border-crimson-matte/30 bg-crimson-fill text-crimson-matte">
+            <Power className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold tracking-display">
+              Kill Switch &amp; Auto-Trip Circuit Breaker
+            </h2>
+            <p className="text-xs text-ink-secondary mt-0.5">
+              Automatically engage the global Kill Switch if an agent triggers repeated blocked violations, runaway loops, or critical exfiltration injections.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div>
+            <label className="block text-ink-secondary mb-1">Violation Threshold</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={cbThreshold}
+              onChange={(e) => setCbThreshold(Number(e.target.value))}
+              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-ink-secondary mb-1">Sliding Window (seconds)</label>
+            <input
+              type="number"
+              min={5}
+              max={300}
+              value={cbWindow}
+              onChange={(e) => setCbWindow(Number(e.target.value))}
+              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-ink-secondary mb-1">Max Calls / Min (Runaway)</label>
+            <input
+              type="number"
+              min={3}
+              max={200}
+              value={cbMaxCalls}
+              onChange={(e) => setCbMaxCalls(Number(e.target.value))}
+              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
+            />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-xs text-ink-primary cursor-pointer">
+          <input
+            type="checkbox"
+            checked={cbTripCritical}
+            onChange={(e) => setCbTripCritical(e.target.checked)}
+            className="accent-crimson-matte"
+          />
+          <span>
+            Auto-trip immediately on critical outbound prompt-injection or OTP exfiltration attempts
+          </span>
+        </label>
+
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            className="btn-primary px-4 py-1.5 rounded-md text-xs font-semibold"
+          >
+            Save Circuit Breaker Thresholds
           </button>
         </div>
       </form>

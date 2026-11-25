@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@clam/shared': path.resolve(__dirname, 'packages/shared/src/index.ts'),
+      '@clam/agent': path.resolve(__dirname, 'apps/agent/src/index.ts'),
       '@clam/server': path.resolve(__dirname, 'apps/server/src'),
     },
   },

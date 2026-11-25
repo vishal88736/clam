@@ -20,6 +20,10 @@ export function mapToolToAction(tool: McpToolName | string): AgentAction | null 
       return 'archive';
     case 'apply_label':
       return 'label';
+    case 'delete_email':
+      return 'delete';
+    case 'save_itinerary_artifact':
+      return 'write_artifact';
     default:
       return null;
   }
@@ -46,6 +50,7 @@ function findClauseForEffect(
     archive: ['archive', 'dismiss'],
     label: ['label', 'tag', 'categorize', 'organize'],
     delete: ['delete', 'trash', 'remove', 'erase', 'purge'],
+    write_artifact: ['itinerary', 'digest', 'artifact', 'ics', 'calendar', 'save'],
   };
   const words = actionSynonyms[action] ?? [action];
   return (
@@ -113,8 +118,8 @@ export function evaluateDeterministicGate(params: {
     };
   }
 
-  // No-credentials / no-OTP deterministic outbound guard
-  if ((action === 'send' || action === 'draft') && outboundText) {
+  // No-credentials / no-OTP deterministic outbound & artifact guard
+  if ((action === 'send' || action === 'draft' || action === 'write_artifact') && outboundText) {
     const leak = scanOutboundSecrets(outboundText);
     if (leak) {
       return {
@@ -179,10 +184,18 @@ export function scanOutboundSecrets(text: string): string | null {
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) {
     return 'private cryptographic key';
   }
-  if (/(?:one-time\s*(?:password|passcode|code)|otp|2fa\s*code|verification\s*code)\s*(?:is|:)?\s*\d{4,8}/i.test(text)) {
+  if (
+    /(?:one-time\s*(?:password|passcode|code)|otp|2fa\s*(?:login\s*)?code|verification\s*code)\s*(?:is|:|#)?\s*\d{4,8}/i.test(
+      text
+    )
+  ) {
     return 'OTP / 2FA code';
   }
-  if (/(?:password\s*reset|reset\s*token|magic\s*link)\s*[:=]\s*https?:\/\//i.test(text)) {
+  if (
+    /(?:password\s*reset|reset\s*token|magic\s*link)\s*[:=]?\s*https?:\/\/|https?:\/\/[^\s]*(?:RecoverAccount\?token=|password_reset\/)/i.test(
+      text
+    )
+  ) {
     return 'password reset link';
   }
   return null;

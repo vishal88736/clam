@@ -9,6 +9,8 @@ export interface ClamConfig {
   webPort: number;
   publicUrl: string;
   databasePath: string;
+  artifactsDir: string;
+  tracesDir: string;
   encryptionKey: Buffer;
   defaultMailMode: MailMode;
   googleClientId: string;
@@ -22,6 +24,12 @@ export interface ClamConfig {
   ollamaBaseUrl: string;
   classifierTimeoutMs: number;
   approvalTtlSeconds: number;
+  circuitBreaker: {
+    violationThreshold: number;
+    windowSeconds: number;
+    maxCallsPerMin: number;
+    tripOnCriticalInjection: boolean;
+  };
   slack: {
     botToken: string;
     channelId: string;
@@ -87,6 +95,9 @@ export function loadConfig(): ClamConfig {
     webPort: Number(process.env.WEB_PORT || 3000),
     publicUrl: process.env.CLAM_PUBLIC_URL?.trim() || 'http://localhost:4000',
     databasePath,
+    artifactsDir:
+      process.env.CLAM_ARTIFACTS_DIR?.trim() || path.resolve(process.cwd(), 'artifacts'),
+    tracesDir: process.env.CLAM_TRACES_DIR?.trim() || path.resolve(process.cwd(), 'traces'),
     encryptionKey: resolveEncryptionKey(databasePath),
     defaultMailMode,
     googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || '',
@@ -101,6 +112,12 @@ export function loadConfig(): ClamConfig {
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL?.trim() || 'http://127.0.0.1:11434',
     classifierTimeoutMs: Number(process.env.CLAM_CLASSIFIER_TIMEOUT_MS || 8000),
     approvalTtlSeconds: Number(process.env.CLAM_APPROVAL_TTL_SECONDS || 900),
+    circuitBreaker: {
+      violationThreshold: Number(process.env.CLAM_CB_VIOLATION_THRESHOLD || 3),
+      windowSeconds: Number(process.env.CLAM_CB_WINDOW_SECONDS || 30),
+      maxCallsPerMin: Number(process.env.CLAM_CB_MAX_CALLS_PER_MIN || 25),
+      tripOnCriticalInjection: process.env.CLAM_CB_TRIP_CRITICAL_INJECTION !== 'false',
+    },
     slack: {
       botToken: process.env.SLACK_BOT_TOKEN?.trim() || '',
       channelId: process.env.SLACK_CHANNEL_ID?.trim() || '',

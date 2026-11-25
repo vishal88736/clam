@@ -8,6 +8,7 @@ export const AgentActionSchema = z.enum([
   'archive',
   'label',
   'delete',
+  'write_artifact',
 ]);
 export type AgentAction = z.infer<typeof AgentActionSchema>;
 
@@ -19,6 +20,8 @@ export const McpToolNameSchema = z.enum([
   'send_email',
   'archive_email',
   'apply_label',
+  'delete_email',
+  'save_itinerary_artifact',
 ]);
 export type McpToolName = z.infer<typeof McpToolNameSchema>;
 
@@ -134,8 +137,23 @@ export const AuditDecisionSchema = z.enum([
   'APPROVED',
   'REJECTED',
   'EXPIRED',
+  'KILL_SWITCH_ENGAGED',
+  'KILL_SWITCH_RESUMED',
+  'CIRCUIT_BREAKER_TRIPPED',
 ]);
 export type AuditDecision = z.infer<typeof AuditDecisionSchema>;
+
+export const InjectionSeveritySchema = z.enum(['none', 'low', 'high', 'critical']);
+export type InjectionSeverity = z.infer<typeof InjectionSeveritySchema>;
+
+export const PromptInjectionResultSchema = z.object({
+  detected: z.boolean(),
+  risk_score: z.number().min(0).max(1),
+  severity: InjectionSeveritySchema,
+  signals: z.array(z.string()),
+  exfiltration_target_detected: z.boolean(),
+});
+export type PromptInjectionResult = z.infer<typeof PromptInjectionResultSchema>;
 
 export const SemanticClassificationResultSchema = z.object({
   matched_scope: z.string().nullable(),
@@ -154,6 +172,8 @@ export const PolicyEvaluationTraceSchema = z.object({
   semantic_category: z.string().nullable(),
   sensitive_flag: SensitiveCategorySchema.nullable(),
   confidence: z.number().min(0).max(1),
+  injection_risk_score: z.number().min(0).max(1).default(0),
+  injection_signals: z.array(z.string()).default([]),
   reasoning_code: z.string(),
   latency_ms: z.number(),
   approval_id: z.string().nullable().optional(),
@@ -268,6 +288,8 @@ export interface ApprovalView {
 
 export interface AuditLogEntry {
   id: string;
+  trace_id: string;
+  run_id: string | null;
   timestamp: string;
   agent_id: string;
   agent_name: string;
@@ -277,9 +299,88 @@ export interface AuditLogEntry {
   rule_citation: string;
   semantic_category: string | null;
   confidence: number | null;
+  injection_risk_score: number;
+  injection_signals: string[];
   approval_id: string | null;
   message_id_hash: string | null;
   latency_ms: number;
+}
+
+export type KillSwitchStatus = 'ARMED' | 'HALTED';
+export type KillSwitchTriggerMode = 'manual_ui' | 'manual_cli' | 'manual_api' | 'circuit_breaker' | null;
+
+export interface CircuitBreakerConfig {
+  violation_threshold: number;
+  window_seconds: number;
+  max_calls_per_min: number;
+  trip_on_critical_injection: boolean;
+}
+
+export interface KillSwitchState {
+  status: KillSwitchStatus;
+  trigger_mode: KillSwitchTriggerMode;
+  engaged_at: string | null;
+  engaged_by: string | null;
+  reason: string | null;
+  halted_agents: string[];
+  active_runs_count: number;
+  aborted_inflight_count: number;
+  circuit_breaker: CircuitBreakerConfig;
+  recent_violation_count: number;
+}
+
+export interface AgentRunStep {
+  step: number;
+  timestamp: string;
+  action: string;
+  mcp_tool?: string;
+  status: 'ok' | 'blocked' | 'aborted' | 'info';
+  detail: string;
+  latency_ms: number;
+}
+
+export interface AgentRunSummary {
+  run_id: string;
+  agent_id: string;
+  agent_name: string;
+  status: 'running' | 'completed' | 'aborted' | 'failed';
+  started_at: string;
+  finished_at: string | null;
+  emails_permitted: number;
+  emails_stripped_or_blocked: number;
+  conflicts_resolved: number;
+  artifacts_written: string[];
+  drafts_created: number;
+  unauthorized_sends_blocked: number;
+  estimated_cost_usd: number;
+  provider: LlmProvider;
+  trace_path: string | null;
+  error: string | null;
+  steps: AgentRunStep[];
+}
+
+export interface TrapPackCaseResult {
+  case_id: string;
+  title: string;
+  attack_vector: string;
+  passed: boolean;
+  blocked_count: number;
+  exfiltration_leaks: number;
+  injection_risk_score: number;
+  detail: string;
+}
+
+export interface TrapPackReport {
+  generated_at: string;
+  total_cases: number;
+  passed_cases: number;
+  failed_cases: number;
+  zero_exfiltration_verified: boolean;
+  mission_survived: boolean;
+  circuit_breaker_verified: boolean;
+  trace_path: string;
+  report_path: string;
+  cases: TrapPackCaseResult[];
 }
 
 export type MailMode = 'sandbox' | 'gmail';
@@ -288,8 +389,10 @@ export type LlmProvider = 'local_heuristic' | 'openai' | 'anthropic' | 'gemini' 
 export const CLAM_ERROR_CODES = {
   UNAUTHORIZED: 'CLAM_UNAUTHORIZED',
   AGENT_PAUSED: 'CLAM_AGENT_PAUSED',
+  KILL_SWITCH_ENGAGED: 'KILL_SWITCH_ENGAGED',
   RATE_LIMITED: 'CLAM_RATE_LIMITED',
   POLICY_DENIED: 'CLAM_POLICY_DENIED',
+  PROMPT_INJECTION_BLOCKED: 'PROMPT_INJECTION_BLOCKED',
   CLASSIFIER_FAIL_CLOSED: 'CLAM_CLASSIFIER_FAIL_CLOSED',
   APPROVAL_REQUIRED: 'CLAM_APPROVAL_REQUIRED',
   APPROVAL_EXPIRED: 'CLAM_APPROVAL_EXPIRED',

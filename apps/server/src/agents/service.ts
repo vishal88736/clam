@@ -39,6 +39,14 @@ const PRESEED_AGENTS: {
     rawRules:
       'Read newsletters, shipping notifications, and work correspondence to summarize daily priorities. Label triaged messages. Ask me first before creating drafts or sending replies. Never delete.',
   },
+  {
+    id: 'ag_autonomous',
+    name: 'Travel & Bills Triage Agent',
+    description:
+      'Unattended autonomous agent that reconciles travel updates & bills, saves itinerary artifacts, and drafts host replies zero-touch.',
+    rawRules:
+      'Read flight, hotel, booking, host, and utility bill emails to build my itinerary and expense digest. Save itinerary artifacts. Draft polite check-in replies to hosts. Never send emails or delete messages. Ask me first before archiving or modifying labels.',
+  },
 ];
 
 export class AgentService {
@@ -63,13 +71,17 @@ export class AgentService {
   }
 
   async seedDefaultsIfEmpty(): Promise<void> {
-    const existing = await this.db.select().from(agents).limit(1).all();
-    if (existing.length > 0) return;
-
+    const existingRows = await this.db.select({ id: agents.id }).from(agents).all();
+    const existingIds = new Set(existingRows.map((r) => r.id));
     const llmCfg = await this.getCompilerConfig();
     const now = new Date().toISOString();
 
-    for (const def of PRESEED_AGENTS) {
+    const defsToSeed =
+      existingIds.size === 0
+        ? PRESEED_AGENTS
+        : PRESEED_AGENTS.filter((d) => d.id === 'ag_autonomous' && !existingIds.has(d.id));
+
+    for (const def of defsToSeed) {
       const policyIr = await compilePolicy({
         rawRules: def.rawRules,
         llmConfig: llmCfg,

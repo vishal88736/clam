@@ -1,0 +1,22 @@
+[project]
+name = "Clam"
+track = "Inbox & Calendar"
+tagline = "Zero-touch autonomous inbox & itinerary agent behind a zero-retention semantic MCP firewall with an instant hardware-grade kill switch."
+license = "MIT"
+version = "1.0.0"
+
+[setup]
+mode = "sandbox-default"
+requires_user_credentials = false
+quickstart = "cp .env.example .env && pnpm install && pnpm dev"
+autonomous_demo = "pnpm agent:run"
+trap_pack = "pnpm trap-pack:run"
+tests = "pnpm test"
+
+[safety]
+guardrails = "code-enforced"
+fail_closed = true
+zero_retention = true
+kill_switch = ["ui-latch", "cli-api", "auto-trip-circuit-breaker"]
+traces_dir = "traces"
+trap_pack_dir = "trap-pack/cases"

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -9,7 +9,9 @@ import {
   CheckSquare,
   FileSearch,
   Moon,
+  Power,
   Settings,
+  ShieldOff,
   Sun,
 } from 'lucide-react';
 import { ClamMascot } from './ClamMascot';
@@ -41,14 +43,61 @@ const POSTURE_BADGE: Record<string, { label: string; cls: string }> = {
     label: 'ASK FIRST',
     cls: 'bg-amber-fill text-amber-matte border-amber-matte/30',
   },
+  halted: {
+    label: 'HALTED',
+    cls: 'bg-crimson-fill text-crimson-matte border-crimson-matte/45',
+  },
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { overview, sseConnected, theme, toggleTheme, mascotState, refreshOverview } =
-    useConsole();
+  const {
+    overview,
+    killSwitch,
+    sseConnected,
+    theme,
+    toggleTheme,
+    mascotState,
+    refreshOverview,
+  } = useConsole();
   const [switchingMode, setSwitchingMode] = useState(false);
+  const [killBusy, setKillBusy] = useState(false);
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [resumeReason, setResumeReason] = useState('Operator verified safety posture and cleared latch.');
+
+  const isHalted = killSwitch?.status === 'HALTED';
+
+  const handleEngageKillSwitch = useCallback(async () => {
+    if (killBusy) return;
+    setKillBusy(true);
+    try {
+      await clamApi.engageKillSwitch({
+        trigger_mode: 'manual_ui',
+        engaged_by: 'console_operator',
+        reason: 'Emergency Kill Switch engaged from Console top bar (Shift+K)',
+      });
+      await refreshOverview();
+    } finally {
+      setKillBusy(false);
+    }
+  }, [killBusy, refreshOverview]);
+
+  const handleResumeKillSwitch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resumeReason.trim() || killBusy) return;
+    setKillBusy(true);
+    try {
+      await clamApi.resumeKillSwitch({
+        reason: resumeReason.trim(),
+        resumed_by: 'console_operator',
+      });
+      setShowResumeModal(false);
+      await refreshOverview();
+    } finally {
+      setKillBusy(false);
+    }
+  };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -57,11 +106,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (e.key === '/' && pathname !== '/audit') {
         e.preventDefault();
         router.push('/audit');
+      } else if (e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (isHalted) {
+          setShowResumeModal(true);
+        } else {
+          void handleEngageKillSwitch();
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pathname, router]);
+  }, [pathname, router, isHalted, handleEngageKillSwitch]);
 
   const activeAgents = overview?.active_agents_count ?? 0;
   const pendingCount = overview?.pending_approvals_count ?? 0;
@@ -167,7 +223,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
             <p className="text-[11px] text-ink-secondary leading-relaxed">
-              RAM-only email proxy. OAuth credentials AES-256-GCM sealed. 0 bytes retained.
+              {isHalted
+                ? 'Emergency Kill Switch latched. In-flight runs aborted; /mcp locked (423).'
+                : 'RAM-only email proxy. OAuth credentials AES-256-GCM sealed. 0 bytes retained.'}
             </p>
           </div>
         </div>
@@ -229,6 +287,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+            {/* Hardware-Style Matte Crimson Kill Switch Latch */}
+            {isHalted ? (
+              <button
+                type="button"
+                onClick={() => setShowResumeModal(true)}
+                disabled={killBusy}
+                title="Kill Switch ENGAGED (Shift+K to resume with audit reason)"
+                className="btn-tactile inline-flex items-center gap-1.5 px-3 py-1 rounded-md border border-crimson-matte bg-crimson-fill text-crimson-matte font-mono text-[11px] font-semibold tracking-wider"
+              >
+                <ShieldOff className="w-3.5 h-3.5" />
+                HALTED · RESUME
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleEngageKillSwitch}
+                disabled={killBusy}
+                title="Engage Emergency Kill Switch immediately (Shift+K)"
+                className="btn-tactile inline-flex items-center gap-1.5 px-3 py-1 rounded-md border border-crimson-matte/55 bg-crimson-fill hover:border-crimson-matte text-crimson-matte font-mono text-[11px] font-semibold tracking-wider"
+              >
+                <Power className="w-3.5 h-3.5" />
+                KILL SWITCH
+              </button>
+            )}
+
             <div
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-hairline bg-surface font-mono text-[11px] text-emerald-matte"
               title={sseConnected ? 'Live SSE stream connected' : 'Syncing SSE stream'}
@@ -257,8 +340,86 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        {/* Global Halted Banner */}
+        {isHalted && (
+          <div className="border-b border-crimson-matte/35 bg-crimson-fill px-4 lg:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 text-crimson-matte">
+              <ShieldOff className="w-3.5 h-3.5 shrink-0" />
+              <span className="font-mono font-semibold uppercase tracking-wider">
+                {killSwitch?.trigger_mode === 'circuit_breaker'
+                  ? 'AUTO-TRIP CIRCUIT BREAKER ENGAGED'
+                  : 'EMERGENCY KILL SWITCH ENGAGED'}
+              </span>
+              <span className="text-ink-primary">
+                — {killSwitch?.reason ?? 'All MCP tools locked (HTTP 423).'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowResumeModal(true)}
+              className="px-2.5 py-1 rounded border border-crimson-matte/45 bg-surface text-ink-primary text-[11px] font-medium hover:bg-elevated"
+            >
+              Disarm & Resume…
+            </button>
+          </div>
+        )}
+
         <main className="flex-1 p-4 lg:p-6 max-w-[1360px] w-full mx-auto">{children}</main>
       </div>
+
+      {/* Resume Kill Switch Modal */}
+      {showResumeModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setShowResumeModal(false)}
+        >
+          <form
+            onSubmit={handleResumeKillSwitch}
+            onClick={(e) => e.stopPropagation()}
+            className="bento-card rounded-xl w-full max-w-md p-5 space-y-4"
+          >
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-crimson-matte">
+                Safety Latch Disarm
+              </div>
+              <h3 className="text-base font-semibold tracking-display text-ink-primary mt-0.5">
+                Resume Clam MCP Operations
+              </h3>
+              <p className="text-xs text-ink-secondary mt-1">
+                Resuming writes an immutable <code>KILL_SWITCH_RESUMED</code> record to the audit
+                trail.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-primary mb-1.5">
+                Audit Reason
+              </label>
+              <input
+                value={resumeReason}
+                onChange={(e) => setResumeReason(e.target.value)}
+                required
+                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs text-ink-primary"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowResumeModal(false)}
+                className="btn-tactile px-3 py-1.5 rounded-md border border-hairline bg-canvas text-xs text-ink-secondary"
+              >
+                Keep Halted
+              </button>
+              <button
+                type="submit"
+                disabled={killBusy || !resumeReason.trim()}
+                className="btn-primary px-3.5 py-1.5 rounded-md text-xs font-semibold"
+              >
+                {killBusy ? 'Resuming…' : 'Disarm & Resume'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

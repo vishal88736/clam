@@ -1,15 +1,19 @@
 import type {
   AgentRecord,
+  AgentRunSummary,
   AgentTokenInfo,
   ApprovalView,
   AuditLogEntry,
+  CircuitBreakerConfig,
   EphemeralEmail,
+  KillSwitchState,
   LlmProvider,
   MailMode,
   McpToolName,
   PolicyEvaluationTrace,
   PolicyIR,
   SensitiveCategory,
+  TrapPackReport,
 } from '@clam/shared';
 
 export const API_BASE =
@@ -43,6 +47,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface ArtifactFileInfo {
+  filename: string;
+  bytes: number;
+  updated_at: string;
+}
+
 export interface OverviewResponse {
   mail_mode: MailMode;
   gmail_status: {
@@ -56,6 +66,10 @@ export interface OverviewResponse {
   active_agents_count: number;
   total_agents_count: number;
   pending_approvals_count: number;
+  kill_switch: KillSwitchState;
+  latest_run: AgentRunSummary | null;
+  artifacts: ArtifactFileInfo[];
+  latest_trap_report: TrapPackReport | null;
   metrics: {
     total_intercepted: number;
     allowed: number;
@@ -265,4 +279,52 @@ export const clamApi = {
       method: 'POST',
       body: JSON.stringify({}),
     }),
+  getKillSwitch: () => apiFetch<{ kill_switch: KillSwitchState }>('/api/killswitch'),
+  engageKillSwitch: (body?: {
+    reason?: string;
+    engaged_by?: string;
+    trigger_mode?: 'manual_ui' | 'manual_cli' | 'manual_api';
+    agent_id?: string;
+  }) =>
+    apiFetch<{ kill_switch: KillSwitchState }>('/api/killswitch/engage', {
+      method: 'POST',
+      body: JSON.stringify(body ?? {}),
+    }),
+  resumeKillSwitch: (body: { reason: string; resumed_by?: string; agent_id?: string }) =>
+    apiFetch<{ kill_switch: KillSwitchState }>('/api/killswitch/resume', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateKillSwitchConfig: (body: Partial<CircuitBreakerConfig>) =>
+    apiFetch<{ kill_switch: KillSwitchState }>('/api/killswitch/config', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  startAgentRun: (body?: { agent_id?: string; probe_adversarial_tool_calls?: boolean }) =>
+    apiFetch<{ run: AgentRunSummary }>('/api/agent-runs/start', {
+      method: 'POST',
+      body: JSON.stringify(body ?? {}),
+    }),
+  getAgentRuns: () => apiFetch<{ runs: AgentRunSummary[] }>('/api/agent-runs'),
+  getArtifacts: () => apiFetch<{ artifacts: ArtifactFileInfo[] }>('/api/artifacts'),
+  getArtifactContent: (filename: string) =>
+    apiFetch<{ filename: string; content: string }>(
+      `/api/artifacts/${encodeURIComponent(filename)}`
+    ),
+  getArtifactDownloadUrl: (filename: string) =>
+    `${API_BASE}/api/artifacts/${encodeURIComponent(filename)}?download=1`,
+  runTrapPack: () =>
+    apiFetch<{ report: TrapPackReport }>('/api/trappack/run', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  getTrapPackReport: () => apiFetch<{ report: TrapPackReport | null }>('/api/trappack/report'),
+  getAuditExportUrl: (params?: { agent_id?: string; decision?: string; mcp_tool?: string }) => {
+    const sp = new URLSearchParams();
+    if (params?.agent_id) sp.set('agent_id', params.agent_id);
+    if (params?.decision) sp.set('decision', params.decision);
+    if (params?.mcp_tool) sp.set('mcp_tool', params.mcp_tool);
+    const qs = sp.toString();
+    return `${API_BASE}/api/audit/export.jsonl${qs ? `?${qs}` : ''}`;
+  },
 };

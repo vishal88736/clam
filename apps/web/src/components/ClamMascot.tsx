@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 
-export type ClamMascotState = 'armed' | 'allow' | 'blocked' | 'pending';
+export type ClamMascotState = 'armed' | 'allow' | 'blocked' | 'pending' | 'halted';
 
 interface ClamMascotProps {
   state?: ClamMascotState;
@@ -18,6 +18,7 @@ const ANGLE_MAP: Record<ClamMascotState, number> = {
   allow: -22,
   blocked: 0,
   pending: -17,
+  halted: 0,
 };
 
 export function ClamMascot({
@@ -80,20 +81,20 @@ export function ClamMascot({
   }
 
   const effectivePeek = (interactive && hovered) || peek;
-  const lidAngle =
-    state === 'blocked'
-      ? 0
-      : effectivePeek
-        ? Math.min(ANGLE_MAP[state] - 8, -24)
-        : ANGLE_MAP[state];
+  const isClosed = state === 'blocked' || state === 'halted';
+  const lidAngle = isClosed
+    ? 0
+    : effectivePeek
+      ? Math.min(ANGLE_MAP[state] - 8, -24)
+      : ANGLE_MAP[state];
 
-  const lidTransition =
-    state === 'blocked'
-      ? 'transform 150ms cubic-bezier(0.2, 0, 0, 1)'
-      : 'transform 460ms cubic-bezier(0.34, 1.56, 0.64, 1)';
+  const lidTransition = isClosed
+    ? 'transform 150ms cubic-bezier(0.2, 0, 0, 1)'
+    : 'transform 460ms cubic-bezier(0.34, 1.56, 0.64, 1)';
 
   const isAllow = state === 'allow';
   const isBlocked = state === 'blocked';
+  const isHalted = state === 'halted';
   const isPending = state === 'pending';
   const isArmed = state === 'armed';
 
@@ -138,7 +139,7 @@ export function ClamMascot({
       {/* Interior Pocket & Pearl (hidden when clamped shut) */}
       <g
         style={{
-          opacity: isBlocked ? 0 : 1,
+          opacity: isClosed ? 0 : 1,
           transition: 'opacity 140ms ease-out',
         }}
       >
@@ -326,6 +327,53 @@ export function ClamMascot({
         />
         <circle cx="60" cy="52.8" r="1.5" fill="#141518" />
         <path d="M60 53.8V56.8" stroke="#141518" strokeWidth="1.6" strokeLinecap="round" />
+      </g>
+
+      {/* Halted State (Kill Switch Engaged): Double-Bolted Hardware Safety Latch */}
+      <g
+        style={{
+          opacity: isHalted ? 1 : 0,
+          transform: isHalted ? 'scale(1)' : 'scale(0.9)',
+          transformOrigin: '48px 50px',
+          transition: 'opacity 140ms ease-out, transform 150ms cubic-bezier(0.2, 0, 0, 1)',
+        }}
+      >
+        {/* Left & Right Heavy Steel Cross-Bolts */}
+        <rect
+          x="19"
+          y="41"
+          width="8"
+          height="18"
+          rx="2"
+          fill="#262A32"
+          stroke="#C95D52"
+          strokeWidth="1.6"
+        />
+        <line x1="23" y1="45" x2="23" y2="55" stroke="#C95D52" strokeWidth="1.8" strokeLinecap="round" />
+        <rect
+          x="69"
+          y="41"
+          width="8"
+          height="18"
+          rx="2"
+          fill="#262A32"
+          stroke="#C95D52"
+          strokeWidth="1.6"
+        />
+        <line x1="73" y1="45" x2="73" y2="55" stroke="#C95D52" strokeWidth="1.8" strokeLinecap="round" />
+        {/* Center Crimson Deadbolt Bar & Latch */}
+        <rect
+          x="33"
+          y="43.5"
+          width="30"
+          height="14"
+          rx="3"
+          fill="#C95D52"
+          stroke="#141518"
+          strokeWidth="2"
+        />
+        <line x1="39" y1="50.5" x2="57" y2="50.5" stroke="#141518" strokeWidth="2.4" strokeLinecap="round" />
+        <circle cx="48" cy="50.5" r="2.2" fill="#F0ECE3" />
       </g>
     </svg>
   );

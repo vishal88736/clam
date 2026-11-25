@@ -599,6 +599,8 @@ export default function AgentsStudioPage() {
                       <option value="send_email">send_email</option>
                       <option value="archive_email">archive_email</option>
                       <option value="apply_label">apply_label</option>
+                      <option value="delete_email">delete_email</option>
+                      <option value="save_itinerary_artifact">save_itinerary_artifact</option>
                     </select>
                   </div>
 

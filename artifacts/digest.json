@@ -1,0 +1,121 @@
+{
+  "generated_at": "2026-11-25T14:38:45.962Z",
+  "run_id": "run_e0da0c93b6544a",
+  "flights": [
+    {
+      "flight_number": "6E 2145",
+      "airline": "IndiGo Airlines",
+      "pnr": "XK72M9",
+      "route": "DEL -> BLR",
+      "departure": "Dec 18, 2026 — 06:45 IST",
+      "arrival": "Dec 18, 2026 — 09:30 IST",
+      "terminal_gate": "TBD",
+      "status": "confirmed",
+      "source_email_id": "msg_flight_indigo_02",
+      "source_date": "2026-11-24T10:15:00Z"
+    },
+    {
+      "flight_number": "DL 402",
+      "airline": "Delta Air Lines",
+      "pnr": "H9K4LP",
+      "route": "JFK -> SFO",
+      "departure": "Dec 12, 2026 — 10:15 AM EST from Terminal 4, Gate B28",
+      "arrival": "Dec 12, 2026 — 01:50 PM PST at San Francisco (SFO), Terminal 2",
+      "terminal_gate": "B28",
+      "status": "rescheduled",
+      "source_email_id": "msg_flight_delta_delay_19",
+      "source_date": "2026-11-25T04:10:00Z"
+    },
+    {
+      "flight_number": "UA 881",
+      "airline": "United Airlines",
+      "pnr": "UAL992C",
+      "route": "SFO -> NRT",
+      "departure": "11:35 AM PST",
+      "arrival": "Confirmed",
+      "terminal_gate": "International Terminal, Gate G9",
+      "status": "rescheduled",
+      "source_email_id": "msg_flight_united_13",
+      "source_date": "2026-11-25T03:00:00Z"
+    }
+  ],
+  "conflicts_resolved": [
+    {
+      "entity_type": "flight",
+      "entity_id": "DL 402",
+      "field": "departure",
+      "previous_value": "Dec 12, 2026 — 08:30 AM EST from New York (JFK), Terminal 4, Gate B24",
+      "resolved_value": "Dec 12, 2026 — 10:15 AM EST from Terminal 4, Gate B28",
+      "winning_email_id": "msg_flight_delta_delay_19",
+      "winning_email_date": "2026-11-25T04:10:00Z",
+      "resolution_rule": "LATEST_TIMESTAMP_WINS"
+    }
+  ],
+  "hotels": [
+    {
+      "property": "San Francisco Marriott Marquis, 780 Mission St, San Francisco, CA",
+      "confirmation_code": "#9941205",
+      "check_in": "Dec 12, 2026 (4:00 PM)",
+      "check_out": "Dec 15, 2026 (12:00 PM)",
+      "total_or_rate": "$279/night + taxes",
+      "source_email_id": "msg_hotel_marriott_05"
+    },
+    {
+      "property": "Cedar Machiya Townhouse — Higashiyama Ward, Kyoto",
+      "confirmation_code": "HM8842ZQ91",
+      "check_in": "Sunday, Dec 20, 2026 (3:00 PM JST)",
+      "check_out": "Thursday, Dec 24, 2026 (11:00 AM JST)",
+      "host_name": "Kenji Takahashi",
+      "total_or_rate": "$864.00 USD",
+      "source_email_id": "msg_hotel_airbnb_03"
+    }
+  ],
+  "bills": [
+    {
+      "vendor": "Stripe Receipts",
+      "invoice_or_account": "4401-8892",
+      "amount_usd": 96,
+      "due_date": "November 20, 2026",
+      "category": "receipt",
+      "source_domain": "linear-billing-portal.example",
+      "source_email_id": "msg_receipt_saas_14"
+    },
+    {
+      "vendor": "CloudPulse Metrics Inc.",
+      "invoice_or_account": "INV-2026-0914",
+      "amount_usd": 299,
+      "due_date": "Net 15 (Due Dec 07, 2026)",
+      "category": "receipt",
+      "source_domain": "cloudpulse-metrics.dev",
+      "source_email_id": "msg_invoice_saas_12"
+    },
+    {
+      "vendor": "New Horizon Municipal Grid",
+      "invoice_or_account": "88412-RES",
+      "amount_usd": 142.8,
+      "due_date": "December 10, 2026",
+      "category": "utility",
+      "source_domain": "new-unknown-utility.io",
+      "source_email_id": "msg_bill_unknown_utility_11"
+    }
+  ],
+  "total_expenses_usd": 537.8,
+  "host_questions": [
+    {
+      "host_name": "Kenji Takahashi",
+      "host_email": "kenji.host@airbnb-messages.example",
+      "thread_id": "thr_hotel_airbnb_03",
+      "property": "Cedar Machiya Townhouse (Kyoto)",
+      "subject": "Re: Reservation HM8842ZQ91 — Arrival instructions & check-in time?",
+      "suggested_reply": "Hi Kenji,\n\nThank you for reaching out! I expect to arrive in Kyoto around 3:30 PM on December 20, right after standard check-in opens. Looking forward to staying at the townhouse—feel free to share the smart lock instructions whenever convenient.\n\nBest regards,\nAlex"
+    }
+  ],
+  "meta": {
+    "emails_permitted": 11,
+    "emails_stripped_or_blocked": 9,
+    "drafts_created": 1,
+    "estimated_cost_usd": 0,
+    "provider": "local_heuristic",
+    "zero_retention_compliant": true
+  }
+}

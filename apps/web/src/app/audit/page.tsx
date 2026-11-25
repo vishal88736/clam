@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, ShieldCheck } from 'lucide-react';
+import { Download, Search, ShieldCheck } from 'lucide-react';
 import type { AgentRecord, AuditLogEntry } from '@clam/shared';
 import { useConsole } from '@/components/ConsoleContext';
 import { DecisionBadge } from '@/components/DecisionBadge';
@@ -72,10 +72,24 @@ export default function AuditLedgerPage() {
             Append-only inspection log. Strictly zero email subjects, bodies, or sender addresses stored.
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-emerald-matte/25 bg-emerald-fill text-emerald-matte text-xs font-mono self-start">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          0 Content Bytes Retained
-        </span>
+        <div className="flex items-center gap-2 self-start">
+          <a
+            href={clamApi.getAuditExportUrl({
+              agent_id: agentId || undefined,
+              decision: decision || undefined,
+              mcp_tool: tool || undefined,
+            })}
+            download="clam-trace.jsonl"
+            className="btn-primary inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export JSONL Trace
+          </a>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-emerald-matte/25 bg-emerald-fill text-emerald-matte text-xs font-mono">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            0 Content Bytes Retained
+          </span>
+        </div>
       </div>
 
       {/* Filters */}
@@ -116,6 +130,9 @@ export default function AuditLedgerPage() {
           <option value="APPROVED">APPROVED</option>
           <option value="REJECTED">REJECTED</option>
           <option value="EXPIRED">EXPIRED</option>
+          <option value="KILL_SWITCH_ENGAGED">KILL_SWITCH_ENGAGED</option>
+          <option value="CIRCUIT_BREAKER_TRIPPED">CIRCUIT_BREAKER_TRIPPED</option>
+          <option value="KILL_SWITCH_RESUMED">KILL_SWITCH_RESUMED</option>
         </select>
 
         <div className="flex gap-2">
@@ -132,6 +149,9 @@ export default function AuditLedgerPage() {
             <option value="send_email">send_email</option>
             <option value="archive_email">archive_email</option>
             <option value="apply_label">apply_label</option>
+            <option value="delete_email">delete_email</option>
+            <option value="save_itinerary_artifact">save_itinerary_artifact</option>
+            <option value="killswitch.engage">killswitch.engage</option>
           </select>
 
           <select
@@ -158,6 +178,7 @@ export default function AuditLedgerPage() {
                 <th className="py-2.5 px-4 font-medium">Tool</th>
                 <th className="py-2.5 px-4 font-medium">Decision</th>
                 <th className="py-2.5 px-4 font-medium">Category</th>
+                <th className="py-2.5 px-4 font-medium text-right">Inj Risk</th>
                 <th className="py-2.5 px-4 font-medium text-right">Conf</th>
                 <th className="py-2.5 px-4 font-medium">Message Hash</th>
                 <th className="py-2.5 px-4 font-medium text-right">Latency</th>
@@ -166,7 +187,7 @@ export default function AuditLedgerPage() {
             <tbody className="divide-y divide-hairline">
               {logs.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-ink-muted">
+                  <td colSpan={9} className="py-10 text-center text-ink-muted">
                     No matching audit records.
                   </td>
                 </tr>
@@ -191,6 +212,15 @@ export default function AuditLedgerPage() {
                     </td>
                     <td className="py-2.5 px-4 font-mono text-[11px] text-ink-secondary whitespace-nowrap">
                       {entry.semantic_category ?? '—'}
+                    </td>
+                    <td
+                      className={`py-2.5 px-4 font-mono text-[11px] tabular-nums text-right ${
+                        entry.injection_risk_score >= 0.55
+                          ? 'text-crimson-matte'
+                          : 'text-ink-muted'
+                      }`}
+                    >
+                      {Math.round((entry.injection_risk_score ?? 0) * 100)}%
                     </td>
                     <td className="py-2.5 px-4 font-mono text-[11px] text-ink-secondary tabular-nums text-right">
                       {entry.confidence !== null ? `${Math.round(entry.confidence * 100)}%` : '—'}

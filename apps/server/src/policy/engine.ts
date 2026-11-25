@@ -14,6 +14,7 @@ import {
   type ClassifierRuntimeConfig,
   type SemanticClassifierFn,
 } from './classifier.js';
+import { detectEmailPromptInjection, detectOutboundPromptInjection } from './injection.js';
 
 export interface EvaluatePolicyInput {
   agent: Pick<AgentRecord, 'id' | 'name' | 'status' | 'rate_limit_per_min' | 'policy_ir'>;
@@ -143,6 +144,18 @@ export class PolicyEngine {
       ? `${input.outbound.to ?? ''}\n${input.outbound.subject ?? ''}\n${input.outbound.body ?? ''}`
       : undefined;
 
+    const emailInjection = input.email ? detectEmailPromptInjection(input.email) : null;
+    const outboundInjection = input.outbound
+      ? detectOutboundPromptInjection(input.outbound)
+      : null;
+    const baseInjectionScore = Math.max(
+      emailInjection?.risk_score ?? 0,
+      outboundInjection?.risk_score ?? 0
+    );
+    const baseInjectionSignals = Array.from(
+      new Set([...(emailInjection?.signals ?? []), ...(outboundInjection?.signals ?? [])])
+    );
+
     // Stage A — Deterministic Hard Gate
     const rateLimited = options?.skipRateLimit
       ? false
@@ -165,6 +178,8 @@ export class PolicyEngine {
         semantic_category: null,
         sensitive_flag: null,
         confidence: 1,
+        injection_risk_score: baseInjectionScore,
+        injection_signals: baseInjectionSignals,
         reasoning_code: stageA.reasonCode,
         latency_ms: Math.max(1, Math.round(performance.now() - start)),
         stage_details: {
@@ -178,7 +193,32 @@ export class PolicyEngine {
       };
     }
 
-    // Stage B — Semantic Meaning Evaluation (when evaluating an email or thread context)
+    // Outbound prompt-injection deterministic block (prevents hijacked drafts/artifacts)
+    if (outboundInjection?.detected) {
+      return {
+        decision: 'DENY',
+        stage: 'STAGE_A_DETERMINISTIC',
+        matched_rule_id: 'deterministic_prompt_injection_shield',
+        rule_citation: `Outbound payload blocked by Prompt-Injection Shield (${outboundInjection.signals.join(', ')}).`,
+        semantic_category: 'prompt_injection',
+        sensitive_flag: null,
+        confidence: outboundInjection.risk_score,
+        injection_risk_score: outboundInjection.risk_score,
+        injection_signals: outboundInjection.signals,
+        reasoning_code: 'PROMPT_INJECTION_BLOCKED',
+        latency_ms: Math.max(1, Math.round(performance.now() - start)),
+        stage_details: {
+          stage_a_passed: false,
+          stage_a_reason: `Outbound prompt-injection signals: ${outboundInjection.signals.join(', ')}`,
+          stage_b_executed: false,
+          stage_b_reason: null,
+          stage_c_triggered: false,
+          stage_c_reason: null,
+        },
+      };
+    }
+
+    // Stage B — Semantic Meaning & Indirect Injection Evaluation
     let matchedScope: string | null = null;
     let semanticConfidence = 1;
     let stageBReason = 'No email payload context required for Stage B.';
@@ -186,6 +226,31 @@ export class PolicyEngine {
 
     if (input.email) {
       stageBExecuted = true;
+
+      if (emailInjection?.detected) {
+        return {
+          decision: 'DENY',
+          stage: 'STAGE_B_SEMANTIC',
+          matched_rule_id: 'deterministic_prompt_injection_shield',
+          rule_citation: `Indirect prompt injection blocked in RAM (${emailInjection.signals.join(', ')}).`,
+          semantic_category: 'prompt_injection',
+          sensitive_flag: null,
+          confidence: emailInjection.risk_score,
+          injection_risk_score: emailInjection.risk_score,
+          injection_signals: emailInjection.signals,
+          reasoning_code: 'PROMPT_INJECTION_BLOCKED',
+          latency_ms: Math.max(1, Math.round(performance.now() - start)),
+          stage_details: {
+            stage_a_passed: true,
+            stage_a_reason: stageA.ruleCitation,
+            stage_b_executed: true,
+            stage_b_reason: `Indirect prompt injection detected (score=${emailInjection.risk_score}, signals=${emailInjection.signals.join(', ')}).`,
+            stage_c_triggered: false,
+            stage_c_reason: null,
+          },
+        };
+      }
+
       const sem = await this.runSemanticClassifier(input.email, policy);
       semanticConfidence = sem.confidence;
 
@@ -201,6 +266,8 @@ export class PolicyEngine {
           semantic_category: sem.sensitive_flag ?? sem.matched_scope,
           sensitive_flag: sem.sensitive_flag,
           confidence: sem.confidence,
+          injection_risk_score: baseInjectionScore,
+          injection_signals: baseInjectionSignals,
           reasoning_code: sem.reasoning_code,
           latency_ms: Math.max(1, Math.round(performance.now() - start)),
           stage_details: {
@@ -247,6 +314,8 @@ export class PolicyEngine {
           semantic_category: sem.sensitive_flag,
           sensitive_flag: sem.sensitive_flag,
           confidence: sem.confidence,
+          injection_risk_score: baseInjectionScore,
+          injection_signals: baseInjectionSignals,
           reasoning_code: sem.reasoning_code,
           latency_ms: Math.max(1, Math.round(performance.now() - start)),
           stage_details: {
@@ -282,6 +351,8 @@ export class PolicyEngine {
         semantic_category: matchedScope,
         sensitive_flag: null,
         confidence: semanticConfidence,
+        injection_risk_score: baseInjectionScore,
+        injection_signals: baseInjectionSignals,
         reasoning_code: 'HITL_APPROVAL_REQUIRED',
         latency_ms: Math.max(1, Math.round(performance.now() - start)),
         stage_details: {
@@ -310,6 +381,8 @@ export class PolicyEngine {
       semantic_category: matchedScope,
       sensitive_flag: null,
       confidence: semanticConfidence,
+      injection_risk_score: baseInjectionScore,
+      injection_signals: baseInjectionSignals,
       reasoning_code: matchedScope ? `ALLOWED_${matchedScope.toUpperCase()}` : 'ALLOWED_BY_RULE',
       latency_ms: Math.max(1, Math.round(performance.now() - start)),
       stage_details: {

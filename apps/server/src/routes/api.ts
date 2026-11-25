@@ -9,10 +9,12 @@ import {
   type McpToolName,
   type SensitiveCategory,
 } from '@clam/shared';
+import type { AutonomousRunnerService } from '../agents/runnerService.js';
 import type { AgentService } from '../agents/service.js';
 import type { ApprovalService } from '../approvals/service.js';
 import type { AuditLogger, RealtimeEventHub } from '../audit/logger.js';
 import type { ClamConfig } from '../config.js';
+import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
 import { buildMcpConfigSnippets } from '../mcp/server.js';
 import { compilePolicy, type LlmCompilerRuntimeConfig } from '../policy/compiler.js';
@@ -36,6 +38,8 @@ export interface ApiDeps {
   mailService: MailService;
   approvalService: ApprovalService;
   auditLogger: AuditLogger;
+  killSwitchService: KillSwitchService;
+  runnerService: AutonomousRunnerService;
   hub: RealtimeEventHub;
   getLlmConfig: () => Promise<LlmCompilerRuntimeConfig>;
 }
@@ -94,11 +98,12 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
 
   // Overview summary
   app.get('/api/overview', async () => {
-    const [allAgents, pendingApprovals, metrics, gmailStatus] = await Promise.all([
+    const [allAgents, pendingApprovals, metrics, gmailStatus, artifacts] = await Promise.all([
       deps.agentService.listAgents(),
       deps.approvalService.list('PENDING'),
       deps.auditLogger.getMetrics(),
       deps.mailService.getGmailStatus(),
+      deps.runnerService.listArtifacts(),
     ]);
 
     return {
@@ -108,6 +113,10 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
       active_agents_count: allAgents.filter((a) => a.status === 'active').length,
       total_agents_count: allAgents.length,
       pending_approvals_count: pendingApprovals.length,
+      kill_switch: deps.killSwitchService.getState(),
+      latest_run: deps.runnerService.listRuns()[0] ?? null,
+      artifacts,
+      latest_trap_report: deps.runnerService.getLatestTrapReport(),
       metrics,
     };
   });
@@ -219,6 +228,8 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
         'send_email',
         'archive_email',
         'apply_label',
+        'delete_email',
+        'save_itinerary_artifact',
       ]),
       raw_rules_override: z.string().optional(),
       sandbox_email_id: z.string().optional(),
@@ -400,6 +411,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
   app.get('/api/audit', async (request) => {
     const q = request.query as {
       agent_id?: string;
+      run_id?: string;
       decision?: AuditDecision;
       mcp_tool?: string;
       from?: string;
@@ -409,6 +421,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
     };
     const logs = await deps.auditLogger.list({
       agentId: q.agent_id || undefined,
+      runId: q.run_id || undefined,
       decision: q.decision || undefined,
       mcpTool: q.mcp_tool || undefined,
       fromIso: q.from || undefined,
@@ -417,6 +430,140 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
       limit: q.limit ? Number(q.limit) : 100,
     });
     return { logs };
+  });
+
+  app.get('/api/audit/export.jsonl', async (request, reply) => {
+    const q = request.query as {
+      agent_id?: string;
+      run_id?: string;
+      decision?: AuditDecision;
+      mcp_tool?: string;
+      limit?: string;
+    };
+    const jsonl = await deps.auditLogger.exportJsonl({
+      agentId: q.agent_id || undefined,
+      runId: q.run_id || undefined,
+      decision: q.decision || undefined,
+      mcpTool: q.mcp_tool || undefined,
+      limit: q.limit ? Number(q.limit) : 500,
+    });
+    reply
+      .header('Content-Type', 'application/x-ndjson; charset=utf-8')
+      .header('Content-Disposition', 'attachment; filename="clam-trace.jsonl"');
+    return jsonl ? jsonl + '\n' : '';
+  });
+
+  // Emergency Kill Switch & Auto-Trip Circuit Breaker API
+  app.get('/api/killswitch', async () => {
+    return { kill_switch: deps.killSwitchService.getState() };
+  });
+
+  app.post('/api/killswitch/engage', async (request, reply) => {
+    const schema = z.object({
+      reason: z.string().max(300).optional(),
+      engaged_by: z.string().max(80).optional(),
+      trigger_mode: z
+        .enum(['manual_ui', 'manual_cli', 'manual_api', 'circuit_breaker'])
+        .optional(),
+      agent_id: z.string().optional(),
+    });
+    const parsed = schema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const state = await deps.killSwitchService.engage({
+      reason: parsed.data.reason,
+      engagedBy: parsed.data.engaged_by,
+      triggerMode: parsed.data.trigger_mode ?? 'manual_api',
+      agentId: parsed.data.agent_id,
+    });
+    return { kill_switch: state };
+  });
+
+  app.post('/api/killswitch/resume', async (request, reply) => {
+    const schema = z.object({
+      reason: z.string().min(1, 'Explicit resume reason is required').max(300),
+      resumed_by: z.string().max(80).optional(),
+      agent_id: z.string().optional(),
+    });
+    const parsed = schema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    try {
+      const state = await deps.killSwitchService.resume({
+        reason: parsed.data.reason,
+        resumedBy: parsed.data.resumed_by,
+        agentId: parsed.data.agent_id,
+      });
+      return { kill_switch: state };
+    } catch (err) {
+      return reply.code(400).send({ error: err instanceof Error ? err.message : 'Resume error' });
+    }
+  });
+
+  app.patch('/api/killswitch/config', async (request, reply) => {
+    const schema = z.object({
+      violation_threshold: z.number().int().min(1).max(20).optional(),
+      window_seconds: z.number().int().min(5).max(300).optional(),
+      max_calls_per_min: z.number().int().min(3).max(200).optional(),
+      trip_on_critical_injection: z.boolean().optional(),
+    });
+    const parsed = schema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    const state = await deps.killSwitchService.updateCircuitBreakerConfig(parsed.data);
+    return { kill_switch: state };
+  });
+
+  // Autonomous Unattended Agent Runner & Deliverables API
+  app.get('/api/agent-runs', async () => {
+    return { runs: deps.runnerService.listRuns() };
+  });
+
+  app.post('/api/agent-runs/start', async (request, reply) => {
+    const schema = z.object({
+      agent_id: z.string().optional(),
+      probe_adversarial_tool_calls: z.boolean().optional(),
+    });
+    const parsed = schema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+    if (deps.killSwitchService.isHalted(parsed.data.agent_id)) {
+      return reply.code(423).send({
+        error: 'KILL_SWITCH_ENGAGED',
+        kill_switch: deps.killSwitchService.getState(),
+      });
+    }
+
+    const summary = await deps.runnerService.startAutonomousRun({
+      agentId: parsed.data.agent_id,
+      probeAdversarialToolCalls: parsed.data.probe_adversarial_tool_calls,
+    });
+    return { run: summary };
+  });
+
+  app.get('/api/artifacts', async () => {
+    return { artifacts: await deps.runnerService.listArtifacts() };
+  });
+
+  app.get('/api/artifacts/:filename', async (request, reply) => {
+    const { filename } = request.params as { filename: string };
+    const { download } = request.query as { download?: string };
+    const item = await deps.runnerService.readArtifact(filename);
+    if (!item) return reply.code(404).send({ error: 'Artifact not found' });
+    if (download === '1') {
+      reply.header('Content-Disposition', `attachment; filename="${item.filename}"`);
+    }
+    return item;
+  });
+
+  // Trap Pack Adversarial Harness API
+  app.get('/api/trappack/report', async () => {
+    return { report: deps.runnerService.getLatestTrapReport() };
+  });
+
+  app.post('/api/trappack/run', async () => {
+    const report = await deps.runnerService.runTrapPack();
+    return { report };
   });
 
   // Settings: Mail Mode, LLM Classifier, Slack/Telegram/WhatsApp Channels
