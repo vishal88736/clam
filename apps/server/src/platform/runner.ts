@@ -11,7 +11,8 @@ import { canonicalJson, sha256 } from '../inbox/trace.js';
 import { sandboxClock, type ReaderMessage } from '../sandbox/seed.js';
 import { extractPhotoDetails, type PhotoDetails } from '../workspace/photos.js';
 import { sanitizeCell } from '../workspace/sanitize.js';
-import { compileIntent, interactivePlan, type WorkflowPlan } from './planner.js';
+import { compileIntent, interactivePlan, planFromChoice, type CompiledIntent, type WorkflowPlan } from './planner.js';
+import { llmChoice } from './llmPlanner.js';
 import type { AgentRecord, PlatformService, ScheduleMode, Service, SourceCli } from './service.js';
 import { namespace, verdictLabel, WorkspaceOps } from './workspaceOps.js';
 
@@ -68,6 +69,7 @@ export class MissionRunner {
   private timer: NodeJS.Timeout | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private ticking = false;
+  private readonly pickerPolls = new Map<string, number>();
   private closed = false;
 
   constructor(private readonly engine: InboxEngine, private readonly platform: PlatformService,
@@ -107,7 +109,10 @@ export class MissionRunner {
     this.ticking = true;
     try {
       if (this.engine.halted()) return;
-      for (const agent of this.platform.waitingAgents()) this.checkApprovals(agent);
+      for (const agent of this.platform.waitingAgents()) {
+        if (agent.state.phase === 'awaiting_photo_selection') await this.checkPicker(agent);
+        else this.checkApprovals(agent);
+      }
       if (this.engine.busy()) return;
       const [due] = this.platform.dueAgents();
       if (due) await this.exclusive(() => this.runAgent(due.id));
@@ -118,23 +123,40 @@ export class MissionRunner {
     }
   }
 
-  provision(input: {
+  /** LLM planner when the agent runs in llm mode; any planner failure falls back to the deterministic compiler. */
+  async plan(instruction: string, services: string[] | undefined, inboxId: string): Promise<{ compiled: CompiledIntent; fallback: string | null }> {
+    const options = { services, mode: inboxId === 'sandbox' ? 'sandbox' as const : 'live' as const };
+    if (this.engine.agent.mode === 'llm') {
+      try {
+        return { compiled: planFromChoice(await llmChoice(this.engine.agent, instruction), instruction, options, 'llm-planner'), fallback: null };
+      } catch (error) {
+        return { compiled: compileIntent(instruction, options), fallback: errorCode(error) };
+      }
+    }
+    return { compiled: compileIntent(instruction, options), fallback: null };
+  }
+
+  async provision(input: {
     userId: string; inboxId: string; instruction: string; agentName?: string; services?: string[]; scheduleMode?: ScheduleMode;
     intervalSeconds?: number; autoSwitch: boolean; sourceCli: SourceCli; switchedBy: 'cli_auto' | 'web_ui';
+    authorize?: (compiled: CompiledIntent, services: Service[]) => void;
   }) {
     this.engine.guard();
-    const compiled = compileIntent(input.instruction, { services: input.services, mode: input.inboxId === 'sandbox' ? 'sandbox' : 'live' });
+    const { compiled, fallback } = await this.plan(input.instruction, input.services, input.inboxId);
+    this.engine.guard();
     const services = [...new Set([...compiled.services, ...(input.services ?? []).filter((value): value is Service =>
       ['gmail', 'calendar', 'drive', 'docs', 'sheets', 'photos'].includes(value))])];
     const scheduleMode = input.scheduleMode ?? compiled.scheduleMode;
+    input.authorize?.(compiled, services);
     const agent = this.platform.createAgent({
       userId: input.userId, inboxId: input.inboxId, name: input.agentName?.trim() || compiled.name, goal: input.instruction,
       sourceCli: input.sourceCli, services, plan: compiled.plan, scheduleMode,
       intervalSeconds: input.intervalSeconds ?? (scheduleMode === 'continuous' ? 300 : scheduleMode === 'daily' ? 86_400 : scheduleMode === 'weekly' ? 604_800 : null),
     });
     this.platform.log({ userId: input.userId, agentId: agent.id, runId: null, service: 'system', action: 'compile_plan',
-      input: input.instruction, output: `${compiled.plan.planner}: ${compiled.plan.template} · ${compiled.plan.steps.length} steps · ${services.join(', ')}`,
-      verdict: 'ALLOW_TIER_0', ruleId: 'PLAN_VALIDATED', verified: true });
+      input: input.instruction, output: `${compiled.plan.planner}: ${compiled.plan.template} · ${compiled.plan.steps.length} steps · ${services.join(', ')}` +
+        (fallback ? ` (LLM planner unavailable: ${fallback})` : ''),
+      verdict: 'ALLOW_TIER_0', ruleId: fallback ? 'PLAN_FALLBACK_DETERMINISTIC' : 'PLAN_VALIDATED', verified: true });
     const switched = input.autoSwitch ? this.platform.switchAgent(input.userId, agent.id, input.switchedBy,
       input.switchedBy === 'cli_auto' ? `Auto-switched after ${input.sourceCli} provisioned "${agent.name}"` : `Created "${agent.name}" from the web console`) : null;
     setImmediate(() => void this.tick());
@@ -174,7 +196,15 @@ export class MissionRunner {
   }
 
   private checkApprovals(agent: AgentRecord) {
-    const statuses = agent.state.pending_approvals.map((id) => this.engine.store.approval(id)?.status ?? 'FAILED');
+    const statuses = agent.state.pending_approvals.map((id) => {
+      const approval = this.engine.store.approval(id);
+      // An approval that lapsed without a decision counts as declined, so the agent never hangs in "Needs Approval".
+      if (approval?.status === 'PENDING' && Date.parse(approval.expires_at) <= Date.now()) {
+        this.engine.store.updateApproval({ ...approval, status: 'EXPIRED' });
+        return 'EXPIRED';
+      }
+      return approval?.status ?? 'FAILED';
+    });
     if (statuses.some((status) => status === 'PENDING' || status === 'EXECUTING')) return;
     const approved = statuses.filter((status) => status === 'APPROVED').length;
     const log = (action: string, output: string, verified: boolean) => this.platform.log({ userId: agent.user_id, agentId: agent.id, runId: null,
@@ -186,7 +216,8 @@ export class MissionRunner {
         this.platform.updateAgent(agent.id, { status: 'active', next_run_at: new Date().toISOString(),
           state: { ...agent.state, phase: 'awaiting_quotes', pending_approvals: [], phase_started_at: new Date().toISOString() } });
       } else {
-        log('rfq_batch_declined', 'Operator declined the RFQ batch; no vendor was contacted.', true);
+        log('rfq_batch_declined', statuses.includes('EXPIRED') ? 'The RFQ approval expired; no vendor was contacted.'
+          : 'Operator declined the RFQ batch; no vendor was contacted.', true);
         this.platform.updateAgent(agent.id, { status: 'completed', next_run_at: null, state: { ...agent.state, phase: 'done', pending_approvals: [] } });
       }
       return;
@@ -194,12 +225,26 @@ export class MissionRunner {
     if (agent.state.phase === 'awaiting_booking_approval') {
       const sent = approved ? this.verifiedSends(agent.state.pending_approvals) : [];
       log(approved ? 'booking_confirmation_sent' : 'booking_declined', approved
-        ? `Operator approved; purchase confirmation sent and verified (${sent.length} message).` : 'Operator declined the booking; nothing was committed.', true);
+        ? `Operator approved; purchase confirmation sent and verified (${sent.length} message).`
+        : statuses.includes('EXPIRED') ? 'The booking approval expired; nothing was committed.' : 'Operator declined the booking; nothing was committed.', true);
       this.platform.updateAgent(agent.id, { status: 'completed', next_run_at: null, state: { ...agent.state, phase: 'done', pending_approvals: [] } });
       return;
     }
-    log('review_resolved', `Operator resolved ${statuses.length} flagged item(s).`, true);
+    log('review_resolved', `${statuses.filter((status) => status !== 'EXPIRED').length} flagged item(s) resolved by the operator` +
+      (statuses.includes('EXPIRED') ? `, ${statuses.filter((status) => status === 'EXPIRED').length} expired` : '') + '.', true);
     this.platform.updateAgent(agent.id, { ...this.afterRun(agent), state: { ...agent.state, phase: 'start', pending_approvals: [] } });
+  }
+
+  /** Resumes a photo agent once the user has picked receipts in Google Photos (polled at most every 5 s). */
+  private async checkPicker(agent: AgentRecord) {
+    if (Date.now() - (this.pickerPolls.get(agent.id) ?? 0) < 5000) return;
+    this.pickerPolls.set(agent.id, Date.now());
+    const adapter = this.engine.workspace(modeFor(agent.inbox_id));
+    if (!await adapter.photoPickerReady?.().catch(() => false)) return;
+    this.platform.log({ userId: agent.user_id, agentId: agent.id, runId: null, service: 'photos', action: 'photo_selection_received',
+      input: 'Google Photos Picker', output: 'The operator selected photos; resuming the agent.', verdict: 'GATE_TIER_2', ruleId: 'OPERATOR_PHOTO_SELECTION', verified: true });
+    this.platform.updateAgent(agent.id, { status: 'active', next_run_at: new Date().toISOString(),
+      state: { ...agent.state, phase: 'start', picker_uri: null } });
   }
 
   private verifiedSends(approvalIds: string[]) {
@@ -227,6 +272,7 @@ export class MissionRunner {
     let pending: string[] = [];
     let phase = agent.state.phase;
     let notes: string[] = [];
+    let retryInMs: number | undefined;
     const handle = this.engine.mission('agent:' + agent.id, mode, async (context) => {
       context.record('PLAN', { agent_id: agent.id, agent_name: agent.name, template: agent.workflow_plan.template, phase,
         planner: agent.workflow_plan.planner, steps: agent.workflow_plan.steps.map((step) => step.id) });
@@ -236,6 +282,7 @@ export class MissionRunner {
       pending = result.pending;
       phase = result.phase;
       notes = result.notes;
+      retryInMs = (result as { retryInMs?: number }).retryInMs;
     });
     const run = await handle.done;
     const latest = this.platform.agent(id)!;
@@ -252,10 +299,12 @@ export class MissionRunner {
     }
     const state = { ...latest.state, phase, pending_approvals: pending, last_error: null, last_run_id: run.id, notes,
       ...(phase !== latest.state.phase ? { phase_started_at: new Date().toISOString() } : {}) };
-    if (pending.length) this.platform.updateAgent(id, { status: 'input_required', next_run_at: null, state });
+    if (phase === 'awaiting_photo_selection') {
+      this.platform.updateAgent(id, { status: 'input_required', next_run_at: null, state: { ...state, picker_uri: notes.find((note) => note.startsWith('https://')) ?? null } });
+    } else if (pending.length) this.platform.updateAgent(id, { status: 'input_required', next_run_at: null, state });
     else if (phase === 'awaiting_quotes') {
       this.platform.updateAgent(id, { status: 'active', state,
-        next_run_at: new Date(Date.now() + (agent.inbox_id === 'sandbox' ? 0 : (agent.interval_seconds ?? 300) * 1000)).toISOString() });
+        next_run_at: new Date(Date.now() + (retryInMs ?? (agent.inbox_id === 'sandbox' ? 0 : (agent.interval_seconds ?? 300) * 1000))).toISOString() });
     } else if (phase === 'done') this.platform.updateAgent(id, { status: 'completed', next_run_at: null, state });
     else this.platform.updateAgent(id, { ...this.afterRun(agent), state });
     return run;
@@ -293,9 +342,21 @@ export class MissionRunner {
     return (mode === 'sandbox' ? sandboxClock : new Date().toISOString()).slice(0, 10);
   }
 
-  private async photoRows(agent: AgentRecord, context: MissionContext, ops: WorkspaceOps) {
+  /** Returns extracted photos, or the Google Photos Picker link the operator must open first (live Picker mode). */
+  private async photoRows(agent: AgentRecord, context: MissionContext, ops: WorkspaceOps): Promise<PhotoDetails[] | { pickerUri: string }> {
     const adapter = this.engine.workspace(context.mode);
-    const items = await adapter.searchPhotos({ category: 'RECEIPTS', limit: 10 });
+    let items;
+    try {
+      items = await adapter.searchPhotos({ category: 'RECEIPTS', limit: 10 });
+    } catch (error) {
+      if (errorCode(error) !== 'PHOTOS_PICKER_SELECTION_REQUIRED' || !adapter.startPhotoPicker) throw error;
+      const session = await adapter.startPhotoPicker();
+      const step = context.record('POLICY', { action: 'search_recent_photos', rule_id: 'PHOTOS_PICKER_SELECTION_REQUIRED', decision: 'APPROVAL_REQUIRED', tier: 2 });
+      this.platform.log({ userId: agent.user_id, agentId: agent.id, runId: context.runId, service: 'photos', action: 'request_photo_selection',
+        input: 'Google Photos Picker session ' + session.session_id, output: 'Open the picker link and choose the receipts Clam may read: ' + session.picker_uri,
+        verdict: 'GATE_TIER_2', ruleId: 'PHOTOS_PICKER_SELECTION_REQUIRED', verified: true, traceStepHash: step.step_hash });
+      return { pickerUri: session.picker_uri };
+    }
     this.logRead(agent, context, 'photos', 'search_recent_photos', 'category=RECEIPTS limit=10', `${items.length} receipt photos found`, { count: items.length });
     const details: PhotoDetails[] = [];
     for (const item of items) {
@@ -354,7 +415,9 @@ export class MissionRunner {
       `${clean.length} invoices, ${clean.filter((item) => item.recurring).length} recurring, ${flagged.length} flagged, ${quarantined} quarantined`,
       { invoices: clean.length, flagged: flagged.length });
 
-    const photos = plan.params.include_photos ? await this.photoRows(agent, context, ops) : [];
+    const photoResult = plan.params.include_photos ? await this.photoRows(agent, context, ops) : [];
+    // The ledger never blocks on photos: without a picker selection it proceeds with email invoices only.
+    const photos = Array.isArray(photoResult) ? photoResult : [];
     const month = this.today(context.mode).slice(0, 7);
     const folderPath = [...plan.params.folder_path ?? ['Clam', 'Invoices'], month];
     const folder = await ops.ensureFolderPath(folderPath);
@@ -507,7 +570,16 @@ export class MissionRunner {
         `unit ${money(field(text, 'Unit price')) ?? '?'} USD · lead ${money(field(text, 'Lead time')) ?? '?'} days · ${field(text, 'Terms') ?? 'terms n/a'}${notes.flags.length ? ' · notes sanitized (' + notes.flags.join(', ') + ')' : ''}`);
     }
     const priced = quotes.filter((quote) => quote.unitPrice !== null);
-    if (!priced.length) return { pending: [], phase: 'awaiting_quotes', notes: ['Waiting for vendor replies'] };
+    // Wait for every contacted vendor until the quote window closes (default 24h live, immediate in the $0 sandbox).
+    const windowMs = (agent.workflow_plan.params.quote_wait_hours ?? (context.mode === 'sandbox' ? 0 : 24)) * 3_600_000;
+    const started = Date.parse(agent.state.phase_started_at ?? agent.updated_at);
+    const missing = sent.filter((vendor) => !priced.some((quote) => quote.email === vendor));
+    const remaining = started + windowMs - Date.now();
+    if (!priced.length || (missing.length && remaining > 0)) {
+      const note = `Waiting for ${missing.length} of ${sent.length} vendor replies` + (remaining > 0 ? ` until ${new Date(started + windowMs).toISOString()}` : '');
+      return { pending: [], phase: 'awaiting_quotes', notes: [note],
+        retryInMs: Math.max(1000, Math.min((agent.interval_seconds ?? 300) * 1000, remaining > 0 ? remaining : (agent.interval_seconds ?? 300) * 1000)) };
+    }
 
     const sheetTitle = agent.workflow_plan.params.sheet_title ?? `Vendor Quotes - ${item}`;
     const headers = ['Vendor', 'Vendor Email', 'Unit Price (USD)', 'Quantity', 'Total (USD)', 'Lead Time (days)', 'Terms', 'Notes', 'Status'];
@@ -542,7 +614,9 @@ export class MissionRunner {
 
   /* ---------------------------------- Photos receipts → Sheet + Calendar ---------------------------------- */
   private async photoReceipts(agent: AgentRecord, context: MissionContext, ops: WorkspaceOps) {
-    const details = await this.photoRows(agent, context, ops);
+    const result = await this.photoRows(agent, context, ops);
+    if (!Array.isArray(result)) return { pending: [], phase: 'awaiting_photo_selection', notes: [result.pickerUri] };
+    const details = result;
     const sheetTitle = agent.workflow_plan.params.sheet_title ?? 'Clam Receipts';
     await ops.ensureSpreadsheet(sheetTitle, null, [{ name: 'Receipts', headers: ['Date', 'Merchant', 'Reference', 'Amount', 'Currency', 'Pay By', 'Source Photo'] }]);
     await ops.appendRows(sheetTitle, 'Receipts', details.map((item) => [item.fields.date ?? '', item.fields.merchant ?? 'Unknown', item.fields.reference ?? '',

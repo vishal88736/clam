@@ -92,12 +92,16 @@ The CLI calls `provision_and_run_agent`. Clam compiles the request into a valida
 | Receipt photos | Read-only Photos search, bounded extraction, receipt Sheet, Calendar payment reminders | — |
 | Anything else | A sanitized digest Doc, plus an optional tracker Sheet and Drive folder | Any outbound email |
 
-Direct tools are also available: `drive_ensure_folder`, `drive_save_file`, `drive_list_files`, `sheets_create_tracker`, `sheets_append_rows`, `sheets_update_cells`, `docs_create_or_update`, `photos_search_and_extract`, `switch_active_agent`, and `list_user_agents_and_logs`.
+With `CLAM_AGENT_MODE=llm`, the configured model chooses the workflow and its parameters. Clam still builds the plan itself, keeps only recipients you typed, and falls back to the deterministic compiler on any model error. Add phrases like "wait up to 48 hours for replies" to set the quote window; the default is 24 hours live and immediate in the sandbox. Raster receipt photos are OCR'd with Tesseract when it is installed.
+
+To check a real Google account end to end, run `CLAM_INBOX_LIVE=true pnpm workspace:smoke [inbox-id] [--keep]`. It creates a folder, a file, a Sheet (including a formula-injection row), and a Doc, verifies every read-back, checks Photos, then rolls back what it created unless you pass `--keep`.
+
+Direct tools are also available: `drive_ensure_folder`, `drive_save_file`, `drive_list_files`, `sheets_create_tracker`, `sheets_append_rows`, `sheets_update_cells`, `docs_create_or_update`, `photos_start_picker`, `photos_search_and_extract`, `switch_active_agent`, and `list_user_agents_and_logs`.
 
 Safety:
 - **Formula injection:** untrusted text is neutralized before it reaches a Sheet (for example `=IMPORTXML(...)` is stored as `'=IMPORTXML (...)`). Live writes also use `valueInputOption=RAW`.
 - **Secret scanner:** covers Drive file contents as well as Sheet and Doc text.
-- **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photoslibrary.readonly`. `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*. Full `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
+- **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photospicker.mediaitems.readonly`. For Photos, Clam opens a Google Photos Picker session and reads only the receipts you choose (call `photos_start_picker`, or open the link on the agent card). `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*. Full `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
 - **Rollback:** rolling back a run deletes only artifacts Clam created in that run, using the id recorded in its own registry.
 
 ## Three-minute walkthrough

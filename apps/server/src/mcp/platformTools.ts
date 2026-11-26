@@ -3,7 +3,6 @@ import { z } from 'zod';
 import type { GoogleAccounts, GoogleCapability, McpGrant } from '../auth/google.js';
 import type { McpCaller, Mode } from '../inbox/contracts.js';
 import type { InboxEngine } from '../inbox/engine.js';
-import { compileIntent } from '../platform/planner.js';
 import { detectSourceCli, type MissionRunner } from '../platform/runner.js';
 import { services, type PlatformService, type Service } from '../platform/service.js';
 import { extractPhotoDetails } from '../workspace/photos.js';
@@ -71,19 +70,19 @@ export function registerPlatformTools(server: McpServer, args: {
       source_cli: z.enum(['codex-cli', 'claude-code', 'cursor', 'cline']).optional(),
       wait_seconds: z.number().int().min(0).max(60).default(0),
     }, (input) => workflow('provision_and_run_agent', 'agent:manage', async () => {
-      const compiled = compileIntent(input.user_instruction, { services: input.services, mode: mode === 'sandbox' ? 'sandbox' : 'live' });
-      const needed = [...new Set([...compiled.services, ...(input.services ?? [])])] as Service[];
-      // The backend agent can never exceed what this token itself may do.
-      requireToken([
-        ...(needed.some((service) => ['drive', 'docs', 'sheets'].includes(service)) ? ['workspace:write'] : []),
-        ...(needed.includes('photos') ? ['photos:read'] : []), ...(needed.includes('gmail') ? ['mail:read'] : []),
-        ...(compiled.plan.template === 'vendor_rfq' ? ['mail:send'] : []), ...(needed.includes('calendar') ? ['calendar:propose'] : []),
-      ]);
-      requireLive(needed);
-      const result = missions.provision({
+      const result = await missions.provision({
         userId: grant.userId, inboxId: grant.inboxId, instruction: input.user_instruction, agentName: input.agent_name, services: input.services,
         scheduleMode: input.schedule_mode, intervalSeconds: input.interval_seconds, autoSwitch: input.auto_switch,
         sourceCli: detectSourceCli(client(), input.source_cli), switchedBy: 'cli_auto',
+        authorize: (compiled, needed) => {
+          // The backend agent can never exceed what this token itself may do.
+          requireToken([
+            ...(needed.some((service) => ['drive', 'docs', 'sheets'].includes(service)) ? ['workspace:write'] : []),
+            ...(needed.includes('photos') ? ['photos:read'] : []), ...(needed.includes('gmail') ? ['mail:read'] : []),
+            ...(compiled.plan.template === 'vendor_rfq' ? ['mail:send'] : []), ...(needed.includes('calendar') ? ['calendar:propose'] : []),
+          ]);
+          requireLive(needed);
+        },
       });
       if (!input.wait_seconds) return result;
       const agent = await waitFor(result.agent_id, input.wait_seconds);
@@ -175,6 +174,14 @@ export function registerPlatformTools(server: McpServer, args: {
     const folder = input.folder_path ? (await ops.ensureFolderPath(input.folder_path)).key : null;
     const doc = await ops.upsertDoc(input.title, folder, input.heading, input.text, input.mode);
     return { verified: doc.verified, decision: doc.decision, policy_rule_id: doc.ruleId, document: artifactView(doc.artifactId) };
+  }));
+
+  server.tool('photos_start_picker', 'Live Google Photos: start a Picker session. Open picker_uri, choose the receipts Clam may read, then call ' +
+    'photos_search_and_extract. Clam never sees photos you did not pick.', {}, () => workflow('photos_start_picker', 'photos:read', async () => {
+    requireLive(['photos']);
+    const adapter = inbox.workspace(mode);
+    if (!adapter.startPhotoPicker) return { mode: 'sandbox', picker_required: false, note: 'The $0 sandbox Photos library needs no picker.' };
+    return { picker_required: true, ...await adapter.startPhotoPicker() };
   }));
 
   server.tool('photos_search_and_extract', 'Search receipt, ticket, document, or screenshot photos (read-only) and extract structured details in the quarantined parser.', {

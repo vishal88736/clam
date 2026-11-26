@@ -70,6 +70,7 @@ export function createInboxMcpServer(args: {
         const error = /^[A-Z][A-Z0-9_]{2,70}$/.test(value) ? value : 'INBOX_OPERATION_FAILED';
         if (error !== 'INBOX_HALTED' && !inbox.halted()) await inbox.recordMcpRead(mode, caller(tool), {}, error).catch(() => undefined);
         const action = error === 'SCOPE_UPGRADE_REQUIRED' ? 'Upgrade this inbox to Read + Actions in Clam Connections.' :
+          error === 'PHOTOS_PICKER_SELECTION_REQUIRED' ? 'Call photos_start_picker, open picker_uri, choose the receipts, then retry.' :
           error === 'GOOGLE_REAUTH_REQUIRED' ? 'Reconnect this inbox in Clam Connections.' : undefined;
         return structured({ error, action }, true);
       }

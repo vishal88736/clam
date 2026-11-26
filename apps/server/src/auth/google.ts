@@ -9,9 +9,9 @@ const scopes = {
   readwrite: ['https://www.googleapis.com/auth/gmail.modify', 'https://www.googleapis.com/auth/calendar.events'],
   // Least-privilege Workspace grant: drive.file only reaches files Clam created or the user opened with Clam;
   // Photos is strictly read-only. Docs/Sheets scopes are requested only for edits of pre-existing files.
-  workspace: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/photoslibrary.readonly'],
+  workspace: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'],
   workspace_edit: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/documents',
-    'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/photoslibrary.readonly'],
+    'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'],
 } as const;
 export const workspaceScopes = {
   driveFile: 'https://www.googleapis.com/auth/drive.file',
@@ -19,6 +19,8 @@ export const workspaceScopes = {
   spreadsheets: 'https://www.googleapis.com/auth/spreadsheets',
   photosReadonly: 'https://www.googleapis.com/auth/photoslibrary.readonly',
   photosAppCreated: 'https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata',
+  // Google Photos Picker: the user selects items in Google's UI; Clam reads only the selection.
+  photosPicker: 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
 } as const;
 /** Hard ban: unrestricted Drive and any Photos write/share scope can never be stored for an inbox. */
 export const bannedScopes = new Set<string>([
@@ -28,7 +30,7 @@ export const bannedScopes = new Set<string>([
   'https://www.googleapis.com/auth/photoslibrary.edit.appcreateddata', 'https://www.googleapis.com/auth/photoslibrary.sharing',
 ]);
 const acceptedScopes = new Set<string>([...scopes.identity, ...scopes.readonly, ...scopes.readwrite, ...scopes.workspace_edit,
-  workspaceScopes.photosAppCreated, 'email', 'profile']);
+  workspaceScopes.photosAppCreated, workspaceScopes.photosReadonly, 'email', 'profile']);
 const tokenEndpoint = 'https://oauth2.googleapis.com/token';
 const retiring = 30_000;
 export const sessionCookie = 'clam_session';
@@ -101,7 +103,7 @@ const workspaceCapabilities: Partial<Record<GoogleCapability, string[]>> = {
   'drive:write': [workspaceScopes.driveFile],
   'docs:write': [workspaceScopes.driveFile, workspaceScopes.documents],
   'sheets:write': [workspaceScopes.driveFile, workspaceScopes.spreadsheets],
-  'photos:read': [workspaceScopes.photosReadonly, workspaceScopes.photosAppCreated],
+  'photos:read': [workspaceScopes.photosPicker, workspaceScopes.photosReadonly, workspaceScopes.photosAppCreated],
 };
 
 export function connectedServices(granted: string[]) {

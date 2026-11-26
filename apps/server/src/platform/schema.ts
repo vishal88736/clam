@@ -79,6 +79,17 @@ CREATE INDEX IF NOT EXISTS workspace_artifacts_user ON workspace_artifacts(user_
 
 CREATE TABLE IF NOT EXISTS sandbox_photos (id TEXT PRIMARY KEY, body TEXT NOT NULL);
 
+-- Previous bytes of a Drive file Clam overwrote, keyed by content hash, so rollback can restore it.
+CREATE TABLE IF NOT EXISTS workspace_file_backups (
+  inbox_id TEXT NOT NULL, logical_key TEXT NOT NULL, md5 TEXT NOT NULL, mime TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (inbox_id, logical_key, md5)
+);
+
+-- Google Photos Picker sessions: the user chooses receipts in Google's own UI; Clam only reads what was picked.
+CREATE TABLE IF NOT EXISTS photo_picker_sessions (
+  inbox_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, picker_uri TEXT NOT NULL, created_at TEXT NOT NULL, expire_time TEXT
+);
+
 DROP TRIGGER IF EXISTS agent_logs_append_only_update;
 DROP TRIGGER IF EXISTS agent_logs_append_only_delete;
 DROP TRIGGER IF EXISTS agent_switch_append_only;

@@ -20,3 +20,33 @@ Run `pnpm test` for SQLite guards, taint and confidence decisions, disclosure, r
 `pnpm run-official-trap-pack PATH` puts each supplied case in its own SQLite database. Trap-mode policy permits the case’s quarantine write and blocks other mutations with `TRAP_ISOLATION`. The runner checks the journal and protected state independently, exits nonzero on degraded or failed cases, and links their JSON receipts in the generated report.
 
 `tests/agentware-hard-rules.test.ts` starts a run with a pending model request and invokes the real halt CLI. It also verifies that a one-byte trace edit makes the verifier CLI exit nonzero.
+
+## Workspace agents (Drive, Docs, Sheets, Photos)
+
+Persistent agents created through `provision_and_run_agent` or the web console run as ordinary engine missions. They hold the same single-writer lease, kill-switch latch, budgets, hash-chained trace, Tier 0/1/2 gate, claim ledger, and read-back `CHECK` as inbox runs.
+
+- **Planning cannot widen authority.** The deterministic compiler or the optional LLM planner (`CLAM_AGENT_MODE=llm`) only picks a template and its parameters. Clam builds the step DAG itself. Vendor recipients must appear verbatim in the user's own request, so a model cannot invent or inject an address. The plan must also fit inside the MCP token's scopes (`workspace:write`, `photos:read`, `mail:send`, and so on) and the Google scopes actually granted. If the planner fails, Clam falls back to the deterministic compiler and records `PLAN_FALLBACK_DETERMINISTIC`.
+- **Taint firewall.** Untrusted text from email, PDFs, or photos is sanitized before it reaches a Sheet or Doc:
+  - formula prefixes and functions such as `IMPORTXML`, `HYPERLINK`, and `CMD|` are neutralized;
+  - prompt-injection text and secrets are redacted;
+  - live Sheets writes use `valueInputOption=RAW`.
+  
+  The workspace policy then blocks any remaining live formula (`WORKSPACE_FORMULA_INJECTION`).
+- **Secret scanner.** Sheet and Doc text and Drive file contents (plain text, and PDFs through the quarantined extractor) are scanned. A detected secret blocks the write with `WORKSPACE_SECRET_BLOCKED`. Unscanned file content is also blocked.
+- **Tier 2 gates.** The following always wait in the Approval Inbox and resume the agent automatically after a decision:
+  - outbound mail to non-allowlisted recipients;
+  - vendor RFQ batches;
+  - bookings and payment confirmations (`FINANCIAL_COMMITMENT_APPROVAL`);
+  - duplicate or spoofed invoices.
+  
+  An expired approval counts as declined.
+- **Least-privilege Google scopes.**
+  - The Workspace grant requests only `drive.file` and the Photos Picker scope `photospicker.mediaitems.readonly`. Clam can read only the photos the user picks in Google's own UI.
+  - `documents` and `spreadsheets` are requested only to edit pre-existing files.
+  - Full `drive` access and every Photos write or share scope are rejected with `GOOGLE_SCOPE_BANNED`.
+- **Photos parsing.** Image bytes are bounded to 2 MB and parsed in-process (SVG text layer) or by a sandboxed Tesseract OCR child process (no shell, 6 s limit, 16 KB output). Only structured fields leave the parser.
+- **Rollback.** Rolling back a run deletes only the artifacts that run created, using provider ids from Clam's own registry. Overwritten Drive files are restored from an MD5-verified backup of the previous bytes taken before the overwrite.
+- **Audit.**
+  - `agent_execution_logs` and `agent_switch_history` are append-only; SQLite triggers reject updates and deletes.
+  - New `workspace_artifacts` rows and agent reactivation are rejected while the kill switch is latched.
+  - Engaging the kill switch halts every active or waiting agent.

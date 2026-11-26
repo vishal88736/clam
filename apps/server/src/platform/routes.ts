@@ -52,7 +52,7 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
         instruction: z.string().trim().min(4).max(4000), name: z.string().trim().max(80).optional(),
         services: z.array(z.enum(services)).max(6).optional(), schedule_mode: z.enum(['one_shot', 'continuous', 'daily', 'weekly']).optional(),
       }).strict().parse(request.body);
-      return missions.provision({ userId: who.userId, inboxId: who.inboxId, instruction: input.instruction, agentName: input.name,
+      return await missions.provision({ userId: who.userId, inboxId: who.inboxId, instruction: input.instruction, agentName: input.name,
         services: input.services, scheduleMode: input.schedule_mode, autoSwitch: true, sourceCli: 'web', switchedBy: 'web_ui' });
     });
     router.post('/api/inbox/platform/agents/:id/switch', async (request) => {

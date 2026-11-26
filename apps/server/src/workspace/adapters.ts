@@ -77,6 +77,12 @@ export class SandboxWorkspaceAdapter implements WorkspaceAdapter {
     });
   }
 
+  async fileContent(key: string, maxBytes: number) {
+    this.guard();
+    const blob = this.blob(key);
+    return blob && blob.data.length <= maxBytes ? { mime: blob.mime, data: Buffer.from(blob.data) } : null;
+  }
+
   private photos(): SandboxPhoto[] {
     return this.store.sqlite.prepare('SELECT body FROM sandbox_photos ORDER BY id').all()
       .map((row) => JSON.parse(String(row.body)) as SandboxPhoto);
@@ -146,8 +152,13 @@ const urls = {
   google_doc: (id: string) => 'https://docs.google.com/document/d/' + id + '/edit',
 };
 
+type PickedItem = { id: string; createTime?: string; type?: string; mediaFile?: { baseUrl: string; mimeType: string; filename: string } };
+type PickerSession = { id: string; pickerUri: string; mediaItemsSet?: boolean; expireTime?: string };
+const pickerBase = 'https://photospicker.googleapis.com/v1/';
+
 export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
   readonly live = true;
+  private picked = new Map<string, PickedItem>();
 
   constructor(private readonly accounts: GoogleAccounts, private readonly inboxId: string, private readonly registry: WorkspaceRegistry,
     private readonly guard: () => void, private readonly stagingRoot: string) {}
@@ -308,7 +319,65 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     await this.call('drive:write', 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id), { method: 'DELETE', signal }, false);
   }
 
+  async fileContent(key: string, maxBytes: number) {
+    const id = this.external(key);
+    if (!id) return null;
+    const meta = await this.call<DriveFile>('drive:write', 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id) + '?fields=mimeType,size');
+    if (Number(meta.size ?? Infinity) > maxBytes) return null;
+    const response = await this.accounts.api(this.inboxId, 'drive:write', 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id) + '?alt=media', this.guard);
+    if (!response.ok) return null;
+    const data = Buffer.from(await response.arrayBuffer());
+    return data.length <= maxBytes ? { mime: meta.mimeType, data } : null;
+  }
+
+  private usesPicker() {
+    const granted = JSON.parse(this.accounts.connection(this.inboxId)?.granted_scopes ?? '[]') as string[];
+    return granted.includes('https://www.googleapis.com/auth/photospicker.mediaitems.readonly');
+  }
+
+  async startPhotoPicker() {
+    const existing = this.registry.pickerSession(this.inboxId);
+    if (existing) {
+      const session = await this.call<PickerSession>('photos:read', pickerBase + 'sessions/' + encodeURIComponent(existing.session_id)).catch(() => null);
+      if (session && !session.mediaItemsSet) return { session_id: existing.session_id, picker_uri: existing.picker_uri, expire_time: existing.expire_time };
+    }
+    const session = await this.call<PickerSession>('photos:read', pickerBase + 'sessions', { method: 'POST', body: '{}' });
+    const pickerUri = new URL(session.pickerUri);
+    if (pickerUri.protocol !== 'https:' || !/(?:^|\.)google\.com$/.test(pickerUri.hostname)) throw new Error('PHOTOS_PICKER_URI_INVALID');
+    this.registry.savePickerSession(this.inboxId, session);
+    return { session_id: session.id, picker_uri: session.pickerUri, expire_time: session.expireTime ?? null };
+  }
+
+  async photoPickerReady() {
+    const current = this.registry.pickerSession(this.inboxId);
+    if (!current) return false;
+    const session = await this.call<PickerSession>('photos:read', pickerBase + 'sessions/' + encodeURIComponent(current.session_id));
+    return Boolean(session.mediaItemsSet);
+  }
+
+  private async pickedItems() {
+    const current = this.registry.pickerSession(this.inboxId);
+    if (!current || !await this.photoPickerReady()) throw new Error('PHOTOS_PICKER_SELECTION_REQUIRED');
+    const items: PickedItem[] = [];
+    let token = '';
+    do {
+      const page = await this.call<{ mediaItems?: PickedItem[]; nextPageToken?: string }>('photos:read', pickerBase + 'mediaItems?' +
+        new URLSearchParams({ sessionId: current.session_id, pageSize: '50', ...(token ? { pageToken: token } : {}) }));
+      items.push(...(page.mediaItems ?? []).filter((item) => item.mediaFile && (item.type ?? 'PHOTO') === 'PHOTO'));
+      token = page.nextPageToken ?? '';
+    } while (token && items.length < 100);
+    this.picked = new Map(items.map((item) => [item.id, item]));
+    return items;
+  }
+
   async searchPhotos(filter: { category?: string; dateFrom?: string; dateTo?: string; limit: number }) {
+    if (this.usesPicker()) {
+      return (await this.pickedItems()).filter((item) => (!filter.dateFrom || (item.createTime ?? '').slice(0, 10) >= filter.dateFrom) &&
+        (!filter.dateTo || (item.createTime ?? '').slice(0, 10) <= filter.dateTo)).slice(0, filter.limit).map((item) => ({
+        id: item.id, filename: item.mediaFile!.filename, mimeType: item.mediaFile!.mimeType, category: filter.category?.toUpperCase() ?? null,
+        creationTime: item.createTime ?? '', description: '', productUrl: null,
+      }));
+    }
     const date = (value: string) => ({ year: Number(value.slice(0, 4)), month: Number(value.slice(5, 7)), day: Number(value.slice(8, 10)) });
     const filters: Record<string, unknown> = {};
     if (filter.category) filters.contentFilter = { includedContentCategories: [filter.category.toUpperCase()] };
@@ -325,15 +394,14 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     }));
   }
 
-  async photoBytes(id: string, maxBytes: number) {
-    const item = await this.call<{ id: string; filename: string; mimeType: string; baseUrl: string; description?: string; productUrl?: string;
-      mediaMetadata?: { creationTime?: string } }>('photos:read', 'https://photoslibrary.googleapis.com/v1/mediaItems/' + encodeURIComponent(id));
-    const source = new URL(item.baseUrl + '=d');
-    if (source.protocol !== 'https:' || !/(?:^|\.)googleusercontent\.com$/.test(source.hostname)) throw new Error('PHOTO_SOURCE_BLOCKED');
+  private async download(url: URL, capability: GoogleCapability | null, maxBytes: number) {
+    if (url.protocol !== 'https:' || !/(?:^|\.)googleusercontent\.com$/.test(url.hostname)) throw new Error('PHOTO_SOURCE_BLOCKED');
     this.guard();
-    // Base URLs are pre-signed; no OAuth token is sent to the content host.
-    const response = await fetch(source, { redirect: 'error', signal: AbortSignal.timeout(12_000) });
+    // Picker base URLs require the OAuth token; Library base URLs are pre-signed and get no token.
+    const response = capability ? await this.accounts.api(this.inboxId, capability, url.toString(), this.guard)
+      : await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(12_000) });
     if (!response.ok || !response.body) throw new Error('PHOTO_NOT_AVAILABLE');
+    if (Number(response.headers.get('content-length') ?? 0) > maxBytes) throw new Error('PHOTO_TOO_LARGE');
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
@@ -341,9 +409,23 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
       if (size > maxBytes) throw new Error('PHOTO_TOO_LARGE');
       chunks.push(Buffer.from(chunk));
     }
+    return Buffer.concat(chunks);
+  }
+
+  async photoBytes(id: string, maxBytes: number) {
+    if (this.usesPicker()) {
+      const item = this.picked.get(id) ?? (await this.pickedItems()).find((entry) => entry.id === id);
+      if (!item?.mediaFile) throw new Error('PHOTO_NOT_AVAILABLE');
+      const data = await this.download(new URL(item.mediaFile.baseUrl + '=d'), 'photos:read', maxBytes);
+      return { item: { id: item.id, filename: item.mediaFile.filename, mimeType: item.mediaFile.mimeType, category: null,
+        creationTime: item.createTime ?? '', description: '', productUrl: null }, data };
+    }
+    const item = await this.call<{ id: string; filename: string; mimeType: string; baseUrl: string; description?: string; productUrl?: string;
+      mediaMetadata?: { creationTime?: string } }>('photos:read', 'https://photoslibrary.googleapis.com/v1/mediaItems/' + encodeURIComponent(id));
+    const data = await this.download(new URL(item.baseUrl + '=d'), null, maxBytes);
     return { item: { id: item.id, filename: item.filename, mimeType: item.mimeType, category: null,
       creationTime: item.mediaMetadata?.creationTime ?? '', description: item.description ?? '', productUrl: item.productUrl ?? null },
-    data: Buffer.concat(chunks) };
+    data };
   }
 }
 

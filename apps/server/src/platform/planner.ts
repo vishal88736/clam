@@ -27,6 +27,7 @@ export const workflowPlanSchema = z.object({
     include_photos: z.boolean().optional(),
     calendar_reminders: z.boolean().optional(),
     folder_path: z.array(z.string().min(1).max(80)).max(5).optional(),
+    quote_wait_hours: z.number().min(0).max(336).optional(),
     sheet_title: z.string().max(120).optional(),
     doc_title: z.string().max(120).optional(),
     keywords: z.array(z.string().max(40)).max(10).optional(),
@@ -62,54 +63,95 @@ export interface CompiledIntent {
 
 const has = (text: string, pattern: RegExp) => pattern.test(text);
 const titleCase = (text: string) => text.replace(/\b\w/g, (char) => char.toUpperCase());
+export const emailsIn = (text: string) => [...new Set([...text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)].map((match) => match[0].toLowerCase()))];
 
-/**
- * Deterministic, $0, offline intent compiler. It maps any natural-language request onto a validated DAG of
- * Clam actions. Every step it emits is executed by a typed handler under the policy engine; the compiler cannot
- * produce arbitrary tool calls, recipients, or code.
- */
-export function compileIntent(instruction: string, options: CompileOptions): CompiledIntent {
+/** What a planner (deterministic or LLM) decides. It is data only; `planFromChoice` turns it into a validated DAG. */
+export const plannerChoiceSchema = z.object({
+  template: z.enum(['vendor_rfq', 'invoice_ledger', 'photo_receipts', 'inbox_digest']),
+  schedule_mode: z.enum(['one_shot', 'continuous', 'daily', 'weekly']),
+  name: z.string().trim().max(80).optional(),
+  vendors: z.array(z.string().email().max(254)).max(10).optional(),
+  item: z.string().trim().max(80).optional(),
+  quantity: z.number().int().min(1).max(10_000_000).optional(),
+  book: z.boolean().optional(),
+  quote_wait_hours: z.number().min(0).max(336).optional(),
+  include_photos: z.boolean().optional(),
+  calendar_reminders: z.boolean().optional(),
+  wants_sheet: z.boolean().optional(),
+  wants_folder: z.boolean().optional(),
+  keywords: z.array(z.string().trim().min(2).max(40)).max(10).optional(),
+}).strict();
+export type PlannerChoice = z.infer<typeof plannerChoiceSchema>;
+
+/** Deterministic, $0, offline intent classifier. */
+export function deterministicChoice(instruction: string, options: CompileOptions): PlannerChoice {
   const text = instruction.toLowerCase();
   const requested = new Set((options.services ?? []).map((value) => value.toLowerCase()));
-  const scheduleMode = has(text, /\b(?:every day|daily|each day|each morning|every morning)\b/) ? 'daily'
+  const schedule_mode = has(text, /\b(?:every day|daily|each day|each morning|every morning)\b/) ? 'daily'
     : has(text, /\b(?:every week|weekly)\b/) ? 'weekly'
       : has(text, /\b(?:keep watching|continuous(?:ly)?|monitor|whenever|as they arrive)\b/) ? 'continuous' : 'one_shot';
-  const vendorEmails = [...new Set([...instruction.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)].map((match) => match[0].toLowerCase()))];
   const wantsPhotos = requested.has('photos') || has(text, /\b(?:photo|photos|picture|image|screenshot)s?\b/);
   const wantsCalendar = requested.has('calendar') || has(text, /\b(?:remind|reminder|calendar|due date)\b/);
+  const wait = /\bwait(?:ing)?\s+(?:up to\s+)?(\d{1,3})\s*(hours?|hrs?|days?)\b/.exec(text);
+  const quote_wait_hours = wait ? Number(wait[1]) * (wait[2].startsWith('d') ? 24 : 1) : undefined;
 
-  if (has(text, /\b(?:quote|quotes|rfq|vendor|vendors|supplier|suppliers|bid|bids)\b/) && has(text, /\b(?:email|ask|request|contact|send|reach out)\b/)) {
+  if (has(text, /\b(?:quote|quotes|rfq|vendor|vendors|supplier|suppliers|bid|bids)\b/) && has(text, /\b(?:email|ask|request|contact|send|reach out|ping)\b/)) {
     const phrase = /\b(?:for|on)\s+(\d{1,7}\s+[a-z][a-z -]{2,60}?)(?:[,.]|\s+and\b|\s+then\b|$)/i.exec(instruction)?.[1]?.trim();
     // Quantity comes from the item phrase ("500 custom boxes"), never from the vendor count ("4 vendors").
     const quantity = Number(/^(\d{1,7})/.exec(phrase ?? '')?.[1] ??
-      /\b(\d{1,7})\s+(?!vendors?\b|suppliers?\b|quotes?\b|days?\b)[a-z]/.exec(text)?.[1] ?? 0) || undefined;
-    const item = phrase ?? (quantity ? `${quantity} units` : 'requested items');
-    const vendors = vendorEmails.length ? vendorEmails.slice(0, 10) : options.mode === 'sandbox' ? sandboxVendors : [];
-    const book = has(text, /\b(?:book|order|purchase|buy|confirm|go with)\b/);
+      /\b(\d{1,7})\s+(?!vendors?\b|suppliers?\b|quotes?\b|days?\b|hours?\b)[a-z]/.exec(text)?.[1] ?? 0) || undefined;
+    return { template: 'vendor_rfq', schedule_mode: 'continuous', vendors: emailsIn(instruction).slice(0, 10), item: phrase, quantity,
+      book: has(text, /\b(?:book|order|purchase|buy|confirm|go with)\b/), quote_wait_hours };
+  }
+  if (has(text, /\b(?:invoice|invoices|bill|bills|receipt|receipts|subscription|subscriptions|expense|expenses)\b/) &&
+      !(wantsPhotos && !has(text, /\b(?:email|emails|inbox|gmail|invoice|invoices|bill|bills)\b/))) {
+    return { template: 'invoice_ledger', schedule_mode, include_photos: wantsPhotos };
+  }
+  if (wantsPhotos) return { template: 'photo_receipts', schedule_mode, calendar_reminders: wantsCalendar };
+  const keywords = [...new Set(text.match(/\b[a-z]{4,}\b/g) ?? [])].filter((word) =>
+    !['please', 'every', 'email', 'emails', 'inbox', 'with', 'from', 'that', 'this', 'into', 'make', 'create', 'google', 'about', 'them', 'their', 'what', 'have', 'sheet', 'summary', 'summarize', 'track', 'doc', 'document'].includes(word)).slice(0, 6);
+  return { template: 'inbox_digest', schedule_mode, keywords,
+    wants_sheet: requested.has('sheets') || has(text, /\b(?:sheet|spreadsheet|tracker|table|log)\b/),
+    wants_folder: requested.has('drive') || has(text, /\b(?:drive|folder)\b/) };
+}
+
+/**
+ * Turns a planner choice into a validated DAG of Clam actions. Every step is executed by a typed handler under the
+ * policy engine; no planner can produce arbitrary tool calls or code. Outbound recipients must appear verbatim in the
+ * user's own instruction (an LLM cannot invent or inject a vendor address).
+ */
+export function planFromChoice(choice: PlannerChoice, instruction: string, options: CompileOptions,
+  planner: WorkflowPlan['planner']): CompiledIntent {
+  const typed = new Set(emailsIn(instruction));
+  if (choice.template === 'vendor_rfq') {
+    const named = (choice.vendors ?? []).map((vendor) => vendor.toLowerCase()).filter((vendor) => typed.has(vendor));
+    const vendors = named.length ? named.slice(0, 10) : options.mode === 'sandbox' ? sandboxVendors : [];
+    const item = choice.item || (choice.quantity ? `${choice.quantity} units` : 'requested items');
     const plan: WorkflowPlan = {
-      version: 1, planner: 'deterministic-intent-compiler', template: 'vendor_rfq', matched_playbooks: ['vendor_rfq_outreach', 'quote_comparison', 'tier2_financial_gate'],
-      services: ['gmail', 'sheets', 'docs'], params: { vendors, item, quantity, sheet_title: `Vendor Quotes - ${item}`, doc_title: `Vendor Quote Comparison - ${item}` },
+      version: 1, planner, template: 'vendor_rfq', matched_playbooks: ['vendor_rfq_outreach', 'quote_comparison', 'tier2_financial_gate'],
+      services: ['gmail', 'sheets', 'docs'], params: { vendors, item, quantity: choice.quantity, quote_wait_hours: choice.quote_wait_hours,
+        sheet_title: `Vendor Quotes - ${item}`, doc_title: `Vendor Quote Comparison - ${item}` },
       steps: [
         step('rfq_batch', 'gmail', 'queue_rfq_batch', `Email ${vendors.length} vendors a request for quote with automated disclosure`, [], 2),
         step('collect_quotes', 'gmail', 'collect_vendor_quotes', 'Parse unit price, lead time, and terms from replies and PDF quotes', ['rfq_batch']),
         step('comparison_sheet', 'sheets', 'write_comparison_matrix', 'Write a sanitized side-by-side comparison matrix', ['collect_quotes']),
         step('flag_winner', 'sheets', 'update_winner_flag', 'Mark the lowest-cost vendor in the status column', ['comparison_sheet']),
         step('comparison_doc', 'docs', 'write_comparison_memo', 'Write the comparison memo and recommendation', ['comparison_sheet']),
-        ...(book ? [step('booking', 'gmail', 'queue_booking_confirmation', 'Queue the purchase confirmation for operator approval', ['flag_winner', 'comparison_doc'], 2)] : []),
+        ...(choice.book ? [step('booking', 'gmail', 'queue_booking_confirmation', 'Queue the purchase confirmation for operator approval', ['flag_winner', 'comparison_doc'], 2)] : []),
       ],
     };
-    return { name: `Vendor Quote Agent · ${titleCase(item)}`.slice(0, 80), plan: workflowPlanSchema.parse(plan), services: plan.services, scheduleMode: 'continuous' };
+    return { name: (choice.name || `Vendor Quote Agent · ${titleCase(item)}`).slice(0, 80), plan: workflowPlanSchema.parse(plan), services: plan.services,
+      scheduleMode: 'continuous' };
   }
-
-  if (has(text, /\b(?:invoice|invoices|bill|bills|receipt|receipts|subscription|subscriptions|expense|expenses)\b/) &&
-      !(wantsPhotos && !has(text, /\b(?:email|emails|inbox|gmail|invoice|invoices|bill|bills)\b/))) {
-    const services: WorkflowPlan['services'] = ['gmail', 'drive', 'sheets', 'docs', ...(wantsPhotos ? ['photos' as const] : [])];
+  if (choice.template === 'invoice_ledger') {
+    const photos = Boolean(choice.include_photos);
+    const services: WorkflowPlan['services'] = ['gmail', 'drive', 'sheets', 'docs', ...(photos ? ['photos' as const] : [])];
     const plan: WorkflowPlan = {
-      version: 1, planner: 'deterministic-intent-compiler', template: 'invoice_ledger', matched_playbooks: ['bills_trials_spoof_guard', 'invoice_ledger'],
-      services, params: { include_photos: wantsPhotos, folder_path: ['Clam', 'Invoices'], sheet_title: 'Clam Invoice Ledger', doc_title: 'Clam Invoice Summary' },
+      version: 1, planner, template: 'invoice_ledger', matched_playbooks: ['bills_trials_spoof_guard', 'invoice_ledger'],
+      services, params: { include_photos: photos, folder_path: ['Clam', 'Invoices'], sheet_title: 'Clam Invoice Ledger', doc_title: 'Clam Invoice Summary' },
       steps: [
         step('scan_mail', 'gmail', 'scan_invoices', 'Scan email for daily invoices and recurring bills'),
-        ...(wantsPhotos ? [step('scan_photos', 'photos', 'search_receipt_photos', 'Search receipt photos and extract details', ['scan_mail'])] : []),
+        ...(photos ? [step('scan_photos', 'photos', 'search_receipt_photos', 'Search receipt photos and extract details', ['scan_mail'])] : []),
         step('folders', 'drive', 'ensure_folder_path', 'Ensure Drive folder Clam / Invoices / YYYY-MM', ['scan_mail']),
         step('save_pdfs', 'drive', 'save_attachments', 'Save screened PDF invoices into the dated folder', ['folders']),
         step('ledger', 'sheets', 'append_invoice_rows', 'Append deduplicated rows to the invoice ledger', ['save_pdfs']),
@@ -117,43 +159,44 @@ export function compileIntent(instruction: string, options: CompileOptions): Com
         step('flags', 'policy', 'flag_duplicates', 'Send duplicate or spoofed invoices to the Approval Inbox', ['scan_mail'], 2),
       ],
     };
-    return { name: wantsPhotos ? 'Invoice & Receipt Ledger Agent' : 'Invoice Ledger Agent', plan: workflowPlanSchema.parse(plan), services, scheduleMode };
+    return { name: (choice.name || (photos ? 'Invoice & Receipt Ledger Agent' : 'Invoice Ledger Agent')).slice(0, 80), plan: workflowPlanSchema.parse(plan),
+      services, scheduleMode: choice.schedule_mode };
   }
-
-  if (wantsPhotos) {
-    const services: WorkflowPlan['services'] = ['photos', 'sheets', ...(wantsCalendar ? ['calendar' as const] : [])];
+  if (choice.template === 'photo_receipts') {
+    const reminders = Boolean(choice.calendar_reminders);
+    const services: WorkflowPlan['services'] = ['photos', 'sheets', ...(reminders ? ['calendar' as const] : [])];
     const plan: WorkflowPlan = {
-      version: 1, planner: 'deterministic-intent-compiler', template: 'photo_receipts', matched_playbooks: ['photo_receipt_extraction'],
-      services, params: { calendar_reminders: wantsCalendar, sheet_title: 'Clam Receipts' },
+      version: 1, planner, template: 'photo_receipts', matched_playbooks: ['photo_receipt_extraction'],
+      services, params: { calendar_reminders: reminders, sheet_title: 'Clam Receipts' },
       steps: [
         step('search', 'photos', 'search_receipt_photos', 'Search recent receipt and ticket photos (read-only)'),
         step('extract', 'photos', 'extract_photo_details', 'Extract merchant, date, amount, and due date in the quarantined parser', ['search']),
         step('sheet', 'sheets', 'append_receipt_rows', 'Append structured receipt rows to a Google Sheet', ['extract']),
-        ...(wantsCalendar ? [step('reminders', 'calendar', 'add_payment_reminders', 'Add calendar reminders for payment due dates', ['extract'])] : []),
+        ...(reminders ? [step('reminders', 'calendar', 'add_payment_reminders', 'Add calendar reminders for payment due dates', ['extract'])] : []),
       ],
     };
-    return { name: 'Receipt Photos Agent', plan: workflowPlanSchema.parse(plan), services, scheduleMode };
+    return { name: (choice.name || 'Receipt Photos Agent').slice(0, 80), plan: workflowPlanSchema.parse(plan), services, scheduleMode: choice.schedule_mode };
   }
-
   // Any other request: a safe, read-mostly digest that touches only the services the request names.
-  const wantsSheet = requested.has('sheets') || has(text, /\b(?:sheet|spreadsheet|tracker|table|log)\b/);
-  const wantsFolder = requested.has('drive') || has(text, /\b(?:drive|folder)\b/);
-  const keywords = [...new Set(text.match(/\b[a-z]{4,}\b/g) ?? [])].filter((word) =>
-    !['please', 'every', 'email', 'emails', 'inbox', 'with', 'from', 'that', 'this', 'into', 'make', 'create', 'google', 'about', 'them', 'their', 'what', 'have', 'sheet', 'summary', 'summarize', 'track', 'doc', 'document'].includes(word)).slice(0, 6);
-  const services: WorkflowPlan['services'] = ['gmail', 'docs', ...(wantsSheet ? ['sheets' as const] : []), ...(wantsFolder ? ['drive' as const] : [])];
   const short = instruction.replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' ');
+  const services: WorkflowPlan['services'] = ['gmail', 'docs', ...(choice.wants_sheet ? ['sheets' as const] : []), ...(choice.wants_folder ? ['drive' as const] : [])];
   const plan: WorkflowPlan = {
-    version: 1, planner: 'deterministic-intent-compiler', template: 'inbox_digest', matched_playbooks: ['inbox_digest'],
-    services, params: { keywords, doc_title: `Clam Digest - ${titleCase(short)}`.slice(0, 120), sheet_title: wantsSheet ? `Clam Tracker - ${titleCase(short)}`.slice(0, 120) : undefined,
-      folder_path: wantsFolder ? ['Clam', 'Digests'] : undefined },
+    version: 1, planner, template: 'inbox_digest', matched_playbooks: ['inbox_digest'],
+    services, params: { keywords: (choice.keywords ?? []).map((word) => word.toLowerCase()), doc_title: `Clam Digest - ${titleCase(short)}`.slice(0, 120),
+      sheet_title: choice.wants_sheet ? `Clam Tracker - ${titleCase(short)}`.slice(0, 120) : undefined,
+      folder_path: choice.wants_folder ? ['Clam', 'Digests'] : undefined },
     steps: [
       step('scan_mail', 'gmail', 'scan_inbox', 'Read recent mail through the untrusted-data boundary'),
-      ...(wantsFolder ? [step('folder', 'drive', 'ensure_folder_path', 'Ensure Drive folder Clam / Digests', ['scan_mail'])] : []),
-      ...(wantsSheet ? [step('tracker', 'sheets', 'append_tracker_rows', 'Append matching messages to a tracker sheet', ['scan_mail'])] : []),
+      ...(choice.wants_folder ? [step('folder', 'drive', 'ensure_folder_path', 'Ensure Drive folder Clam / Digests', ['scan_mail'])] : []),
+      ...(choice.wants_sheet ? [step('tracker', 'sheets', 'append_tracker_rows', 'Append matching messages to a tracker sheet', ['scan_mail'])] : []),
       step('digest', 'docs', 'write_digest', 'Write a sanitized digest section', ['scan_mail']),
     ],
   };
-  return { name: `Agent · ${titleCase(short)}`.slice(0, 80), plan: workflowPlanSchema.parse(plan), services, scheduleMode };
+  return { name: (choice.name || `Agent · ${titleCase(short)}`).slice(0, 80), plan: workflowPlanSchema.parse(plan), services, scheduleMode: choice.schedule_mode };
+}
+
+export function compileIntent(instruction: string, options: CompileOptions): CompiledIntent {
+  return planFromChoice(deterministicChoice(instruction, options), instruction, options, 'deterministic-intent-compiler');
 }
 
 export function interactivePlan(): WorkflowPlan {

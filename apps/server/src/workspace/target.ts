@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import type { InboxCalendarEvent } from '@clam/shared';
 import type { ActionKind, Claim, InboxTarget, SafeAction, Snapshot, Tier } from '../inbox/contracts.js';
 import type { WorkspaceRegistry } from './registry.js';
+import { maxFileBytes } from './adapters.js';
 import { titleOf, type WorkspaceAdapter, type WorkspaceState } from './types.js';
 
 export interface WorkspaceOwner {
@@ -36,6 +38,13 @@ export class CompositeTarget implements InboxTarget {
     const state = action.after as unknown as WorkspaceState;
     const owner = action.workspaceOwner;
     if (!owner) throw new Error('WORKSPACE_OWNER_REQUIRED');
+    if (state.type === 'drive_file' && before?.type === 'drive_file') {
+      // Keep the previous bytes so an overwrite can be rolled back exactly.
+      const previous = await this.workspace.fileContent(action.target, maxFileBytes);
+      if (previous && createHash('md5').update(previous.data).digest('hex') === before.md5) {
+        this.registry.saveBackup(this.inboxId, action.target, String(before.md5), previous.mime, previous.data);
+      }
+    }
     const receipt = await this.workspace.write(action.target, before, state, signal);
     this.registry.upsert({
       inboxId: this.inboxId, key: action.target, userId: owner.userId, agentId: owner.agentId, service: state.type,
@@ -53,7 +62,12 @@ export class CompositeTarget implements InboxTarget {
       return;
     }
     const before = claim.before as unknown as WorkspaceState;
-    if (before.type === 'drive_file') throw new Error('FILE_CONTENT_ROLLBACK_UNSUPPORTED');
+    if (before.type === 'drive_file') {
+      const backup = this.registry.backup(this.inboxId, claim.target, before.md5);
+      if (!backup) throw new Error('FILE_BACKUP_UNAVAILABLE');
+      await this.workspace.write(claim.target, claim.after, { ...before, source: { inline_base64: backup.data.toString('base64url') } }, signal);
+      return;
+    }
     await this.workspace.write(claim.target, claim.after, before, signal);
   }
 }

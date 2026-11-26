@@ -76,6 +76,28 @@ export class WorkspaceRegistry {
       .run(new Date().toISOString(), new Date().toISOString(), inboxId, key);
   }
 
+  saveBackup(inboxId: string, key: string, md5: string, mime: string, data: Buffer) {
+    this.db.prepare('INSERT OR IGNORE INTO workspace_file_backups VALUES (?,?,?,?,?,?)').run(inboxId, key, md5, mime, data, new Date().toISOString());
+  }
+
+  backup(inboxId: string, key: string, md5: string) {
+    const row = this.db.prepare('SELECT mime, data FROM workspace_file_backups WHERE inbox_id=? AND logical_key=? AND md5=?').get(inboxId, key, md5) as
+      { mime: string; data: Uint8Array } | undefined;
+    return row ? { mime: row.mime, data: Buffer.from(row.data) } : null;
+  }
+
+  savePickerSession(inboxId: string, session: { id: string; pickerUri: string; expireTime?: string }) {
+    this.db.prepare(`INSERT INTO photo_picker_sessions VALUES (?,?,?,?,?) ON CONFLICT(inbox_id) DO UPDATE SET session_id=excluded.session_id,
+      picker_uri=excluded.picker_uri, created_at=excluded.created_at, expire_time=excluded.expire_time`)
+      .run(inboxId, session.id, session.pickerUri, new Date().toISOString(), session.expireTime ?? null);
+  }
+
+  pickerSession(inboxId: string) {
+    const row = this.db.prepare('SELECT session_id, picker_uri, expire_time FROM photo_picker_sessions WHERE inbox_id=?').get(inboxId) as
+      { session_id: string; picker_uri: string; expire_time: string | null } | undefined;
+    return row && (!row.expire_time || Date.parse(row.expire_time) > Date.now()) ? row : null;
+  }
+
   list(userId: string, options: { agentId?: string; includeRemoved?: boolean } = {}): ArtifactRow[] {
     return this.db.prepare(`SELECT * FROM workspace_artifacts WHERE user_id=? AND (? IS NULL OR agent_id=?)
       AND (? OR removed_at IS NULL) ORDER BY updated_at DESC LIMIT 200`)

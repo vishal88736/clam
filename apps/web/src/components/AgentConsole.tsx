@@ -10,7 +10,7 @@ export type AgentStatus = 'active' | 'input_required' | 'paused' | 'completed' |
 export type Agent = {
   id: string; name: string; goal_prompt: string; source_cli: string; allowed_services: string[]; schedule_mode: string;
   interval_seconds: number | null; status: AgentStatus; run_count: number; last_run_at: string | null; next_run_at: string | null;
-  created_at: string; state: { phase: string; pending_approvals: string[]; last_error?: string | null };
+  created_at: string; state: { phase: string; pending_approvals: string[]; last_error?: string | null; picker_uri?: string | null; notes?: string[] };
   workflow_plan: { template: string; planner: string; steps: Array<{ id: string; service: string; action: string; label: string; tier_hint: number }> };
 };
 export type Profile = {
@@ -276,6 +276,10 @@ export function AgentsView({ data, revision, onTrace, onError }: {
               <div><dt>Phase</dt><dd>{nice(agent.state.phase)}</dd></div>
             </dl>
             {agent.state.pending_approvals.length > 0 && <a className="inbox-text-link" href="#approvals">{agent.state.pending_approvals.length} waiting in Approval Inbox</a>}
+            {agent.state.phase === 'awaiting_photo_selection' && agent.state.picker_uri?.startsWith('https://') &&
+              <a className="inbox-button" data-tone="primary" href={agent.state.picker_uri} target="_blank" rel="noopener noreferrer">
+                <ImageIcon size={14} /> Select receipts in Google Photos</a>}
+            {agent.state.phase === 'awaiting_quotes' && agent.state.notes?.[0] && <p>{agent.state.notes[0]}</p>}
             {agent.state.last_error && <p className="inbox-error">{agent.state.last_error}</p>}
             <details><summary>Plan · {agent.workflow_plan.template} · {agent.workflow_plan.steps.length} steps</summary>
               <ol className="agent-plan">{agent.workflow_plan.steps.map((step) => <li key={step.id}>

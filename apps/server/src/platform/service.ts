@@ -25,6 +25,7 @@ export interface AgentState {
   last_error?: string | null;
   last_run_id?: string | null;
   interactive?: boolean;
+  picker_uri?: string | null;
 }
 
 export interface AgentRecord {

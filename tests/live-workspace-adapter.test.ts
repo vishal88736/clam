@@ -8,6 +8,7 @@ import { canonicalJson } from '../apps/server/src/inbox/trace.js';
 import { describeContent, LiveGoogleWorkspaceAdapter } from '../apps/server/src/workspace/adapters.js';
 import { WorkspaceRegistry } from '../apps/server/src/workspace/registry.js';
 import { verifiedState, type WorkspaceState } from '../apps/server/src/workspace/types.js';
+import { extractPhotoDetails } from '../apps/server/src/workspace/photos.js';
 
 type File = { id: string; name: string; mimeType: string; parents: string[]; trashed: boolean; size?: string; md5Checksum?: string };
 type Paragraph = { text: string; style: string };
@@ -185,5 +186,49 @@ it('round-trips Drive folders/files, Sheets (RAW), and Docs through the live Goo
   } finally {
     store.close();
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('uses the Google Photos Picker: no reads before the user picks, then only picked items, downloaded with OAuth from googleusercontent', async () => {
+  const store = new InboxStore(':memory:');
+  try {
+    const registry = new WorkspaceRegistry(store.sqlite);
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>Merchant: Night Market</text><text>Total: 12.50 USD</text></svg>');
+    let picked = false;
+    const calls: Array<{ capability: GoogleCapability; url: string; method: string }> = [];
+    const accounts = {
+      connection: () => ({ status: 'active', granted_scopes: JSON.stringify(['https://www.googleapis.com/auth/photospicker.mediaitems.readonly']) }),
+      api: async (_inbox: string, capability: GoogleCapability, raw: string, _guard: () => void, init: RequestInit = {}) => {
+        calls.push({ capability, url: raw, method: init.method ?? 'GET' });
+        const url = new URL(raw);
+        if (url.hostname === 'lh3.googleusercontent.com') return new Response(svg);
+        if (url.pathname === '/v1/sessions') return Response.json({ id: 'sess-1', pickerUri: 'https://photos.google.com/picker/sess-1', expireTime: '2099-01-01T00:00:00Z' });
+        if (url.pathname === '/v1/sessions/sess-1') return Response.json({ id: 'sess-1', pickerUri: 'https://photos.google.com/picker/sess-1', mediaItemsSet: picked });
+        if (url.pathname === '/v1/mediaItems') {
+          expect(url.searchParams.get('sessionId')).toBe('sess-1');
+          return Response.json({ mediaItems: [{ id: 'm1', createTime: '2026-12-02T08:00:00Z', type: 'PHOTO',
+            mediaFile: { baseUrl: 'https://lh3.googleusercontent.com/pp/m1', mimeType: 'image/svg+xml', filename: 'night.svg' } }] });
+        }
+        throw new Error('Unexpected endpoint ' + raw);
+      },
+    } as unknown as GoogleAccounts;
+    const adapter = new LiveGoogleWorkspaceAdapter(accounts, 'inbox-1', registry, () => undefined, tmpdir());
+    await expect(adapter.searchPhotos({ limit: 5 })).rejects.toThrow('PHOTOS_PICKER_SELECTION_REQUIRED');
+    const session = await adapter.startPhotoPicker();
+    expect(session).toMatchObject({ session_id: 'sess-1', picker_uri: 'https://photos.google.com/picker/sess-1' });
+    expect(await adapter.startPhotoPicker()).toMatchObject({ session_id: 'sess-1' });
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+    expect(await adapter.photoPickerReady()).toBe(false);
+    await expect(adapter.searchPhotos({ limit: 5 })).rejects.toThrow('PHOTOS_PICKER_SELECTION_REQUIRED');
+
+    picked = true;
+    expect(await adapter.searchPhotos({ limit: 5 })).toEqual([expect.objectContaining({ id: 'm1', filename: 'night.svg' })]);
+    const details = await extractPhotoDetails(adapter, 'm1');
+    expect(details).toMatchObject({ extraction: 'image_text_layer', fields: { merchant: 'Night Market', amount: 12.5, currency: 'USD' } });
+    const download = calls.find((call) => call.url.startsWith('https://lh3.googleusercontent.com/'))!;
+    expect(download).toMatchObject({ capability: 'photos:read', url: 'https://lh3.googleusercontent.com/pp/m1=d' });
+    expect(calls.every((call) => call.capability === 'photos:read')).toBe(true);
+  } finally {
+    store.close();
   }
 });

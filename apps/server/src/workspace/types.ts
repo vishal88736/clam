@@ -44,8 +44,14 @@ export interface WorkspaceAdapter {
   read(key: string): Promise<Snapshot>;
   write(key: string, before: Snapshot, after: WorkspaceState, signal: AbortSignal): Promise<WriteReceipt>;
   remove(key: string, signal: AbortSignal): Promise<void>;
+  /** Current bytes of a Drive file Clam manages (null when unavailable or larger than maxBytes). */
+  fileContent(key: string, maxBytes: number): Promise<{ mime: string; data: Buffer } | null>;
   searchPhotos(filter: { category?: string; dateFrom?: string; dateTo?: string; limit: number }): Promise<PhotoItem[]>;
   photoBytes(id: string, maxBytes: number): Promise<{ item: PhotoItem; data: Buffer }>;
+  /** Live Google Photos Picker: start (or reuse) a session the user completes in Google's UI. */
+  startPhotoPicker?(): Promise<{ session_id: string; picker_uri: string; expire_time: string | null }>;
+  /** Whether the user finished picking items in the current picker session. */
+  photoPickerReady?(): Promise<boolean>;
   /** Content preview of a sandbox artifact (live artifacts are opened through their Google URL). */
   preview?(key: string): Promise<Record<string, unknown> | null>;
 }
