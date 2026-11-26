@@ -9,6 +9,8 @@ try {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Lets automated browser tests run an isolated dev server without touching the developer's .next directory.
+  distDir: process.env.CLAM_NEXT_DIST_DIR || '.next',
   transpilePackages: ['@clam/shared'],
 };
 
