@@ -77,6 +77,29 @@ Under **Connections → Agent inboxes & MCP access**, click **Run sandbox handof
 
 Mint separate Pod tokens for `triage` and `executor` to use the same workflow over `/mcp`. Select `handoff:send` for delegation, `handoff:read` for received work, and `attachment:extract` for shared case evidence. Use `handoff_to_agent_inbox` with the calling inbox ID, destination inbox ID, and the existing thread ID for replies. The sandbox transport delivers signed messages inside its Pod. A repeated back-and-forth or exhausted hop budget pauses the thread and creates a Tier 2 item. **Reset thread budget** permits a new attempt and leaves the previous receipts intact.
 
+## Workspace agents from any CLI (Drive, Docs, Sheets, Photos)
+
+Mint a sandbox MCP token with `agent:manage`, `workspace:write`, `photos:read`, `mail:read`, `mail:send`, and `calendar:propose`, connect Claude Code, Codex CLI, Cursor, or Cline (see **Connections → Setup commands**), then just ask for something:
+
+> Email these 4 vendors for quotes on 500 custom boxes, compare their prices in a Sheet and Doc, and book the cheapest one.
+
+The CLI calls `provision_and_run_agent`. Clam compiles the request into a validated step DAG, stores a persistent agent (`user_agents`), switches your active agent (`agent_switch_history`), and runs it in the backend. Every step goes through the policy engine, Tier 0/1/2 gate, kill switch, and read-back `CHECK`. The **Agents & Activity** page streams the agent list, switch timeline, per-step logs (`agent_execution_logs`), and Sheet/Doc/Drive artifacts (`workspace_artifacts`) over SSE. In `$0` sandbox mode you can open an in-browser preview of each artifact.
+
+| Built-in workflow | What runs autonomously (Tier 0) | What waits for you (Tier 2) |
+| --- | --- | --- |
+| Invoices & recurring bills | Drive `Clam / Invoices / YYYY-MM`, screened PDF upload, deduplicated ledger rows, summary Doc | Duplicate or spoofed invoices |
+| Vendor RFQ → comparison | Quote parsing (body and PDF), sanitized comparison Sheet, winner flag, memo Doc | The RFQ batch to non-allowlisted vendors, and the final booking (`FINANCIAL_COMMITMENT_APPROVAL`) |
+| Receipt photos | Read-only Photos search, bounded extraction, receipt Sheet, Calendar payment reminders | — |
+| Anything else | A sanitized digest Doc, plus an optional tracker Sheet and Drive folder | Any outbound email |
+
+Direct tools are also available: `drive_ensure_folder`, `drive_save_file`, `drive_list_files`, `sheets_create_tracker`, `sheets_append_rows`, `sheets_update_cells`, `docs_create_or_update`, `photos_search_and_extract`, `switch_active_agent`, and `list_user_agents_and_logs`.
+
+Safety:
+- **Formula injection:** untrusted text is neutralized before it reaches a Sheet (for example `=IMPORTXML(...)` is stored as `'=IMPORTXML (...)`). Live writes also use `valueInputOption=RAW`.
+- **Secret scanner:** covers Drive file contents as well as Sheet and Doc text.
+- **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photoslibrary.readonly`. `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*. Full `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
+- **Rollback:** rolling back a run deletes only artifacts Clam created in that run, using the id recorded in its own registry.
+
 ## Three-minute walkthrough
 
 | View | What to demonstrate |

@@ -311,7 +311,7 @@ export function AgentsView({ data, revision, onTrace, onError }: {
         </article>)}</div>}
     </section>
 
-    <div className="inbox-brief-grid">
+    <div className="inbox-stack">
       <section className="inbox-panel">
         <div className="inbox-panel-head"><h2><ScrollText size={18} />Live agent logs</h2>
           <div className="inbox-actions">
@@ -324,10 +324,9 @@ export function AgentsView({ data, revision, onTrace, onError }: {
           </div>
         </div>
         {!logs.length ? <div className="inbox-empty">Agent steps stream here as they happen.</div> : <div className="inbox-table-wrap"><table>
-          <thead><tr><th>Time</th><th>Agent · step</th><th>Service</th><th>Action</th><th>Verdict</th><th>Verified</th><th>Trace</th></tr></thead>
+          <thead><tr><th>Time · agent</th><th>Service</th><th>Action</th><th>Verdict</th><th>Verified</th><th>Trace</th></tr></thead>
           <tbody>{logs.map((entry) => <tr key={entry.id} data-testid="log-row" data-service={entry.service}>
-            <td>{time(entry.created_at)}</td>
-            <td>{entry.agent_name}<small>#{entry.step_index}</small></td>
+            <td className="agent-log-when">{time(entry.created_at)}<small>{entry.agent_name} · step {entry.step_index}</small></td>
             <td><span className="agent-chip">{serviceIcon(entry.service, 12)}{serviceLabel[entry.service] ?? entry.service}</span></td>
             <td><strong>{nice(entry.action_name)}</strong><small>{entry.input_summary}</small><small>→ {entry.output_summary}</small></td>
             <td><Tag tone={verdictTone[entry.policy_verdict]}>{entry.policy_verdict.replace(/_/g, ' ')}</Tag><small>{entry.policy_rule_id}</small></td>
@@ -340,7 +339,7 @@ export function AgentsView({ data, revision, onTrace, onError }: {
       <section className="inbox-panel">
         <div className="inbox-panel-head"><h2><History size={18} />Agent switch timeline</h2></div>
         {!switches.length ? <div className="inbox-empty">Every agent creation and switch is recorded here.</div> :
-          <ol className="agent-timeline">{switches.map((entry) => <li key={entry.id} data-testid="switch-row">
+          <ol className="agent-timeline" data-layout="columns">{switches.map((entry) => <li key={entry.id} data-testid="switch-row">
             <strong>{entry.to_agent_name}</strong>
             <span>{entry.from_agent_name ? `from ${entry.from_agent_name}` : 'first active agent'}</span>
             <span><Tag>{nice(entry.switched_by)}</Tag> {time(entry.created_at)}</span>

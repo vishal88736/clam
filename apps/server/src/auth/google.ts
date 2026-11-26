@@ -249,7 +249,7 @@ export class GoogleAccounts {
         return { next: this.begin('readonly', browser, current, undefined, identity) };
       }
       this.logout(this.session(cookies));
-      const user = this.db.prepare(`INSERT INTO users VALUES (?,?,?,?,?,?) ON CONFLICT(google_sub) DO UPDATE
+      const user = this.db.prepare(`INSERT INTO users (id,google_sub,email,name,picture,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(google_sub) DO UPDATE
         SET email=excluded.email,name=excluded.name,picture=excluded.picture,updated_at=excluded.updated_at RETURNING id`)
         .get(randomUUID(), identity.sub, identity.email, identity.name ?? '', safePicture(identity.picture), nowIso())!;
       const raw = opaque();

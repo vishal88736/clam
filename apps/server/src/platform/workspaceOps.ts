@@ -134,7 +134,7 @@ export class WorkspaceOps {
     if (!fresh.length) {
       const record = this.context.record('CHECK', { action: 'append_sheet_rows', target: key, outcome: 'ALREADY_CURRENT', rows_skipped_duplicates: skipped, row_count: tab.rows.length });
       this.platform.log({ userId: this.who.userId, agentId: this.who.agentId, runId: this.context.runId, service: 'sheets', action: 'append_sheet_rows',
-        input: `${title} / ${tabName}: ${rows.length} candidate rows`, output: `No new rows; ${skipped} duplicates skipped (row count ${tab.rows.length})`,
+        input: `${title} / ${tabName}: ${rows.length} candidate rows`, output: `${tabName}: no new rows; ${skipped} duplicates skipped (row count ${tab.rows.length})`,
         verdict: 'ALLOW_TIER_0', ruleId: 'IDEMPOTENT_DEDUPE', verified: true, artifactId: this.platform.registry.get(this.who.inboxId, key)?.id, traceStepHash: record.step_hash });
       return { key, appended: 0, skipped, rowCount: tab.rows.length, verified: true, decision: 'AUTONOMOUS' as const, ruleId: 'IDEMPOTENT_DEDUPE', flags: clean.flags };
     }
@@ -142,7 +142,7 @@ export class WorkspaceOps {
       tabs: before.tabs.map((item) => item.name === tabName ? { ...item, rows: [...item.rows, ...fresh] } : item) };
     const outcome = await this.submit(key, after, before as unknown as Snapshot, 'append_sheet_rows',
       `${title} / ${tabName}: ${rows.length} candidate rows${clean.flags.length ? ' · sanitized ' + clean.flags.join(', ') : ''}`,
-      `Appended ${fresh.length} rows (${skipped} duplicates skipped); read-back row count ${tab.rows.length + fresh.length}`, sourceId);
+      `${tabName}: appended ${fresh.length} rows (${skipped} duplicates skipped); read-back row count ${tab.rows.length + fresh.length}`, sourceId);
     const actual = await this.read(key) as unknown as Extract<WorkspaceState, { type: 'google_sheet' }> | null;
     const rowCount = actual?.tabs.find((item) => item.name === tabName)?.rows.length ?? 0;
     return { key, appended: outcome.verified ? fresh.length : 0, skipped, rowCount, verified: outcome.verified, decision: outcome.decision,
