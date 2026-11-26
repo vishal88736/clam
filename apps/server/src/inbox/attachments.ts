@@ -43,7 +43,7 @@ export async function readAttachments(parts: ReaderAttachment[]) {
       const duration = start && end && isoPattern.test(start) && isoPattern.test(end)
         ? (Date.parse(utcDate(end)) - Date.parse(utcDate(start))) / 60_000 : null;
       extracted.push(text, ...(start && duration ? ['Start: ' + utcDate(start), 'Duration: ' + duration] : []));
-    } else if (part.mime === 'text/plain') {
+    } else if (part.mime === 'text/plain' || part.mime === 'text/csv') {
       extracted.push(bytes.toString('utf8'));
     }
   }

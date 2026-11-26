@@ -1,28 +1,14 @@
 # Clam · Agentic Inbox
 
-**Agentware Track 1 · Inbox & Calendar**
+**Agentware 2026 Track 1 · Inbox & Calendar**
 
-Clam processes travel, scheduling, and billing email under rules you control. After a run, the Inbox Briefing shows **what changed**, **what Clam handled**, and **what needs your approval**. For example, when a flight is delayed, Clam can update a matching itinerary event, move a flexible focus block, and ask before changing a meeting with an external guest.
+[Open the three-minute walkthrough](#three-minute-walkthrough)
 
-Each verified action has a policy decision and a read-back receipt. Eligible changes can be rolled back from the console or CLI.
+Clam reads inbox threads, plans calendar and inbox work, and returns a receipt showing **what changed**, **what it handled**, and **what needs approval**. A read-only LLM analyzes the email. A separate executor enforces policy, verifies each write, and supports rollback for eligible actions. A recorded demo has yet to be published.
 
-## Run the zero-credential sandbox
+## Primary LLM Mode
 
-Install Docker Engine with the Compose plugin and Make, then run:
-
-```sh
-git clone https://github.com/vishal88736/clam.git
-cd clam
-make sandbox
-```
-
-Open [Inbox Briefing](http://localhost:3000) and click **Run now**. The first build downloads the base image and dependencies. The sandbox uses **20 synthetic emails, eight seeded calendar events, and a fixed scenario clock**. Outbound mail goes into a local mock outbox. The built-in deterministic parser needs no API keys, and the model cost is **$0 per sandbox run**.
-
-`make logs` streams service logs. `make stop` stops the services and keeps the SQLite volume. To change the host ports, run `CLAM_WEB_PORT=3300 CLAM_API_PORT=4400 make sandbox` and open [port 3300](http://localhost:3300). The default API health check is [port 4000](http://localhost:4000/api/health).
-
-### Run from source
-
-Use Node.js 24 or newer and pnpm 10. The Docker build uses pnpm 10.34.9. Install Poppler's `pdftotext` if you want PDF attachment extraction outside Docker.
+Use Node.js 24 or newer and pnpm 10. Configure an API key or an Ollama endpoint to select `llm` automatically, or set `CLAM_AGENT_MODE=llm` explicitly. The LLM can run against the synthetic mailbox before you connect Google.
 
 ```sh
 cp .env.example .env
@@ -31,94 +17,131 @@ pnpm build
 pnpm dev
 ```
 
-Use a new shell for the operator commands. When the Compose API uses an alternate host port, set `CLAM_PUBLIC_URL` to that address before running a host CLI command.
+For the recommended low-cost cloud setup, set `CLAM_LLM_PROVIDER=gemini`, `CLAM_LLM_MODEL=gemini-3.1-flash-lite`, and `GEMINI_API_KEY` in `.env`. The published standard rates are **$0.25/1M input tokens** and **$1.50/1M output tokens**. Clam records provider-reported usage and estimates USD from these rates. [Google pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite)
 
-## What to try in the console
+Two real local Ollama runs on the 20-message sandbox averaged **5,305 tokens per run** (3,976 input and 1,329 output), with **$0 in provider charges** for `qwen2.5:1.5b`. Each run recorded 2 verified protected-message actions, 10 approvals, and 1 quarantine. Gemini usage and billed cost remain unmeasured. [Run receipts and timings](docs/AGENTWARE_AUDIT.md#measured-model-runs)
 
-| View | What you can do |
-| --- | --- |
-| [Inbox Briefing](http://localhost:3000/#briefing) | Run the inbox, compare before and after values, review conflicts, and open verified action receipts. |
-| [Approval Inbox](http://localhost:3000/#approvals) | Inspect the triggering rule and expiry, edit eligible email or calendar payloads, and approve or reject actions. |
-| [Calendar Sync](http://localhost:3000/#calendar) | Inspect additions, changes, and cancellations, roll back selected eligible changes, and export `.ics`. |
-| [Policy Change Preview](http://localhost:3000/#policy) | Compare the current and draft policy across the sandbox inbox before saving a new version. |
-| [Runs & Live Monitor](http://localhost:3000/#monitor) | Schedule daily, weekly, or interval runs. Inspect history, trace steps, and live budgets and model usage. |
-| [Bills & Receipts](http://localhost:3000/#bills) | Review invoices, renewal price changes, and duplicate or spoof flags. Export the ledger to CSV. |
+Open `http://localhost:3000/#briefing`. The status bar labels the current agent as `llm` or `offline-smoke` separately from the mailbox. Google access is optional and works with either inference mode.
 
-The default console supports light and dark themes. `/about` contains the Clam landing page. `/console` opens the original MCP firewall console.
+OpenAI, Anthropic, Groq, and Ollama are also supported. Set their provider, model, and applicable key or endpoint. For providers without configured rates, usage is displayed and estimated USD is marked unavailable. Live cloud processing sends bounded, sanitized message and context text to the selected provider. For a local model, set `OLLAMA_BASE_URL` and `CLAM_LLM_MODEL`.
 
-### Three-minute walkthrough
+## Zero-Key Offline Smoke Mode
 
-1. Run the inbox. In **What changed**, find AC402 moving from **14:20 to 16:45 UTC**, the shifted solo focus block, and the conflicting invoice and deadline.
-2. In **Approval Inbox**, inspect the external meeting and VIP notice. Edit the subscription renewal draft, then review its recorded action. **Bills & Receipts** shows the renewal increase from **$25 to $35**.
-3. In **Runs & Live Monitor**, open the original run and inspect a verified step. Use **Roll back last run** from the Briefing, then confirm the original flight time in **Calendar Sync**. The rollback receipt lists eligible restorations and marks delivered mail as irreversible.
+Install Docker Engine, Docker Compose, and Make, then run:
 
-## How it works
-
-```text
-Trigger → Plan → Policy → Act → Check → Report
+```sh
+make sandbox
 ```
 
-A read-only parser sanitizes incoming mail and attachments, then emits validated intents. The executor applies a versioned policy, checks recipient provenance and confidence, reserves each action in SQLite, and reads back the result after writing. Each run has a journal, hash-chained trace, and human-readable receipt.
+Open `http://localhost:3000/#briefing` and click **Run now**. Compose explicitly selects `offline-smoke`. The sandbox has 20 synthetic inbox messages, three earlier thread records, eight calendar events, and a fixed scenario clock. Writes go to the local calendar, labels, mock outbox, and ledger. The deterministic parser costs $0 per run.
 
-The nine playbooks cover travel delays, meeting scheduling, bills and trials, hostile-input quarantine, pre-meeting context, commitments and follow-ups, deliveries, expired OTPs, and newsletter and outreach rollups. Reversible changes can run at Tier 0. Tier 1 sends are limited to eligible allowlisted contacts and carry an automated-message header and footer. External and sensitive actions that pass the hard guards can go to Tier 2 approval. The operator kill switch and per-run circuit breakers also gate tool execution.
+On the verification machine, a Docker build with layer caching disabled took **95.2 seconds** with the base image already available. Starting the built image with a fresh sandbox volume took **7.6 seconds** to reach healthy API and web states.
 
-| Path | Role |
+Use `make logs` for service logs or `make stop` to stop services and keep the SQLite volume. The default API is `http://localhost:4000`. For an isolated local run from source, use `CLAM_AGENT_MODE=offline-smoke DATABASE_PATH=:memory: pnpm agent sandbox`.
+
+## Connect Google Gmail and Calendar
+
+1. In Google Cloud Console, enable **Gmail API** and **Google Calendar API**. In Google Auth Platform, configure your app branding and audience. For an external app in Testing, add a dedicated Gmail account under **Test users**.
+2. Create a **Web application** OAuth client. Add `http://localhost:4000/api/auth/google/callback` as the authorized redirect URI. Keep both Clam URLs on the same hostname for the session cookie to reach both ports.
+3. In `.env`, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and `CLAM_INBOX_LIVE=true`. Generate **two separate** values with `openssl rand -hex 32` for `CLAM_TOKEN_ENCRYPTION_KEY` and `CLAM_SESSION_SECRET`. Start from source with `pnpm dev`. The Compose judge setup explicitly disables live access.
+4. Open `http://localhost:3000/settings`. Click **Sign in with Google**, then **Connect Gmail (Read-Only)**. Use **Link another Google account** to connect a second account. Choose the target in **Active inbox** before starting a run.
+5. Use **Upgrade to Read+Write** when you want to authorize mail or calendar actions. Each account starts with an empty allowlist. Review Tier 2 actions in the Approval Inbox, and use **Disconnect & Revoke Token** to revoke the Google grant and the account's MCP tokens.
+
+| Consent step | Requested scopes |
 | --- | --- |
-| `apps/server` | Fastify API, SQLite journal, policy engine, playbooks, sandbox and live adapters, and SSE |
-| `apps/web` | Next.js and React console |
-| `apps/agent` | Standalone client for the scoped MCP firewall |
-| `packages/shared` | Shared TypeScript and Zod contracts |
-| `tests`, `traces` | Automated tests, Trap Pack report, and recorded run receipts |
+| Sign in | `openid`, `userinfo.email`, `userinfo.profile` |
+| Connect read-only | `gmail.readonly`, `calendar.events.readonly` |
+| Enable actions | `gmail.modify`, `calendar.events` |
 
-See [AGENT.md](AGENT.md) for the playbook registry and architecture diagram and [SAFETY.md](SAFETY.md) for the enforcement points.
+Google can return a subset of the requested scopes or include earlier grants. Connections displays the actual set, and Clam checks the required scope before each operation. Google refresh tokens for external apps in Testing generally expire after seven days when Gmail or Calendar scopes are granted. Use **Reconnect** when the account shows **Re-auth Required**. [Google OAuth setup and revocation](https://developers.google.com/identity/protocols/oauth2/web-server) · [Refresh-token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)
+
+### Scoped MCP access
+
+In **Connections**, mint a token for a specific inbox. The token is shown once and expires after 30 days. Clam accepts it at `http://localhost:4000/mcp` via Streamable HTTP. The Connections screen includes setup snippets for Claude Code, Cline, Cursor, and Codex.
+
+For Streamable HTTP, pass the token in `Authorization: Bearer …` or `x-api-key`. The MCP server checks the token on every request, including the session's `GET` stream. For local stdio clients, start `pnpm --silent clam-mcp` from the repo with `CLAM_API_URL` and `CLAM_MCP_TOKEN` exported. The bridge also accepts `CLAM_PUBLIC_URL`. **Runs & Live Monitor** shows tool calls with their reported client name, token identifier, policy verdict, budget, and trace.
+
+If pnpm is available through this checkout's dependencies, run `export PATH="$PWD/node_modules/.bin:$PATH"` before starting the client.
+
+The **Sandbox mailbox tokens** panel also works without Google sign-in. Tokens minted with `mail:read` cannot send mail. An explicitly scoped sandbox `inbox:manage` token can provision local Pod inboxes and manage the sandbox recipient allowlist and blocklist. Attachment staging writes screened files with mode `0600` under `workspace/mail-attachments/`. A batch that requires approval appears as one editable item with fixed recipients. `get_batch_status` shows verified sends as each approved chunk runs within the active budget.
+
+Scopes cover mail and threads, attachment extraction, draft proposals, policy-gated sends, calendar proposals, and optional verification lookups for a single sender domain. The verification scope checks the Gmail search window, exact authenticated domain, and message age. Password-reset and account-recovery notices are excluded. Documents and messages returned by tools carry an untrusted-data label.
+
+Verification tools return a matching code or HTTPS verification URL once per message and inbox. Link hosts must exactly match the authenticated sender domain or an explicit host in `CLAM_VERIFICATION_REDIRECTS`, for example `{"example.com":["verify.example.net"]}`. Clam rejects redirect parameters and never follows the URL. The journal and live stream contain redacted receipts with the caller's token identifier.
+
+For trusted local CLI operations, configure `CLAM_OPERATOR_TOKEN` on the server and CLI. Set `CLAM_INBOX_ID` to the connected account's inbox ID before running `pnpm agent run`, `pnpm agent watch`, or `pnpm agent rollback RUN_ID`. Pull the inbox ID from the signed-in `/api/auth/session` endpoint. The CLI uses the sandbox when no inbox ID is supplied.
+
+### Agent Pod handoffs
+
+Under **Connections → Agent inboxes & MCP access**, click **Run sandbox handoff**. Triage extracts a synthetic credit memo and delegates it to Executor. Executor checks the evidence and returns a reply draft on hop 2. Open **Replay sandbox handoff** to inspect the messages, policy decisions, and exact trace steps.
+
+Mint separate Pod tokens for `triage` and `executor` to use the same workflow over `/mcp`. Select `handoff:send` for delegation, `handoff:read` for received work, and `attachment:extract` for shared case evidence. Use `handoff_to_agent_inbox` with the calling inbox ID, destination inbox ID, and the existing thread ID for replies. The sandbox transport delivers signed messages inside its Pod. A repeated back-and-forth or exhausted hop budget pauses the thread and creates a Tier 2 item. **Reset thread budget** permits a new attempt and leaves the previous receipts intact.
+
+## Three-minute walkthrough
+
+| View | What to demonstrate |
+| --- | --- |
+| `http://localhost:3000/#briefing` | Run the inbox. See AC402 move from **14:20 to 16:45 UTC**, a shifted solo focus block, the autonomy counters, and the conflicting invoice and deadline. |
+| `http://localhost:3000/#approvals` | Filter by priority. See why the external meeting and VIP notice need review. Edit a renewal draft or calendar payload and approve it, or reject a conflict. |
+| `http://localhost:3000/#calendar` | Review additions, changes, and cancellations. Export `.ics` and select a verified change to roll back. |
+| `http://localhost:3000/#policy` | Compare current and draft rules across the deterministic sandbox, then save the new version. |
+| `http://localhost:3000/#monitor` | Inspect the run receipt, configure a schedule, or watch live stages, budgets, tokens, cost, and provider latency. |
+| `http://localhost:3000/#bills` | Inspect the duplicate invoice flag and the renewal increase from **$25 to $35**. Export the ledger to CSV. |
+
+Use **Halt agent** in the status bar to interrupt a run. Resume with an audit reason. **Roll back last run** restores eligible changes and records sent mail as irreversible. The UI supports light and dark themes.
+
+## Safety Bonus Proof Table
+
+| Rubric item | Code evidence | Where to verify |
+| --- | --- | --- |
+| Guardrails (+1) | [Read-only SQLite and input preflight](apps/server/src/inbox/reader.ts), [typed LLM contract](apps/server/src/inbox/model.ts), [policy and disclosure](apps/server/src/inbox/policy.ts), [SQLite triggers](apps/server/src/inbox/store.ts) | `/#approvals`, `/#policy`, and `pnpm test:adversarial` |
+| Live Monitoring (+1) | [Per-stage SSE](apps/server/src/inbox/routes.ts) and [provider usage receipts](apps/server/src/inbox/engine.ts) | `/#monitor` and `pnpm agent watch` |
+| Kill Switch (+1) | [Guard and abort controller](apps/server/src/inbox/engine.ts), [operator endpoint and lockfile](apps/server/src/inbox/routes.ts), [mid-flight CLI test](tests/agentware-hard-rules.test.ts) | Halt and resume controls and `pnpm agent halt "operator paused runs"` |
+| Audit Trail (+1) | [Hash chain and verifier](apps/server/src/inbox/trace.ts), [model usage and rollback receipts](apps/server/src/inbox/engine.ts), [tamper CLI test](tests/agentware-hard-rules.test.ts) | `/#monitor`, `pnpm agent rollback RUN_ID`, and `pnpm agent verify-trace TRACE_PATH` |
+
+These are proof links for the organizer's four bonus categories. [Agentware scoring](https://www.agentwarehack.com/)
+
+## Verified Results
+
+The recorded run is labeled `offline-smoke`. It scanned 20 messages and exercised all nine playbooks.
+
+| Outcome | Recorded count |
+| --- | ---: |
+| Autonomous Verified (Tier 0/1) | **20** |
+| Gated Approvals (Tier 2) | **6** |
+| Blocked Threats / Quarantined | **1** |
+
+The verified work includes six calendar writes and three mock sends. The shared meeting and dossier write counts once. The quarantine is counted in the third row. [Run summary](traces/c611f6b5-2153-4c50-9a86-ac06ee13103e.md)
+
+```sh
+pnpm test
+pnpm test:adversarial
+pnpm agent verify-trace traces/c611f6b5-2153-4c50-9a86-ac06ee13103e.json
+```
+
+The built-in [adversarial regression report](tests/adversarial_regression_report.md) covers five synthetic inputs, a burst halt, and post-write timeout recovery. For the official files supplied separately, run `pnpm run-official-trap-pack PATH` with a directory or JSON manifest. The runner preserves per-case trace links, including failures, in `tests/official_trap_pack_report.md`. It uses an isolated database per file and defaults to offline analysis. Set `CLAM_AGENT_MODE=llm` explicitly to exercise the configured model with the supplied files. The organizer lists the official release at kickoff on November 27 at 18:00 UTC. [Agentware timeline](https://www.agentwarehack.com/)
 
 ## Operator commands
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm agent run` | Start an inbox run against the running API. |
-| `pnpm agent watch` | Stream pipeline stages, write budgets, tokens, and estimated model cost. |
-| `pnpm agent halt "operator paused runs"` | Halt execution. If the API is unreachable, write the configured local lockfile. |
-| `pnpm agent resume "review complete"` | Resume through the running API with an audit reason. |
-| `pnpm agent rollback RUN_ID` | Roll back eligible actions from a run. Replace `RUN_ID` with its recorded ID. |
-| `pnpm agent sandbox` | Run against the configured local sandbox database without starting the web app. |
-| `pnpm run-trap-pack` | Run the isolated adversarial cases and regenerate the Markdown report. |
-| `pnpm test` | Run the test suite. |
+| `pnpm agent run` | Start a run against the running API. |
+| `pnpm agent watch` | Stream stages, write usage, model tokens, latency, and estimated USD. |
+| `pnpm agent halt "operator paused runs"` | Abort active work. When the API is unreachable, write the configured lockfile. |
+| `pnpm agent resume "review complete"` | Resume through the API with an audit reason. |
+| `pnpm agent rollback RUN_ID` | Restore eligible changes and record the outcome. |
+| `pnpm agent verify-trace TRACE_PATH` | Check the complete hash chain and terminal receipt. |
+| `pnpm run-official-trap-pack PATH` | Ingest a supplied pack and produce its separate report. |
 
-Compose users can run the online CLI commands inside the API container, for example `docker compose exec api pnpm agent watch`. A host CLI fallback lockfile affects the instance using that file path. For Compose, the latch is inside the mounted data volume.
-
-## Verified results
-
-The recorded sandbox run scanned **20 messages**, verified **22 actions**, and queued **six approvals**. Its writes included six calendar mutations and three messages to the mock outbox. The production Docker build, Chromium walkthrough across all six views, and 24 automated tests passed during local validation. The Trap Pack passed five adversarial cases plus the attack-burst and timeout-recovery checks.
-
-Verify the included trace from a source checkout:
-
-```sh
-pnpm agent verify-trace traces/55e05e55-0986-4569-8ce9-169ee2fd8697.json
-```
-
-[Run summary](traces/55e05e55-0986-4569-8ce9-169ee2fd8697.md) · [Trap Pack report](tests/trap_pack_report.md) · [Near-miss log](docs/NEAR_MISS_LOG.md)
-
-## Optional live mode
-
-The shipped Compose setup runs the sandbox. For live mode, use the source setup on a private localhost deployment and start with a test mailbox and calendar.
-
-1. Enable the Gmail and Google Calendar APIs in a Google Cloud project. Create a web OAuth client using the redirect URI in [`.env.example`](.env.example).
-2. Set `CLAM_INBOX_LIVE=true`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and a random `CLAM_OPERATOR_TOKEN` in your local `.env`. Restart the web and API processes.
-3. In **MCP console → Connections**, connect Google and grant Gmail and Calendar access. Reconnect an older Gmail grant if it lacks the Calendar scope.
-4. Return to **Inbox Briefing** and review the live policy before running. The live allowlist and trusted airline list start empty. Automatic flight changes require a managed calendar event with a matching booking reference and airline domain.
-
-Live confidence review is optional. Select OpenAI, Anthropic, Gemini, or Ollama through `CLAM_LLM_PROVIDER`, configure `CLAM_LLM_MODEL` and the applicable key, and set `CLAM_INBOX_MODEL_REVIEW=true`. The reviewer receives intent types and field names and can lower confidence. Configure the input and output USD-per-million rates in `.env` to estimate model cost from provider-reported usage. At example rates of $1 and $5 per million, 1,000 input tokens and 200 output tokens would cost **$0.002**.
-
-[Gmail API](https://developers.google.com/workspace/gmail/api/guides/sending) · [Google Calendar API](https://developers.google.com/workspace/calendar/api/v3/reference/events)
+Compose users can run online commands with `docker compose exec api pnpm agent watch`. If you changed the host API port, set `CLAM_PUBLIC_URL` for a host CLI.
 
 ## Known Failure Modes & Non-Goals
 
-- The verified run used the sandbox. Live Gmail, Calendar, and cloud model calls require separate credentialed validation.
-- The parser handles supported structured patterns, explicit time offsets, UTC calendar attachment timestamps, and bounded text or PDF extraction. Floating-time invites and incomplete extractions can require review. Scanned PDFs need OCR outside Clam.
-- After a write timeout, Clam reconciles the claim by reading the target. Ambiguous writes require review. Concurrent external edits or provider errors can prevent a write or rollback.
-- Rollback restores eligible events, labels, drafts, and ledger records. Delivered email cannot be recalled. Some calendar cancellations require manual recovery.
-- The hash chain verifies consistency with its recorded head. Keep a trusted copy of the head independently when you need provenance.
-- Live source mail bodies and OAuth tokens stay outside trace files. SQLite keeps structured business state and provenance. The app targets a single trusted operator on localhost.
+- Google integration tests use mocked Google responses, the real MCP HTTP client, and real PDF extraction. Credentialed Google validation requires a test account.
+- The reader accepts bounded text and PDF extraction. Scanned PDFs need OCR. A date or amount the executor cannot ground safely goes to review.
+- Failed or invalid model output stops execution and records the observed usage. It does not switch to the offline parser mid-run.
+- A write timeout triggers read-back reconciliation. Ambiguous results and external edits can require manual recovery. Delivered mail cannot be recalled.
+- The hash chain checks consistency against the recorded head. Retain an independent trusted copy of the head when provenance matters.
+- Live source excerpts and provider credentials are excluded from run receipts. SQLite retains structured business state and provenance. The default installation binds to localhost and is designed for trusted local operation.
 
-[MIT License](LICENSE)
+[Architecture and playbooks](AGENT.md) · [Safety details](SAFETY.md) · [Acceptance audit](docs/ACCEPTANCE_AUDIT.md) · [Rubric remediation](docs/AGENTWARE_AUDIT.md) · [Near-miss log](docs/NEAR_MISS_LOG.md) · [MIT License](LICENSE)

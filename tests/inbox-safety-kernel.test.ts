@@ -111,3 +111,58 @@ it('recovers an interrupted run and executes one due schedule using the persiste
   expect(engine.store.runs('sandbox').filter((run) => run.trigger === 'scheduled')).toHaveLength(1);
   expect(Date.parse(engine.store.schedule().nextAt!)).toBeGreaterThan(Date.now());
 }));
+
+it('gets verified receipts for all nine playbooks and yields the three disjoint autonomy counts', () => withInbox(async (engine) => {
+  const run = await engine.start().done;
+  expect(run.status).toBe('COMPLETED');
+  expect(run.emails).toBe(20);
+  expect(run.autonomy).toMatchObject({ gated_for_approval: 6, blocked_quarantined: 1 });
+  const trace = engine.store.trace(run.id);
+  const plan = trace.steps.find((step) => step.stage === 'PLAN')!;
+  expect(plan.detail.sources).toEqual(expect.arrayContaining([
+    expect.objectContaining({ msg_id: 'flight-delay', context_ids: ['flight-original'] }),
+    expect.objectContaining({ msg_id: 'meeting-team', context_ids: ['meeting-original'] }),
+    expect.objectContaining({ msg_id: 'stale-nudge', context_ids: ['launch-notes-initial'] }),
+  ]));
+  const verified = trace.steps.filter((step) => step.detail.outcome === 'VERIFIED');
+  const playbooks = new Set(verified.flatMap((step) => step.detail.playbook_ids as string[]));
+  expect(playbooks.size).toBe(9);
+  expect(run.autonomy?.autonomous_verified).toBe(verified.length - 1);
+  expect(trace.mode).toBe('offline-smoke');
+  expect(trace.steps.at(-1)?.detail.autonomy).toEqual(run.autonomy);
+}));
+
+it('cancels a stale follow-up on a verified related reply in a different thread', () => withInbox(async (engine) => {
+  const returned = {
+    id: 'reply-in-other-thread', threadId: 'different-thread', from: 'priya@team.example',
+    subject: 'A different subject', receivedAt: '2026-12-06T10:00:00.000Z',
+    text: 'I reviewed the notes yesterday.', labels: ['ARCHIVED'], verifiedSender: true,
+    references: ['<launch-followup@clam.example>'],
+  };
+  engine.store.sqlite.prepare('INSERT INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(returned.id, 'history', JSON.stringify(returned));
+  engine.store.setEntity('sandbox', 'mail', returned.id, { labels: returned.labels });
+  const run = await engine.start().done;
+  expect(run.status).toBe('COMPLETED');
+  const actions = engine.store.actions(run.id);
+  expect(actions.some((action) => action.plan.playbook === 'commitment_radar_and_chaser' && action.kind === 'send')).toBe(false);
+  expect(actions.find((action) => action.kind === 'commitment')?.after).toMatchObject({ replied: true });
+}));
+
+it('trips the live executor circuit breaker when its SQLite outbound budget is exhausted', () => withInbox(async (engine) => {
+  const { version, policy } = engine.store.policy('sandbox');
+  engine.store.savePolicy('sandbox', version, { ...policy, outboundBudget: 0 });
+  const run = await engine.start('budget-audit').done;
+  expect(run).toMatchObject({ status: 'HALTED', error: 'INBOX_BUDGET_EXCEEDED', outbound: 0, killSwitchTripped: true });
+  expect(engine.halted()).toBe(true);
+  expect(engine.store.entities('sandbox', 'send')).toHaveLength(0);
+}));
+
+it('previews a blocked ingress decision apart from its allowed quarantine write', () => withInbox(async (engine) => {
+  const { policy } = engine.store.policy('sandbox');
+  const result = await engine.preview({ ...policy, trustedAirlines: [], confidenceThreshold: 0.97 });
+  expect(result.messages_scanned).toBe(20);
+  expect(result.rows.find((row) => row.id === 'flight-delay/ingress')).toMatchObject({
+    before: { decision: 'AUTONOMOUS' }, after: { decision: 'BLOCKED', ruleId: 'UNTRUSTED_SENDER' }, changed: true,
+  });
+  expect(result.rows.some((row) => row.before?.decision === 'AUTONOMOUS' && row.after?.decision === 'APPROVAL_REQUIRED')).toBe(true);
+}));

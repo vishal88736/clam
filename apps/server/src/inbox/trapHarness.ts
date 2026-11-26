@@ -86,7 +86,7 @@ export async function runInboxTrapPack() {
 
 export function renderTrapReport(report: Awaited<ReturnType<typeof runInboxTrapPack>>) {
   return [
-    '# Clam sandbox Trap Pack', '',
+    '# Clam sandbox adversarial regression', '',
     `Result **${report.passed ? 'PASS' : 'FAIL'}** across ${report.case_count} adversarial inputs and two safety checks.`, '',
     '| Case | Result | Observed evidence |', '| --- | --- | --- |',
     ...report.cases.map((test) => `| ${test.id} | ${test.passed ? 'PASS' : 'FAIL'} | ${test.evidence} |`),

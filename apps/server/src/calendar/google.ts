@@ -1,5 +1,7 @@
 import type { InboxCalendarEvent } from '@clam/shared';
 import type { Snapshot } from '../inbox/contracts.js';
+import type { GoogleAccounts } from '../auth/google.js';
+import type { CalendarAdapter } from '../mail/inboxAdapter.js';
 
 interface GoogleEvent {
   id: string;
@@ -28,18 +30,28 @@ function fromGoogle(event: GoogleEvent): InboxCalendarEvent | null {
   };
 }
 
-export class GoogleCalendar {
-  constructor(private readonly token: () => Promise<string>, private readonly calendarId: string, private readonly guard: () => void) {}
+export class GoogleCalendar implements CalendarAdapter {
+  constructor(private readonly token: () => Promise<string>, private readonly calendarId: string, private readonly guard: () => void,
+    private readonly transport?: (url: string, init?: RequestInit) => Promise<Response>,
+    private readonly redact?: (text: string) => string) {}
 
   private async request(suffix: string, init?: RequestInit) {
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(this.calendarId)}/events${suffix}`;
+    if (this.transport) return this.transport(url, init);
     const token = await this.token();
     this.guard();
     init?.signal?.throwIfAborted();
-    return fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(this.calendarId)}/events${suffix}`, {
+    return fetch(url, {
       ...init,
       signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...init?.headers },
     });
+  }
+
+  private normalize(event: GoogleEvent) {
+    const result = fromGoogle(event);
+    if (!result || !this.redact) return result;
+    return { ...result, title: this.redact(result.title), dossier: result.dossier?.map(this.redact) };
   }
 
   async list(): Promise<InboxCalendarEvent[]> {
@@ -54,7 +66,7 @@ export class GoogleCalendar {
       if (!response.ok) throw new Error('CALENDAR_LIST_' + response.status);
       const parsed = await response.json() as { items: GoogleEvent[]; nextPageToken?: string };
       for (const event of parsed.items ?? []) {
-        const normalized = fromGoogle(event);
+        const normalized = this.normalize(event);
         if (normalized) events.push(normalized);
       }
       if (!parsed.nextPageToken) return events;
@@ -67,7 +79,7 @@ export class GoogleCalendar {
     const response = await this.request('/' + encodeURIComponent(id));
     if ([404, 410].includes(response.status)) return null;
     if (!response.ok) throw new Error('CALENDAR_READ_' + response.status);
-    return fromGoogle(await response.json() as GoogleEvent);
+    return this.normalize(await response.json() as GoogleEvent);
   }
 
   async write(id: string, before: Snapshot, after: Snapshot, signal: AbortSignal) {
@@ -91,5 +103,13 @@ export class GoogleCalendar {
       signal,
     });
     if (!response.ok) throw new Error('CALENDAR_WRITE_' + response.status);
+  }
+}
+
+export class GoogleCalendarLiveAdapter extends GoogleCalendar {
+  constructor(accounts: GoogleAccounts, inboxId: string, calendarId: string, guard: () => void) {
+    super(async () => { throw new Error('GOOGLE_AUTH_UNAVAILABLE'); }, calendarId, guard,
+      (url, init) => accounts.api(inboxId, init?.method && init.method !== 'GET' ? 'calendar:write' : 'calendar:read', url, guard, init),
+      (value) => accounts.redact(inboxId, value));
   }
 }

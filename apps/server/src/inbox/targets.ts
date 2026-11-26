@@ -1,11 +1,15 @@
 import type { InboxCalendarEvent } from '@clam/shared';
-import { GoogleCalendar } from '../calendar/google.js';
+import { GoogleCalendar, GoogleCalendarLiveAdapter } from '../calendar/google.js';
 import type { ReaderMessage } from '../sandbox/seed.js';
-import type { GmailMailProvider } from '../mail/gmail.js';
+import type { GoogleAccounts } from '../auth/google.js';
+import { GmailLiveAdapter } from '../mail/gmail.js';
+import { address } from './reader.js';
 import type { ActionKind, Claim, InboxTarget, Mode, SafeAction, Snapshot, Tier } from './contracts.js';
 import { outboundPayload } from './policy.js';
 import type { InboxStore } from './store.js';
 import { canonicalJson, sha256 } from './trace.js';
+import { verifiedState } from '../workspace/types.js';
+import { type HandoffService, handoffReceipt, type SignedHandoff } from '../handoffs/service.js';
 
 export function comparable(value: Snapshot): Snapshot {
   if (!value) return null;
@@ -20,15 +24,20 @@ const outboundState = (action: SafeAction, tier: Tier) => {
   const payload = outboundPayload(action, tier);
   return {
     recipient: payload.to, subjectHash: sha256(payload.subject), bodyHash: sha256(payload.body),
-    disclosure: tier === 1 && action.kind === 'send', status: action.kind === 'draft' ? 'DRAFT' : 'SENT',
+    disclosure: true, status: action.kind === 'draft' ? 'DRAFT' : 'SENT',
   };
 };
 
 export class SandboxTarget implements InboxTarget {
-  constructor(private readonly store: InboxStore, private readonly guard: () => void, private readonly mode: Mode = 'sandbox') {}
+  constructor(private readonly store: InboxStore, private readonly guard: () => void, private readonly mode: Mode = 'sandbox',
+    private readonly handoffs?: HandoffService) {}
 
   async read(action: Pick<SafeAction, 'kind' | 'target'>) {
     this.guard();
+    if (action.kind === 'handoff') {
+      const item = this.handoffs?.delivery(action.target);
+      return item ? handoffReceipt(item) : null;
+    }
     return this.store.entity(this.mode, action.kind, action.target);
   }
 
@@ -46,6 +55,11 @@ export class SandboxTarget implements InboxTarget {
     signal.throwIfAborted();
     if (action.kind === 'review') return id;
     this.store.transaction(() => {
+      if (action.kind === 'handoff') {
+        if (!this.handoffs || !this.store.action(id)) throw new Error('HANDOFF_NOT_RESERVED');
+        this.handoffs.write(action.after as SignedHandoff, 'DELIVERED');
+        return;
+      }
       if (!matches(this.store.entity(this.mode, action.kind, action.target), before)) throw new Error('TARGET_VERSION_CHANGED');
       const result = action.kind === 'send' || action.kind === 'draft' ? outboundState(action, tier) : action.after;
       this.store.setEntity(this.mode, action.kind, action.target, result);
@@ -71,38 +85,65 @@ type GmailLabels = { labels?: { id: string; name: string; type: string }[] };
 const messageId = (id: string) => `<clam-${id}@agent.clam.local>`;
 
 function parseWireMime(encodedMime: string, status: 'SENT' | 'DRAFT'): Snapshot {
-    const raw = Buffer.from(encodedMime, 'base64url').toString('utf8').replace(/\r\n/g, '\n');
-    const cut = raw.indexOf('\n\n');
+  const raw = Buffer.from(encodedMime, 'base64url').toString('utf8').replace(/\r\n/g, '\n');
+  const parts = (message: string) => {
+    const cut = message.indexOf('\n\n');
     if (cut < 0) throw new Error('GMAIL_SENT_MIME_UNSUPPORTED');
-    const head = raw.slice(0, cut);
-    const header = (key: string) => head.match(new RegExp('^' + key + ':\\s*([^\\n]+)', 'im'))?.[1].trim() ?? '';
-    const rawSubject = header('Subject');
-    const encoded = /^=\?UTF-8\?B\?([^?]+)\?=$/i.exec(rawSubject);
-    const text = raw.slice(cut + 2).trim();
-    const body = header('Content-Transfer-Encoding').toLowerCase() === 'base64'
-      ? Buffer.from(text.replace(/\s/g, ''), 'base64').toString('utf8').trim() : text;
+    const headers = message.slice(0, cut).replace(/\n[ \t]+/g, ' ');
     return {
-      recipient: header('To').toLowerCase(),
-      subjectHash: sha256(encoded ? Buffer.from(encoded[1], 'base64').toString('utf8') : rawSubject),
-      bodyHash: sha256(body), disclosure: header('X-Agent-Automated') === 'true', status,
+      header: (name: string) => headers.match(new RegExp('^' + name + ':\\s*([^\\n]+)', 'im'))?.[1].trim() ?? '',
+      content: message.slice(cut + 2).trim(),
     };
+  };
+  const top = parts(raw);
+  const boundary = /\bboundary="?([A-Za-z0-9_.=-]+)"?/i.exec(top.header('Content-Type'))?.[1];
+  const plain = boundary ? top.content.split('--' + boundary).slice(1, -1)
+    .map((item) => parts(item.trim())).find((item) => /^text\/plain\b/i.test(item.header('Content-Type'))) : top;
+  if (!plain) throw new Error('GMAIL_SENT_MIME_UNSUPPORTED');
+  const subject = top.header('Subject')
+    .replace(/\?=\s+=\?/g, '?==?')
+    .replace(/=\?UTF-8\?B\?([^?]+)\?=/gi, (_word, encoded: string) => Buffer.from(encoded, 'base64').toString('utf8'));
+  const body = plain.header('Content-Transfer-Encoding').toLowerCase() === 'base64'
+    ? Buffer.from(plain.content.replace(/\s/g, ''), 'base64').toString('utf8').trim() : plain.content;
+  return {
+    recipient: top.header('To').toLowerCase(), subjectHash: sha256(subject),
+    bodyHash: sha256(body), disclosure: top.header('X-Agent-Automated') === 'true', status,
+  };
+}
+
+function mimeSubject(subject: string) {
+  const parts = [''];
+  for (const character of subject) {
+    const last = parts.length - 1;
+    if (Buffer.byteLength(parts[last] + character) > 42) parts.push(character);
+    else parts[last] += character;
   }
+  return parts.map((part) => '=?UTF-8?B?' + Buffer.from(part).toString('base64') + '?=').join('\r\n ');
+}
 
 export class LiveTarget implements InboxTarget {
   private readonly local: SandboxTarget;
   private readonly google: GoogleCalendar;
 
-  constructor(store: InboxStore, private readonly gmail: GmailMailProvider, calendarId: string, private readonly guard: () => void) {
-    this.local = new SandboxTarget(store, guard, 'live');
-    this.google = new GoogleCalendar(() => this.token(), calendarId, guard);
+  constructor(store: InboxStore, private readonly gmail: GmailLiveAdapter | { getValidAccessToken(): Promise<string> }, calendarId: string, private readonly guard: () => void,
+    private readonly connection?: { inboxId: string; accounts: GoogleAccounts }) {
+    this.local = new SandboxTarget(store, guard, connection ? `live:${connection.inboxId}` : 'live');
+    this.google = connection ? new GoogleCalendarLiveAdapter(connection.accounts, connection.inboxId, calendarId, guard) :
+      new GoogleCalendar(() => this.token(), calendarId, guard);
   }
 
   private async token() {
     this.guard();
+    if (this.gmail instanceof GmailLiveAdapter) throw new Error('USE_GOOGLE_ACCOUNT_VAULT');
     return this.gmail.getValidAccessToken();
   }
 
   private async request<T>(suffix: string, init?: RequestInit): Promise<T> {
+    if (this.gmail instanceof GmailLiveAdapter) {
+      const response = await this.gmail.request(suffix, init);
+      if (!response.ok) throw new Error('GMAIL_' + response.status);
+      return response.status === 204 ? undefined as T : await response.json() as T;
+    }
     const accessToken = await this.token();
     this.guard();
     init?.signal?.throwIfAborted();
@@ -117,16 +158,19 @@ export class LiveTarget implements InboxTarget {
 
   async readerMessages(): Promise<ReaderMessage[]> {
     this.guard();
+    if (!(this.gmail instanceof GmailLiveAdapter)) throw new Error('LIVE_ADAPTER_UNAVAILABLE');
     const [messages, labels] = await Promise.all([
-      this.gmail.listForInbox('newer_than:14d {in:inbox in:sent}'),
+      this.gmail.listForInbox('newer_than:14d -in:spam -in:trash'),
       this.request<GmailLabels>('/labels'),
     ]);
     const names = new Map(labels.labels?.map((label) => [label.id, label.name]));
     return messages.map((email) => ({
       id: email.id, threadId: email.threadId, from: email.from, subject: email.subject,
-      replyTo: email.replyTo, verifiedSender: email.verifiedSender || undefined,
+      replyTo: email.replyTo, internetId: email.internetId, references: email.references, contextOnly: email.contextOnly, verifiedSender: email.verifiedSender || undefined,
       receivedAt: new Date(email.date).toISOString(), text: email.body, html: email.html,
       attachmentNames: email.attachmentNames, attachments: email.attachmentParts, labels: email.labels.map((id) => names.get(id) ?? id).sort(), sent: email.labels.includes('SENT'),
+      threatSignals: email.threat_signals,
+      redactText: this.connection ? (value: string) => this.connection!.accounts.redact(this.connection!.inboxId, value) : undefined,
     }));
   }
 
@@ -140,6 +184,10 @@ export class LiveTarget implements InboxTarget {
   }
 
   private async readSent(providerId: string): Promise<Snapshot> {
+    if (providerId.startsWith('gmail:')) {
+      const message = await this.request<{ raw: string }>(`/messages/${encodeURIComponent(providerId.slice(6))}?format=raw`);
+      return parseWireMime(message.raw, 'SENT');
+    }
     const list = await this.request<GmailList>('/messages?' + new URLSearchParams({ q: `in:sent rfc822msgid:${messageId(providerId)}` }));
     if (!list.messages?.length) return null;
     if (list.messages.length !== 1) throw new Error('DUPLICATE_PROVIDER_RECEIPTS');
@@ -202,19 +250,33 @@ export class LiveTarget implements InboxTarget {
       await this.changeLabels(action.target, before, action.after, signal);
     } else if (action.kind === 'send' || action.kind === 'draft') {
       const payload = outboundPayload(action, tier);
+      if (this.connection && this.connection.accounts.redact(this.connection.inboxId, payload.subject + '\n' + payload.body) !== payload.subject + '\n' + payload.body) {
+        throw new Error('OUTBOUND_CONTENT_BLOCKED');
+      }
+      const original = this.gmail instanceof GmailLiveAdapter && action.sourceId && !action.sourceId.startsWith('mcp:')
+        ? await this.gmail.getMessage(action.sourceId) : null;
+      const cleanSubject = (text: string) => text.replace(/^(?:re\s*:\s*)+/i, '').trim().toLowerCase();
+      const messageRef = (id: string) => id.length <= 100 && /^<[^<>\s\x00-\x1f]+>$/.test(id);
+      const replyTo = original && (
+        address(original.from) === payload.to || (original.labels.includes('SENT') && original.to.some((recipient) => address(recipient) === payload.to))
+      ) && original.internetId && messageRef(original.internetId) && cleanSubject(original.subject) === cleanSubject(payload.subject) ? original : null;
+      const boundary = 'clam-' + sha256(id).slice(0, 32);
       const mime = [
-        'To: ' + payload.to, 'Subject: =?UTF-8?B?' + Buffer.from(payload.subject).toString('base64') + '?=',
-        'Message-ID: ' + messageId(id), 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: base64',
+        'To: ' + payload.to, 'Subject: ' + mimeSubject(payload.subject),
+        'Message-ID: ' + messageId(id), 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="' + boundary + '"',
+        ...(replyTo ? ['In-Reply-To: ' + replyTo.internetId,
+          'References: ' + [...new Set([...(replyTo.references ?? []).filter(messageRef).slice(-8), replyTo.internetId])].join(' ')] : []),
         ...Object.entries(payload.headers).map(([key, value]) => `${key}: ${value}`),
+        '', '--' + boundary, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64',
         '', Buffer.from(payload.body).toString('base64').match(/.{1,76}/g)?.join('\r\n') ?? '',
+        '--' + boundary + '--', '',
       ].join('\r\n');
-      const message = { raw: Buffer.from(mime).toString('base64url') };
+      const message = { raw: Buffer.from(mime).toString('base64url'), ...(replyTo ? { threadId: replyTo.threadId } : {}) };
       if (action.kind === 'draft') {
         return (await this.request<{ id: string }>('/drafts', { method: 'POST', body: JSON.stringify({ message }), signal })).id;
       }
-      await this.request('/messages/send', { method: 'POST', body: JSON.stringify(message), signal });
-      return id;
+      const sent = await this.request<{ id?: string }>('/messages/send', { method: 'POST', body: JSON.stringify(message), signal });
+      return this.connection && sent.id ? 'gmail:' + sent.id : id;
     } else {
       return this.local.dispatch(action, tier, before, id, signal);
     }
@@ -233,6 +295,8 @@ export class LiveTarget implements InboxTarget {
 }
 
 export function expectedAfter(action: SafeAction, tier: Tier): Snapshot {
+  if (action.kind === 'workspace') return verifiedState(action.after);
+  if (action.kind === 'handoff') return handoffReceipt(action.after as SignedHandoff);
   if (action.kind === 'send' || action.kind === 'draft') return outboundState(action, tier);
   return action.after;
 }

@@ -175,11 +175,20 @@ export function evaluateDeterministicGate(params: {
 
 /**
  * Deterministic outbound secret/credential/OTP leak scanner.
- * Prevents exfiltration of Clam tokens, private keys, or explicit 2FA/OTP codes.
+ * Blocks recognizable credentials and authentication material in outgoing content.
  */
 export function scanOutboundSecrets(text: string): string | null {
-  if (/clm_ag_[a-f0-9]{12,}/i.test(text)) {
-    return 'Clam agent token';
+  if (/\bclm_(?:ag|inbox|pod)_[A-Za-z0-9_-]{12,}/.test(text)) {
+    return 'Clam bearer token';
+  }
+  if (/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/.test(text)) {
+    return 'AWS access key identifier';
+  }
+  if (/\b(?:AIza[A-Za-z0-9_-]{35}|GOCSPX-[A-Za-z0-9_-]{20,}|ya29\.[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-(?:proj-|ant-)?[A-Za-z0-9_-]{25,}|gsk_[A-Za-z0-9]{25,})\b/.test(text)) {
+    return 'provider credential';
+  }
+  if (/(?:^|[\r\n])\s*(?:export\s+)?[A-Z][A-Z0-9_]*(?:API_KEY|SECRET|ACCESS_TOKEN|REFRESH_TOKEN|PASSWORD)\s*=\s*['"]?[^\s'"#]{6,}/m.test(text)) {
+    return 'environment credential assignment';
   }
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) {
     return 'private cryptographic key';

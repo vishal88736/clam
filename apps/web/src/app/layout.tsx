@@ -8,22 +8,19 @@ import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/500.css';
 import './globals.css';
 import './inbox.css';
-import { ConsoleProvider } from '@/components/ConsoleContext';
-import { AppShell } from '@/components/AppShell';
+import { ThemeProvider } from '@/components/ThemeContext';
 
 export const metadata: Metadata = {
-  title: 'Clam — Semantic Permission Layer & MCP Firewall',
+  title: 'Clam · Agentic Inbox & Calendar',
   description:
-    'Zero-retention Gmail MCP firewall with deterministic gates, semantic policy enforcement, and HITL approvals.',
+    'An inbox and calendar agent with verified changes and policy-gated approvals.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" data-theme="light" suppressHydrationWarning>
       <body>
-        <ConsoleProvider>
-          <AppShell>{children}</AppShell>
-        </ConsoleProvider>
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

@@ -1,695 +1,135 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { Check, Copy, Mail, Power, Send, Shield, Sparkles } from 'lucide-react';
-import type { ChannelDeliveryMap, LlmProvider, MailMode } from '@clam/shared';
-import { useConsole } from '@/components/ConsoleContext';
-import { clamApi, type SettingsResponse } from '@/lib/api';
+import Link from 'next/link';
+import { ArrowLeft, Plug, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
+import { AgentInboxes } from '../../components/AgentInboxes';
+import { InboxTokenList } from '../../components/InboxTokenList';
+import { actionsGranted, authRequest, connectionStatus, GoogleAccountBar, useGoogleSession } from '../../components/GoogleSession';
+
+const choices = [
+  ['mail:read', 'Read mail and threads'], ['attachment:extract', 'Extract attachment text'],
+  ['mail:draft', 'Request drafts'], ['mail:send', 'Request or send policy-allowed mail'],
+  ['calendar:propose', 'Read or propose calendar changes'],
+  ['agent:manage', 'Create, switch, and inspect persistent agents'], ['workspace:write', 'Write Drive folders/files, Docs, and Sheets'],
+  ['photos:read', 'Search and extract receipt photos (read-only)'],
+] as const;
+
+function SetupCommands() {
+  const [copyError, setCopyError] = useState('');
+  const apiOrigin = 'http://localhost:4000';
+  const endpoint = apiOrigin + '/mcp';
+  const settings = (type?: string) => JSON.stringify({ mcpServers: { 'clam-mail': {
+    ...(type ? { type } : {}), url: endpoint,
+    headers: { Authorization: 'Bearer REPLACE_WITH_MCP_TOKEN' },
+  } } }, null, 2);
+  const commands = [
+    ['Claude Code', `claude mcp add --transport http clam-mail ${endpoint} --header "Authorization: Bearer $CLAM_MCP_TOKEN"`],
+    ['Claude Code (stdio)', `claude mcp add --env CLAM_API_URL=${apiOrigin} --env CLAM_MCP_TOKEN="$CLAM_MCP_TOKEN" --transport stdio clam-mail -- pnpm --silent clam-mcp`],
+    ['Codex', `[mcp_servers.clam-mail]\nurl = "${endpoint}"\nbearer_token_env_var = "CLAM_MCP_TOKEN"`],
+    ['Codex (stdio)', `[mcp_servers.clam-mail]\ncommand = "pnpm"\nargs = ["--silent", "clam-mcp"]\nenv_vars = ["CLAM_MCP_TOKEN"]\nstartup_timeout_sec = 30\n\n[mcp_servers.clam-mail.env]\nCLAM_API_URL = "${apiOrigin}"`],
+    ['Cline MCP settings', settings('streamableHttp')],
+    ['Cursor MCP settings', settings()],
+  ];
+  return <div>
+    <p>Export your scoped <code>CLAM_MCP_TOKEN</code> before running either client. Use one transport per client. For stdio, start from the Clam repo with <code>pnpm</code> on your PATH.</p>
+    {commands.map(([name, value]) => <details key={name} className="inbox-item">
+      <summary>{name}</summary>
+      <pre>{value}</pre>
+      <button type="button" className="inbox-button" onClick={() => void navigator.clipboard.writeText(value)
+        .then(() => setCopyError('')).catch(() => setCopyError('Select and copy the command from the screen.'))}>Copy</button>
+    </details>)}
+    {copyError && <p role="status">{copyError}</p>}
+  </div>;
+}
 
 export default function SettingsPage() {
-  const { killSwitch, refreshOverview } = useConsole();
-  const [settings, setSettings] = useState<SettingsResponse | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
-
-  const [cbThreshold, setCbThreshold] = useState(3);
-  const [cbWindow, setCbWindow] = useState(30);
-  const [cbMaxCalls, setCbMaxCalls] = useState(25);
-  const [cbTripCritical, setCbTripCritical] = useState(true);
-
-  const [llmProvider, setLlmProvider] = useState<LlmProvider>('local_heuristic');
-  const [llmModel, setLlmModel] = useState('');
-  const [openaiKey, setOpenaiKey] = useState('');
-  const [anthropicKey, setAnthropicKey] = useState('');
-  const [geminiKey, setGeminiKey] = useState('');
-  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://127.0.0.1:11434');
-
-  const [slackForm, setSlackForm] = useState({
-    botToken: '',
-    channelId: '',
-    webhookUrl: '',
-    signingSecret: '',
-  });
-  const [telegramForm, setTelegramForm] = useState({
-    botToken: '',
-    chatId: '',
-    webhookSecret: '',
-  });
-  const [whatsappForm, setWhatsappForm] = useState({
-    accessToken: '',
-    phoneNumberId: '',
-    recipientNumber: '',
-    verifyToken: '',
-    appSecret: '',
-  });
-
-  const [testingApproval, setTestingApproval] = useState(false);
-  const [testResult, setTestResult] = useState<ChannelDeliveryMap | null>(null);
-
-  const loadSettings = useCallback(async () => {
-    const res = await clamApi.getSettings();
-    setSettings(res);
-    setLlmProvider(res.llm.provider);
-    setLlmModel(res.llm.model);
-    setOllamaBaseUrl(res.llm.ollamaBaseUrl);
-    setSlackForm((f) => ({ ...f, channelId: res.channels.slack.channelId }));
-    setTelegramForm((f) => ({ ...f, chatId: res.channels.telegram.chatId }));
-    setWhatsappForm((f) => ({
-      ...f,
-      phoneNumberId: res.channels.whatsapp.phoneNumberId,
-      recipientNumber: res.channels.whatsapp.recipientNumber,
-    }));
-  }, []);
-
-  useEffect(() => {
-    void loadSettings();
-  }, [loadSettings]);
-
-  useEffect(() => {
-    if (!killSwitch) return;
-    setCbThreshold(killSwitch.circuit_breaker.violation_threshold);
-    setCbWindow(killSwitch.circuit_breaker.window_seconds);
-    setCbMaxCalls(killSwitch.circuit_breaker.max_calls_per_min);
-    setCbTripCritical(killSwitch.circuit_breaker.trip_on_critical_injection);
-  }, [killSwitch]);
-
-  async function handleSaveBreaker(e: React.FormEvent) {
-    e.preventDefault();
-    await clamApi.updateKillSwitchConfig({
-      violation_threshold: cbThreshold,
-      window_seconds: cbWindow,
-      max_calls_per_min: cbMaxCalls,
-      trip_on_critical_injection: cbTripCritical,
-    });
-    await refreshOverview();
-    setNotice('Auto-Trip Circuit Breaker thresholds updated.');
+  const { session, refresh, accountError } = useGoogleSession();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [token, setToken] = useState<{ token: string; expires_at: string } | null>(null);
+  const [newTokenFor, setNewTokenFor] = useState('');
+  const [scopes, setScopes] = useState<string[]>(['mail:read']);
+  const [domain, setDomain] = useState('');
+  const [tokenRevision, setTokenRevision] = useState(0);
+  async function update(operation: () => Promise<void>) {
+    setBusy(true);
+    setError('');
+    try { await operation(); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : 'Unable to update the account.'); }
+    finally { setBusy(false); }
   }
-
-  async function switchMailMode(mode: MailMode) {
-    setNotice(null);
-    try {
-      await clamApi.setMailMode(mode);
-      await loadSettings();
-      await refreshOverview();
-      setNotice(`Mail provider switched to ${mode.toUpperCase()} mode.`);
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Unable to switch mail mode');
-    }
-  }
-
-  async function handleConnectGmail() {
-    setNotice(null);
-    try {
-      const res = await clamApi.startGmailOAuth(['readonly', 'compose', 'modify']);
-      window.location.href = res.auth_url;
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Gmail OAuth error');
-    }
-  }
-
-  async function handleDisconnectGmail() {
-    await clamApi.disconnectGmail();
-    await loadSettings();
-    await refreshOverview();
-    setNotice('Gmail OAuth tokens wiped from AES-256-GCM vault; reverted to Sandbox mode.');
-  }
-
-  async function handleSaveLlm(e: React.FormEvent) {
-    e.preventDefault();
-    await clamApi.updateLlmSettings({
-      provider: llmProvider,
-      model: llmModel,
-      openaiApiKey: openaiKey || undefined,
-      anthropicApiKey: anthropicKey || undefined,
-      geminiApiKey: geminiKey || undefined,
-      ollamaBaseUrl,
-    });
-    setOpenaiKey('');
-    setAnthropicKey('');
-    setGeminiKey('');
-    await loadSettings();
-    setNotice('Semantic classifier configuration encrypted & saved.');
-  }
-
-  async function handleSaveChannels(e: React.FormEvent) {
-    e.preventDefault();
-    const payload: Record<string, unknown> = {};
-    if (
-      slackForm.botToken ||
-      slackForm.channelId ||
-      slackForm.webhookUrl ||
-      slackForm.signingSecret
-    ) {
-      payload.slack = Object.fromEntries(
-        Object.entries(slackForm).filter(([, v]) => v.trim() !== '')
-      );
-    }
-    if (telegramForm.botToken || telegramForm.chatId || telegramForm.webhookSecret) {
-      payload.telegram = Object.fromEntries(
-        Object.entries(telegramForm).filter(([, v]) => v.trim() !== '')
-      );
-    }
-    if (
-      whatsappForm.accessToken ||
-      whatsappForm.phoneNumberId ||
-      whatsappForm.recipientNumber ||
-      whatsappForm.verifyToken ||
-      whatsappForm.appSecret
-    ) {
-      payload.whatsapp = Object.fromEntries(
-        Object.entries(whatsappForm).filter(([, v]) => v.trim() !== '')
-      );
-    }
-    await clamApi.updateChannels(payload);
-    await loadSettings();
-    setNotice('HITL webhook secrets sealed into encrypted vault.');
-  }
-
-  async function handleSendTestApproval() {
-    setTestingApproval(true);
-    setTestResult(null);
-    try {
-      const res = await clamApi.sendTestApproval();
-      setTestResult(res.approval.delivery_status);
-      await refreshOverview();
-    } finally {
-      setTestingApproval(false);
-    }
-  }
-
-  function copyCallback(key: string, url: string) {
-    void navigator.clipboard.writeText(url);
-    setCopiedUrl(key);
-    setTimeout(() => setCopiedUrl(null), 1500);
-  }
-
-  return (
-    <div className="space-y-5 max-w-5xl">
-      {notice && (
-        <div className="bento-card rounded-xl px-4 py-2.5 text-xs text-ink-primary">
-          {notice}
-        </div>
-      )}
-
-      {/* 1. Mail Source Card */}
-      <section className="bento-card rounded-xl p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg border border-hairline bg-canvas text-ink-primary">
-              <Mail className="w-4 h-4" />
+  return <main className="inbox-main max-w-3xl">
+    <Link className="inbox-text-link" href="/#briefing"><ArrowLeft size={16} /> Inbox Briefing</Link>
+    <header className="inbox-title"><h1>Connections</h1><p>Manage Google accounts and scoped MCP access.</p></header>
+    <GoogleAccountBar session={session} />
+    {(error || accountError) && <p className="inbox-error" role="alert">{error || accountError}</p>}
+    <section className="inbox-panel">
+      <h2><Plug size={19} /> Google accounts</h2>
+      {!session ? <p>Loading connections.</p> : !session.user ?
+        <p>No Google account connected. {session.google_enabled ? 'Sign in to link one.' : <>Local Sandbox Mode works without credentials. To connect Gmail, configure <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> using the repository README.</>}</p> : <>
+          {session.live_enabled && <div className="inbox-actions">
+            <a className="inbox-button" data-tone="primary" href="/api/auth/google/connect?mode=readonly">Connect Gmail (Read-Only)</a>
+            <a className="inbox-button" href="/api/auth/google/login?link=true">Link another Google account</a>
+          </div>}
+          {!session.inboxes.length && <p>No Google account connected.</p>}
+          {session.inboxes.map((account) => <article key={account.id} className="inbox-item">
+            <strong>{account.email}</strong><p>{connectionStatus(account)}</p>
+            <details><summary>Granted Google scopes</summary><ul>{account.scopes.map((item) => <li key={item}><code>{item}</code></li>)}</ul></details>
+            <div className="inbox-actions">
+              {account.status === 'reauth_required' && <a className="inbox-button" href={'/api/auth/google/connect?mode=' +
+                (actionsGranted(account) ? 'readwrite' : 'readonly') + '&inboxId=' + account.id}>Reconnect</a>}
+              {!actionsGranted(account) && <a className="inbox-button" href={'/api/auth/google/connect?mode=readwrite&inboxId=' +
+                account.id}>Upgrade to Read+Write</a>}
+              {!account.scopes.includes('https://www.googleapis.com/auth/drive.file') && <a className="inbox-button" href={'/api/auth/google/connect?mode=workspace&inboxId=' +
+                account.id} title="Requests drive.file and photoslibrary.readonly only. Full Drive access is never requested.">Add Drive, Docs, Sheets &amp; Photos (least privilege)</a>}
+              {account.scopes.includes('https://www.googleapis.com/auth/drive.file') && !account.scopes.includes('https://www.googleapis.com/auth/spreadsheets') &&
+                <a className="inbox-button" href={'/api/auth/google/connect?mode=workspace_edit&inboxId=' + account.id}
+                  title="Adds documents and spreadsheets scopes so agents can edit existing files you choose.">Allow editing existing Docs &amp; Sheets</a>}
+              <button className="inbox-button" type="button" disabled={busy} onClick={() => {
+                if (window.confirm('Disconnect ' + account.email + ' and revoke its Google and MCP access?')) void update(async () => {
+                  const result = await authRequest<{ remote_revoked: boolean }>('google/disconnect/' + account.id, { revoke_mcp: true });
+                  setToken(null);
+                  setNewTokenFor('');
+                  await refresh();
+                  if (!result.remote_revoked) setError('Clam removed local access. Google did not confirm remote revocation.');
+                });
+              }}>Disconnect &amp; Revoke Token</button>
+              <button className="inbox-button" type="button" disabled={busy || account.status !== 'active'}
+                onClick={() => { setToken(null); setNewTokenFor(account.id); }}>Create scoped MCP token</button>
             </div>
-            <div>
-              <h2 className="text-sm font-semibold tracking-display">Mail Provider Boundary</h2>
-              <p className="text-xs text-ink-secondary mt-0.5">
-                Switch between the 20-email Sandbox Inbox (with flight conflict &amp; injection traps) and Google Gmail OAuth 2.0.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => switchMailMode('sandbox')}
-              className={`btn-tactile px-3 py-1.5 rounded-md border text-xs font-medium ${
-                settings?.gmail.mode === 'sandbox'
-                  ? 'btn-primary border-transparent font-semibold'
-                  : 'border-hairline bg-canvas text-ink-secondary hover:text-ink-primary'
-              }`}
-            >
-              Sandbox Mode
-            </button>
-            <button
-              onClick={() => switchMailMode('gmail')}
-              disabled={!settings?.gmail.connected}
-              className={`btn-tactile px-3 py-1.5 rounded-md border text-xs font-medium ${
-                settings?.gmail.mode === 'gmail'
-                  ? 'bg-emerald-fill text-emerald-matte border-emerald-matte/30'
-                  : 'border-hairline bg-canvas text-ink-secondary disabled:opacity-45'
-              }`}
-            >
-              Live Gmail
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-hairline bg-canvas p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
-          <div className="space-y-1">
-            <div className="font-medium text-ink-primary">
-              {settings?.gmail.connected
-                ? `Connected to ${settings.gmail.email ?? 'Gmail Account'}`
-                : 'Gmail OAuth Not Connected'}
-            </div>
-            <div className="text-ink-secondary font-mono text-[11px]">
-              {settings?.gmail.oauthConfigured
-                ? 'GOOGLE_CLIENT_ID configured · Tokens AES-256-GCM encrypted at rest'
-                : 'Set GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET in .env to authorize live Gmail'}
-            </div>
-          </div>
-
-          {settings?.gmail.connected ? (
-            <button
-              onClick={handleDisconnectGmail}
-              className="btn-tactile px-3 py-1.5 rounded-md border border-crimson-matte/30 bg-crimson-fill text-crimson-matte text-xs font-medium"
-            >
-              Disconnect & Wipe Token
-            </button>
-          ) : (
-            <button
-              onClick={handleConnectGmail}
-              disabled={!settings?.gmail.oauthConfigured}
-              className="btn-primary px-3.5 py-1.5 rounded-md text-xs font-semibold"
-            >
-              Connect Gmail OAuth
-            </button>
-          )}
-        </div>
-      </section>
-
-      {/* 2. Semantic Classifier Provider */}
-      <form onSubmit={handleSaveLlm} className="bento-card rounded-xl p-5 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg border border-hairline bg-canvas text-ink-primary">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold tracking-display">
-              Fail-Closed Semantic Classifier Provider
-            </h2>
-            <p className="text-xs text-ink-secondary mt-0.5">
-              Defaults to zero-key Local Semantic Heuristic. External LLMs strictly fail closed on timeout or malformed JSON.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-          <div>
-            <label className="block text-ink-secondary mb-1">Provider</label>
-            <select
-              value={llmProvider}
-              onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}
-              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-            >
-              <option value="local_heuristic">local_heuristic (Zero-Setup Offline)</option>
-              <option value="openai">openai</option>
-              <option value="anthropic">anthropic</option>
-              <option value="gemini">gemini</option>
-              <option value="ollama">ollama (Local Self-Hosted)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-ink-secondary mb-1">Model (Optional)</label>
-            <input
-              value={llmModel}
-              onChange={(e) => setLlmModel(e.target.value)}
-              placeholder="e.g. gpt-4o-mini / claude-3-5-haiku-latest / gemini-2.5-flash"
-              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-            />
-          </div>
-
-          {llmProvider === 'openai' && (
-            <div className="sm:col-span-2">
-              <label className="block text-ink-secondary mb-1">
-                OpenAI API Key {settings?.llm.hasOpenaiKey ? '(Vault Sealed ✓)' : ''}
-              </label>
-              <input
-                type="password"
-                value={openaiKey}
-                onChange={(e) => setOpenaiKey(e.target.value)}
-                placeholder="sk-..."
-                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-              />
-            </div>
-          )}
-
-          {llmProvider === 'anthropic' && (
-            <div className="sm:col-span-2">
-              <label className="block text-ink-secondary mb-1">
-                Anthropic API Key {settings?.llm.hasAnthropicKey ? '(Vault Sealed ✓)' : ''}
-              </label>
-              <input
-                type="password"
-                value={anthropicKey}
-                onChange={(e) => setAnthropicKey(e.target.value)}
-                placeholder="sk-ant-..."
-                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-              />
-            </div>
-          )}
-
-          {llmProvider === 'gemini' && (
-            <div className="sm:col-span-2">
-              <label className="block text-ink-secondary mb-1">
-                Gemini API Key {settings?.llm.hasGeminiKey ? '(Vault Sealed ✓)' : ''}
-              </label>
-              <input
-                type="password"
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                placeholder="AIza..."
-                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-              />
-            </div>
-          )}
-
-          {llmProvider === 'ollama' && (
-            <div className="sm:col-span-2">
-              <label className="block text-ink-secondary mb-1">Ollama Base URL</label>
-              <input
-                value={ollamaBaseUrl}
-                onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="btn-primary px-3.5 py-1.5 rounded-md text-xs font-semibold"
-          >
-            Save Classifier Settings
-          </button>
-        </div>
-      </form>
-
-      {/* 3. HITL Channels (Slack, Telegram, WhatsApp) */}
-      <form onSubmit={handleSaveChannels} className="bento-card rounded-xl p-5 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg border border-hairline bg-canvas text-ink-primary">
-              <Shield className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold tracking-display">
-                HITL Notification & Callback Bridges
-              </h2>
-              <p className="text-xs text-ink-secondary mt-0.5">
-                Approve or deny Stage C actions directly from Slack, Telegram, or WhatsApp interactive buttons.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSendTestApproval}
-            disabled={testingApproval}
-            className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md border border-hairline bg-canvas text-xs font-medium text-ink-primary hover:bg-elevated"
-          >
-            <Send className="w-3.5 h-3.5" />
-            {testingApproval ? 'Dispatching…' : 'Send Test Approval'}
-          </button>
-        </div>
-
-        {testResult && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-            {Object.entries(testResult).map(([ch, res]) => (
-              <div
-                key={ch}
-                className="p-2.5 rounded-lg border border-hairline bg-canvas space-y-0.5"
-              >
-                <div className="flex items-center justify-between font-mono uppercase text-[10px]">
-                  <span>{ch}</span>
-                  <span
-                    className={
-                      res.status === 'delivered'
-                        ? 'text-emerald-matte'
-                        : res.status === 'failed'
-                          ? 'text-crimson-matte'
-                          : 'text-ink-muted'
-                    }
-                  >
-                    {res.status}
-                  </span>
-                </div>
-                <div className="text-[11px] text-ink-secondary truncate" title={res.detail}>
-                  {res.detail}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs">
-          {/* Slack */}
-          <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold">Slack</span>
-              <span
-                className={`font-mono text-[10px] ${
-                  settings?.channels.slack.configured
-                    ? 'text-emerald-matte'
-                    : 'text-ink-muted'
-                }`}
-              >
-                {settings?.channels.slack.configured ? 'CONFIGURED' : 'NOT SET'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-1 px-2 py-1 rounded border border-hairline bg-surface font-mono text-[10px] text-ink-secondary">
-              <span className="truncate">{settings?.channels.slack.callbackUrl}</span>
-              <button
-                type="button"
-                onClick={() =>
-                  copyCallback('slack', settings?.channels.slack.callbackUrl ?? '')
-                }
-              >
-                {copiedUrl === 'slack' ? (
-                  <Check className="w-3 h-3 text-emerald-matte" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
-              </button>
-            </div>
-            <input
-              type="password"
-              value={slackForm.webhookUrl}
-              onChange={(e) => setSlackForm((f) => ({ ...f, webhookUrl: e.target.value }))}
-              placeholder="Webhook URL (or use Bot Token below)"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              type="password"
-              value={slackForm.botToken}
-              onChange={(e) => setSlackForm((f) => ({ ...f, botToken: e.target.value }))}
-              placeholder="Slack Bot Token (xoxb-...)"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              value={slackForm.channelId}
-              onChange={(e) => setSlackForm((f) => ({ ...f, channelId: e.target.value }))}
-              placeholder="Channel ID (C0123...)"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              type="password"
-              value={slackForm.signingSecret}
-              onChange={(e) => setSlackForm((f) => ({ ...f, signingSecret: e.target.value }))}
-              placeholder="Signing Secret"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-          </div>
-
-          {/* Telegram */}
-          <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold">Telegram</span>
-              <span
-                className={`font-mono text-[10px] ${
-                  settings?.channels.telegram.configured
-                    ? 'text-emerald-matte'
-                    : 'text-ink-muted'
-                }`}
-              >
-                {settings?.channels.telegram.configured ? 'CONFIGURED' : 'NOT SET'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-1 px-2 py-1 rounded border border-hairline bg-surface font-mono text-[10px] text-ink-secondary">
-              <span className="truncate">{settings?.channels.telegram.callbackUrl}</span>
-              <button
-                type="button"
-                onClick={() =>
-                  copyCallback('tg', settings?.channels.telegram.callbackUrl ?? '')
-                }
-              >
-                {copiedUrl === 'tg' ? (
-                  <Check className="w-3 h-3 text-emerald-matte" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
-              </button>
-            </div>
-            <input
-              type="password"
-              value={telegramForm.botToken}
-              onChange={(e) => setTelegramForm((f) => ({ ...f, botToken: e.target.value }))}
-              placeholder="Bot Token (123456:ABC...)"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              value={telegramForm.chatId}
-              onChange={(e) => setTelegramForm((f) => ({ ...f, chatId: e.target.value }))}
-              placeholder="Target Chat ID"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              type="password"
-              value={telegramForm.webhookSecret}
-              onChange={(e) =>
-                setTelegramForm((f) => ({ ...f, webhookSecret: e.target.value }))
-              }
-              placeholder="Webhook Secret Token"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-          </div>
-
-          {/* WhatsApp */}
-          <div className="rounded-lg border border-hairline bg-canvas p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold">WhatsApp Cloud</span>
-              <span
-                className={`font-mono text-[10px] ${
-                  settings?.channels.whatsapp.configured
-                    ? 'text-emerald-matte'
-                    : 'text-ink-muted'
-                }`}
-              >
-                {settings?.channels.whatsapp.configured ? 'CONFIGURED' : 'NOT SET'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-1 px-2 py-1 rounded border border-hairline bg-surface font-mono text-[10px] text-ink-secondary">
-              <span className="truncate">{settings?.channels.whatsapp.callbackUrl}</span>
-              <button
-                type="button"
-                onClick={() =>
-                  copyCallback('wa', settings?.channels.whatsapp.callbackUrl ?? '')
-                }
-              >
-                {copiedUrl === 'wa' ? (
-                  <Check className="w-3 h-3 text-emerald-matte" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
-              </button>
-            </div>
-            <input
-              type="password"
-              value={whatsappForm.accessToken}
-              onChange={(e) =>
-                setWhatsappForm((f) => ({ ...f, accessToken: e.target.value }))
-              }
-              placeholder="Meta Access Token"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              value={whatsappForm.phoneNumberId}
-              onChange={(e) =>
-                setWhatsappForm((f) => ({ ...f, phoneNumberId: e.target.value }))
-              }
-              placeholder="Phone Number ID"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              value={whatsappForm.recipientNumber}
-              onChange={(e) =>
-                setWhatsappForm((f) => ({ ...f, recipientNumber: e.target.value }))
-              }
-              placeholder="Recipient Phone (+1...)"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-            <input
-              type="password"
-              value={whatsappForm.verifyToken}
-              onChange={(e) =>
-                setWhatsappForm((f) => ({ ...f, verifyToken: e.target.value }))
-              }
-              placeholder="Webhook Verify Token"
-              className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-xs font-mono"
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="btn-primary px-4 py-1.5 rounded-md text-xs font-semibold"
-          >
-            Save Channel Credentials
-          </button>
-        </div>
-      </form>
-
-      {/* 4. Kill Switch & Auto-Trip Circuit Breaker Thresholds */}
-      <form onSubmit={handleSaveBreaker} className="bento-card rounded-xl p-5 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg border border-crimson-matte/30 bg-crimson-fill text-crimson-matte">
-            <Power className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold tracking-display">
-              Kill Switch &amp; Auto-Trip Circuit Breaker
-            </h2>
-            <p className="text-xs text-ink-secondary mt-0.5">
-              Automatically engage the global Kill Switch if an agent triggers repeated blocked violations, runaway loops, or critical exfiltration injections.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div>
-            <label className="block text-ink-secondary mb-1">Violation Threshold</label>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={cbThreshold}
-              onChange={(e) => setCbThreshold(Number(e.target.value))}
-              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-ink-secondary mb-1">Sliding Window (seconds)</label>
-            <input
-              type="number"
-              min={5}
-              max={300}
-              value={cbWindow}
-              onChange={(e) => setCbWindow(Number(e.target.value))}
-              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-ink-secondary mb-1">Max Calls / Min (Runaway)</label>
-            <input
-              type="number"
-              min={3}
-              max={200}
-              value={cbMaxCalls}
-              onChange={(e) => setCbMaxCalls(Number(e.target.value))}
-              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 text-xs font-mono"
-            />
-          </div>
-        </div>
-
-        <label className="flex items-center gap-2 text-xs text-ink-primary cursor-pointer">
-          <input
-            type="checkbox"
-            checked={cbTripCritical}
-            onChange={(e) => setCbTripCritical(e.target.checked)}
-            className="accent-crimson-matte"
-          />
-          <span>
-            Auto-trip immediately on critical outbound prompt-injection or OTP exfiltration attempts
-          </span>
-        </label>
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="btn-primary px-4 py-1.5 rounded-md text-xs font-semibold"
-          >
-            Save Circuit Breaker Thresholds
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+            {newTokenFor === account.id && <form className="inbox-form-row" onSubmit={(event) => {
+              event.preventDefault();
+              void update(async () => {
+                setToken(await authRequest('google/token/' + account.id, {
+                  scopes: [...scopes, ...(domain.trim() ? ['otp:read:' + domain.trim().toLowerCase()] : [])],
+                }));
+                setTokenRevision((value) => value + 1);
+              });
+            }}>
+              {choices.map(([value, label]) => <label key={value}><input type="checkbox" checked={scopes.includes(value)}
+                onChange={(event) => setScopes(event.target.checked ? [...scopes, value] : scopes.filter((item) => item !== value))} /> {label}</label>)}
+              <label>Optional verification sender domain<input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="github.com" /></label>
+              <button className="inbox-button" data-tone="primary" disabled={busy || (!scopes.length && !domain.trim())}>Mint MCP token</button>
+            </form>}
+            <InboxTokenList inboxId={account.id} revision={tokenRevision} onRevoke={() => setToken(null)} />
+          </article>)}
+        </>}
+    </section>
+    <AgentInboxes sandboxSelected={!session || session.active_inbox_id === 'sandbox'} />
+    {session && (!session.live_enabled || session.user) && <section className="inbox-panel">
+      <h2>Sandbox mailbox tokens</h2>
+      <InboxTokenList inboxId="sandbox" revision={0} canMint />
+    </section>}
+    <section className="inbox-panel">
+      <h2><ShieldCheck size={19} /> MCP setup</h2>
+      {token && <div className="inbox-item">
+        <label>Scoped MCP token (shown once)<input readOnly value={token.token} aria-label="Scoped MCP token" /></label>
+        <p>Expires {new Date(token.expires_at).toLocaleString()}</p>
+        <button type="button" className="inbox-button" onClick={() => void navigator.clipboard.writeText(token.token)
+          .catch(() => setError('Select and copy the token from the screen.'))}>Copy token</button>
+      </div>}
+      <SetupCommands />
+    </section>
+  </main>;
 }

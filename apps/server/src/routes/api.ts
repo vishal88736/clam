@@ -687,42 +687,4 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
     return { approval };
   });
 
-  // Gmail OAuth Endpoints
-  app.post('/api/auth/gmail/start', async (request, reply) => {
-    const body = (request.body ?? {}) as { scopes?: ('readonly' | 'compose' | 'modify')[] };
-    try {
-      const flow = deps.mailService.startOAuthFlow(body.scopes);
-      return { auth_url: flow.url };
-    } catch (err) {
-      return reply.code(400).send({ error: err instanceof Error ? err.message : 'OAuth error' });
-    }
-  });
-
-  app.get('/api/auth/gmail/callback', async (request, reply) => {
-    const { code, state, error } = request.query as {
-      code?: string;
-      state?: string;
-      error?: string;
-    };
-    if (error) {
-      return reply.code(400).send({ error: `Google OAuth denied: ${error}` });
-    }
-    if (!code || !state) {
-      return reply.code(400).send({ error: 'Missing code or state parameter' });
-    }
-    try {
-      const result = await deps.mailService.completeOAuthCallback(code, state);
-      deps.hub.publish('settings.updated', { mail_mode: 'gmail', email: result.email });
-      const webRedirect = `http://localhost:${deps.config.webPort}/settings?gmail=connected`;
-      return reply.redirect(webRedirect);
-    } catch (err) {
-      return reply.code(400).send({ error: err instanceof Error ? err.message : 'Callback failed' });
-    }
-  });
-
-  app.post('/api/auth/gmail/disconnect', async () => {
-    await deps.mailService.disconnectGmail();
-    deps.hub.publish('settings.updated', { mail_mode: 'sandbox' });
-    return { ok: true, mode: 'sandbox' };
-  });
 }

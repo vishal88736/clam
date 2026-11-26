@@ -100,6 +100,37 @@ CREATE TABLE IF NOT EXISTS vault_secrets (
   auth_tag TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY, google_sub TEXT NOT NULL UNIQUE, email TEXT NOT NULL,
+  name TEXT NOT NULL, picture TEXT, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inboxes (
+  id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id), adapter_type TEXT NOT NULL,
+  google_sub TEXT, email TEXT NOT NULL, UNIQUE(user_id, google_sub)
+);
+INSERT OR IGNORE INTO inboxes (id, adapter_type, email) VALUES ('sandbox', 'sandbox', 'sandbox@clam.local');
+INSERT OR IGNORE INTO inboxes (id, adapter_type, email) VALUES
+  ('triage', 'agent_local', 'triage@clam.local'), ('executor', 'agent_local', 'executor@clam.local');
+CREATE TABLE IF NOT EXISTS oauth_connections (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+  inbox_id TEXT NOT NULL UNIQUE REFERENCES inboxes(id), google_sub TEXT NOT NULL, email TEXT NOT NULL,
+  granted_scopes TEXT NOT NULL, encrypted_access_token TEXT NOT NULL, encrypted_refresh_token TEXT NOT NULL,
+  iv TEXT NOT NULL, auth_tag TEXT NOT NULL, expires_at INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active','reauth_required','revoked')), updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS operator_sessions (
+  token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+  inbox_id TEXT NOT NULL REFERENCES inboxes(id), expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS google_oauth_flows (
+  id TEXT PRIMARY KEY, browser_hash TEXT NOT NULL, code_verifier TEXT NOT NULL, nonce TEXT NOT NULL,
+  intent TEXT NOT NULL, session_hash TEXT, inbox_id TEXT, expires_at INTEGER NOT NULL, expected_sub TEXT
+);
+CREATE TABLE IF NOT EXISTS inbox_mcp_tokens (
+  token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+  inbox_id TEXT NOT NULL REFERENCES inboxes(id), scopes TEXT NOT NULL, expires_at INTEGER NOT NULL
+);
 `;
 
 export function createDatabase(databasePath: string): DbHandle {

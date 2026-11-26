@@ -19,6 +19,13 @@ import type { AuditLogger } from '../audit/logger.js';
 import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
 import type { PolicyEngine } from '../policy/engine.js';
+import type { GoogleAccounts } from '../auth/google.js';
+import type { InboxEngine } from '../inbox/engine.js';
+import { createInboxMcpServer } from './google.js';
+import { createPodMcpServer } from './pod.js';
+
+import type { MissionRunner } from '../platform/runner.js';
+import type { PlatformService } from '../platform/service.js';
 
 export interface McpDeps {
   agentService: AgentService;
@@ -28,6 +35,14 @@ export interface McpDeps {
   auditLogger: AuditLogger;
   killSwitchService: KillSwitchService;
   artifactsDir: string;
+  accounts: GoogleAccounts;
+  inbox: InboxEngine;
+  platform: PlatformService;
+  missions: MissionRunner;
+  calendarId: string;
+  stagingDir: string;
+  tracesDir: string;
+  verificationRedirects: Record<string, string[]>;
 }
 
 function toSafeSummary(email: EphemeralEmail, semanticCategory: string | null): SafeEmailSummary {
@@ -799,6 +814,19 @@ export function createAgentMcpServer(
   return server;
 }
 
+function mcpCredential(request: FastifyRequest): string | undefined {
+  // The MCP endpoints have no query parameters for authentication or tool arguments.
+  const [route, query] = request.url.split('?', 2);
+  if (query && (route !== '/mcp/messages' || [...new URLSearchParams(query).keys()].some((name) => name !== 'sessionId'))) return undefined;
+  const authorization = request.headers.authorization;
+  const key = request.headers['x-api-key'];
+  if (authorization !== undefined && !/^Bearer [\w-]+$/i.test(authorization)) return undefined;
+  if (key !== undefined && (typeof key !== 'string' || !/^[\w-]+$/.test(key))) return undefined;
+  const bearer = authorization?.slice('Bearer '.length);
+  if (bearer && key && bearer !== key) return undefined;
+  return bearer ?? key;
+}
+
 export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
   const streamableSessions = new Map<
     string,
@@ -823,20 +851,19 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     request: FastifyRequest,
     reply: FastifyReply
   ): Promise<AgentRecord | null> {
-    const authHeader = request.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = mcpCredential(request);
+    if (!token) {
       reply.code(401).send({
         jsonrpc: '2.0',
         error: {
           code: -32001,
-          message: 'Unauthorized: Authorization: Bearer clm_ag_<token> header required.',
+          message: 'Unauthorized: send the Clam token in Authorization or x-api-key.',
         },
         id: null,
       });
       return null;
     }
 
-    const token = authHeader.slice('Bearer '.length).trim();
     const agent = await deps.agentService.authenticateBearerToken(token);
     if (!agent) {
       reply.code(401).send({
@@ -908,16 +935,28 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
 
   // Primary Streamable HTTP endpoint (supports both stateful MCP sessions AND stateless one-shot JSON-RPC)
   const handleMcpHttp = async (request: FastifyRequest, reply: FastifyReply) => {
-    const agent = await authenticateRequest(request, reply);
-    if (!agent) return;
-    if (await rejectIfHalted(agent, request, reply)) return;
+    const token = mcpCredential(request);
+    let owner: string;
+    let makeServer: (getRunId: () => string | null) => McpServer;
+    if (token && /^clm_(?:inbox|pod)_[\w-]+$/.test(token)) {
+      const podGrant = token.startsWith('clm_pod_') ? deps.inbox.handoffs.authenticate(token) : undefined;
+      const grant = token.startsWith('clm_inbox_') ? deps.accounts.authenticateMcp(token) : undefined;
+      if (!grant && !podGrant) return reply.code(401).send({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Invalid inbox token.' } });
+      owner = podGrant ? 'pod:' + podGrant.tokenId : 'inbox:' + grant!.tokenId;
+      makeServer = () => podGrant ? createPodMcpServer(deps.inbox, podGrant, deps.stagingDir) : createInboxMcpServer({ ...deps, grant: grant! });
+    } else {
+      const agent = await authenticateRequest(request, reply);
+      if (!agent || await rejectIfHalted(agent, request, reply)) return;
+      owner = 'agent:' + agent.id;
+      makeServer = (getRunId) => createAgentMcpServer(agent, deps, getRunId);
+    }
 
     const reqRunId = extractRunId(request);
     const sessionId = request.headers['mcp-session-id'] as string | undefined;
 
     if (sessionId) {
       const session = streamableSessions.get(sessionId);
-      if (!session || session.agentId !== agent.id) {
+      if (!session || session.agentId !== owner) {
         reply.code(404).send({
           jsonrpc: '2.0',
           error: { code: -32001, message: 'MCP session not found for this agent' },
@@ -940,7 +979,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
       const setRunId = (id: string | null) => {
         activeRunId = id;
       };
-      const server = createAgentMcpServer(agent, deps, () => activeRunId);
+      const server = makeServer(() => activeRunId);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => {
           generatedId = crypto.randomUUID();
@@ -948,7 +987,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
         },
         enableJsonResponse: true,
         onsessioninitialized: (sid) => {
-          streamableSessions.set(sid, { agentId: agent.id, transport, server, setRunId });
+          streamableSessions.set(sid, { agentId: owner, transport, server, setRunId });
         },
         onsessionclosed: (sid) => {
           streamableSessions.delete(sid);
@@ -976,7 +1015,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     }
 
     // Stateless JSON-RPC POST fallback (ideal for direct tools/list, tools/call & curl)
-    const server = createAgentMcpServer(agent, deps, () => reqRunId);
+    const server = makeServer(() => reqRunId);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

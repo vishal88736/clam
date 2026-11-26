@@ -35,6 +35,9 @@ export function verifyTrace(value: unknown): value is RunTrace {
         !inboxStages.includes(data.stage) || data.prev_hash !== head || step_hash !== hashStep(data)) return false;
     head = step_hash;
   }
+  const terminal = trace.steps.at(-1)!;
+  if (terminal.mode !== trace.mode || (trace.mode && trace.steps.some((step) => step.mode !== trace.mode)) ||
+      (terminal.mode && canonicalJson(terminal.model_usage) !== canonicalJson(trace.model_usage))) return false;
   return trace.steps[0].stage === 'TRIGGER' && trace.steps.at(-1)?.stage === 'REPORT' &&
     trace.head_hash === head;
 }

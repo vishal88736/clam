@@ -3,6 +3,8 @@ import path from 'node:path';
 import { createClamApp } from '../apps/server/src/app.js';
 import { loadConfig, workspaceRoot } from '../apps/server/src/config.js';
 import { renderTrapReport, runInboxTrapPack } from '../apps/server/src/inbox/trapHarness.js';
+import { resolveAgentConfig } from '../apps/server/src/inbox/agentConfig.js';
+import { runOfficialPack } from '../apps/server/src/inbox/officialPack.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 
 const [command, value, ...rest] = process.argv.slice(2);
@@ -11,6 +13,7 @@ const base = config.publicUrl.replace(/\/$/, '');
 const headers = {
   'Content-Type': 'application/json',
   ...(config.operatorToken ? { 'X-Clam-Operator-Token': config.operatorToken } : {}),
+  ...(process.env.CLAM_INBOX_ID ? { 'X-Clam-Inbox-Id': process.env.CLAM_INBOX_ID } : {}),
 };
 
 async function api(url: string, payload?: unknown) {
@@ -45,6 +48,7 @@ async function sandboxRun() {
   const runtime = await createClamApp();
   try {
     if (runtime.inbox.activeMode() !== 'sandbox') throw new Error('Use agent run for the connected live mode.');
+    console.error('[agent] mode: ' + runtime.inbox.agent.mode + ' · ' + runtime.inbox.agent.model);
     const run = await runtime.inbox.start('cli').done;
     console.log(JSON.stringify({ run, briefing: runtime.inbox.briefing(run.id) }, null, 2));
     if (run.status !== 'COMPLETED') process.exitCode = 1;
@@ -62,12 +66,24 @@ async function main() {
       console.log(`Verified ${trace.step_count} steps · ${trace.head_hash}`);
       return;
     }
-    case 'run-trap-pack': {
+    case 'test-adversarial': {
       const report = await runInboxTrapPack();
       const formatted = renderTrapReport(report);
-      await writeFile(path.join(workspaceRoot, 'tests', 'trap_pack_report.md'), formatted, 'utf8');
+      await writeFile(path.join(workspaceRoot, 'tests', 'adversarial_regression_report.md'), formatted, 'utf8');
       console.log(formatted);
       if (!report.passed) process.exitCode = 1;
+      return;
+    }
+    case 'run-official-trap-pack': {
+      if (!value) throw new Error('Usage: pnpm run-official-trap-pack <directory-or-manifest>');
+      const agent = resolveAgentConfig({ ...process.env, CLAM_AGENT_MODE: process.env.CLAM_AGENT_MODE === 'llm' ? 'llm' : 'offline-smoke' });
+      console.error('[agent] official pack mode: ' + agent.mode);
+      const result = await runOfficialPack(value, {
+        agent, report: path.join(workspaceRoot, 'tests', 'official_trap_pack_report.md'),
+        traces: path.join(config.tracesDir, 'official'),
+      });
+      console.log(result.report);
+      if (!result.passed) process.exitCode = 1;
       return;
     }
     case 'watch': return watch();
@@ -78,6 +94,8 @@ async function main() {
       const endpoint = command === 'run' ? '/api/inbox/runs' :
         '/api/inbox/runs/' + encodeURIComponent(value) + '/rollback';
       const result = await api(endpoint, { wait: true }) as { run: { status: string } } | never;
+      const run = result.run as { agent_mode?: string };
+      console.error('[agent] mode: ' + (run.agent_mode ?? 'offline-smoke'));
       console.log(JSON.stringify(result, null, 2));
       if (result.run.status !== 'COMPLETED') process.exitCode = 1;
       return;
@@ -96,7 +114,7 @@ async function main() {
       }
       return;
     }
-    default: throw new Error('Usage: pnpm agent <sandbox|run|watch|halt|resume|rollback|verify-trace|run-trap-pack>');
+    default: throw new Error('Usage: pnpm agent <sandbox|run|watch|halt|resume|rollback|verify-trace|test-adversarial|run-official-trap-pack>');
   }
 }
 

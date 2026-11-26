@@ -12,4 +12,4 @@ test:
 	pnpm test
 
 trap-pack:
-	pnpm run-trap-pack
+	pnpm test:adversarial

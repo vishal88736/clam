@@ -1,0 +1,2 @@
+export const verificationNotice = /\b(?:one[- ]time (?:verification )?(?:code|passcode|password)|verification (?:code|link)|login code|security code|sign.in code|verify your (?:email|account)|password reset|reset your password|security alert|confirm your sign.in|account recovery|magic link|otp)\b/i;
+export const recoveryNotice = /\b(password reset|reset your password|security alert|account recovery|recovery code)\b/i;

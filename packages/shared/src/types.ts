@@ -204,10 +204,16 @@ export interface EphemeralEmail {
   html?: string;
   replyTo?: string;
   verifiedSender?: boolean;
+  contextOnly?: boolean;
+  internetId?: string;
+  references?: string[];
   labels: string[];
   hasAttachments: boolean;
   attachmentNames?: string[];
   attachmentParts?: { name: string; mime: string; data: string }[];
+  trust_level?: 'untrusted_external';
+  threat_signals?: string[];
+  quarantined?: boolean;
   isUnread?: boolean;
 }
 

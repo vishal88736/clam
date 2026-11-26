@@ -3,9 +3,13 @@ import type { NextRequest } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 const allowed = [
+  /^mcp-tokens(?:\/[a-f\d]{24}\/revoke)?$/,
+  /^(?:threads|capabilities|agent-inboxes(?:\/demo|\/[a-z0-9-]+\/token)?)$/,
   /^briefing(?:\/[a-f\d-]{36})?$/, /^runs(?:\/[a-f\d-]{36}\/(?:trace|rollback))?$/,
   /^approvals(?:\/approval_[a-f\d]{24}_v\d+)?$/, /^calendar(?:\.ics)?$/, /^bills(?:\.csv)?$/,
-  /^policy(?:\/preview)?$/, /^schedule$/, /^events$/, /^kill-switch$/,
+  /^connection$/, /^policy(?:\/preview)?$/, /^schedule$/, /^events$/, /^kill-switch$/,
+  /^platform\/(?:me|agents|switches|logs|artifacts)$/,
+  /^platform\/agents\/[a-f\d-]{36}\/(?:switch|pause|resume|cancel)$/, /^platform\/artifacts\/[a-f\d-]{36}$/,
 ];
 
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
@@ -21,12 +25,13 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   }
   const origin = process.env.CLAM_INBOX_API_ORIGIN || 'http://127.0.0.1:4000';
   const headers: Record<string, string> = {};
-  if (process.env.CLAM_OPERATOR_TOKEN) headers['X-Clam-Operator-Token'] = process.env.CLAM_OPERATOR_TOKEN;
+  const sessionCookie = request.headers.get('cookie');
+  if (sessionCookie) headers.Cookie = sessionCookie;
   if (request.headers.has('last-event-id')) headers['Last-Event-ID'] = request.headers.get('last-event-id')!;
   const body = request.method === 'GET' ? undefined : await request.text();
   if (body) headers['Content-Type'] = 'application/json';
   try {
-    const upstream = await fetch(origin.replace(/\/$/, '') + '/api/inbox/' + endpoint, {
+    const upstream = await fetch(origin.replace(/\/$/, '') + '/api/inbox/' + endpoint + request.nextUrl.search, {
       method: request.method, body, headers, cache: 'no-store', signal: request.signal,
     });
     const resultHeaders = new Headers();

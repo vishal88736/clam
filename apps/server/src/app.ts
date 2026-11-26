@@ -1,23 +1,33 @@
 import { existsSync, rmSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { AutonomousRunnerService } from './agents/runnerService.js';
 import { AgentService } from './agents/service.js';
 import { ApprovalService } from './approvals/service.js';
 import { AuditLogger, RealtimeEventHub } from './audit/logger.js';
+import { GoogleAccounts, validateGoogleConfig } from './auth/google.js';
+import { registerGoogleAuthRoutes } from './auth/routes.js';
 import { loadConfig, type ClamConfig } from './config.js';
 import { createDatabase, type DbHandle } from './db/index.js';
+import { resolveAgentConfig, type AgentConfig } from './inbox/agentConfig.js';
 import { InboxEngine } from './inbox/engine.js';
 import { registerInboxRoutes } from './inbox/routes.js';
 import { LiveTarget } from './inbox/targets.js';
 import { KillSwitchService } from './killswitch/service.js';
 import { MailService } from './mail/service.js';
+import { GmailLiveAdapter } from './mail/gmail.js';
 import { CryptoVault } from './mail/vault.js';
 import { registerMcpRoutes } from './mcp/server.js';
+import { verificationRedirects } from './mcp/verification.js';
 import type { SemanticClassifierFn } from './policy/classifier.js';
 import { PolicyEngine } from './policy/engine.js';
 import { registerApiRoutes, type StoredLlmSettings } from './routes/api.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
+import { MissionRunner } from './platform/runner.js';
+import { registerPlatformRoutes } from './platform/routes.js';
+import { PlatformService } from './platform/service.js';
+import { LiveGoogleWorkspaceAdapter } from './workspace/adapters.js';
 
 export interface ClamRuntime {
   app: FastifyInstance;
@@ -32,6 +42,9 @@ export interface ClamRuntime {
   runnerService: AutonomousRunnerService;
   hub: RealtimeEventHub;
   inbox: InboxEngine;
+  accounts: GoogleAccounts;
+  platform: PlatformService;
+  missions: MissionRunner;
   close(): Promise<void>;
 }
 
@@ -39,6 +52,8 @@ export async function createClamApp(overrides?: {
   databasePath?: string;
   config?: Partial<ClamConfig>;
   customClassifier?: SemanticClassifierFn;
+  agent?: AgentConfig;
+  google?: ConstructorParameters<typeof GoogleAccounts>[2];
 }): Promise<ClamRuntime> {
   const baseConfig = loadConfig();
   const config: ClamConfig = {
@@ -47,16 +62,17 @@ export async function createClamApp(overrides?: {
     databasePath: overrides?.databasePath ?? overrides?.config?.databasePath ?? baseConfig.databasePath,
   };
 
+  validateGoogleConfig(config);
   const dbHandle = createDatabase(config.databasePath);
+  const accounts = new GoogleAccounts(dbHandle.sqlite, config, overrides?.google);
   const vault = new CryptoVault(config.encryptionKey);
   const hub = new RealtimeEventHub();
   const mailService = new MailService(dbHandle.db, vault, config);
-  await mailService.init();
 
   const getLlmConfig = async () => {
     const stored = await mailService.getVaultJson<StoredLlmSettings>('llm_provider_config');
     return {
-      provider: stored?.provider ?? config.llmProvider,
+      provider: stored?.provider ?? 'local_heuristic' as const,
       model: stored?.model ?? config.llmModel,
       openaiApiKey: stored?.openaiApiKey ?? config.openaiApiKey,
       anthropicApiKey: stored?.anthropicApiKey ?? config.anthropicApiKey,
@@ -91,15 +107,17 @@ export async function createClamApp(overrides?: {
 
   const app = Fastify({ logger: false });
   await app.register(cors, {
-    origin: true,
+    origin: [config.webOrigin, `http://127.0.0.1:${config.webPort}`],
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
       'Authorization',
+      'X-Api-Key',
       'Accept',
       'Mcp-Session-Id',
       'Last-Event-ID',
       'X-Clam-Run-Id',
+      'X-Clam-Inbox-Id',
     ],
     exposedHeaders: ['Mcp-Session-Id'],
   });
@@ -130,19 +148,31 @@ export async function createClamApp(overrides?: {
 
   const lockfile = config.databasePath === ':memory:' ? undefined : config.lockfile;
   const inbox: InboxEngine = new InboxEngine({
-    databasePath: config.databasePath, tracesDir: config.tracesDir, lockfile,
+    databasePath: config.databasePath, tracesDir: config.tracesDir, lockfile, stagingDir: config.mailAttachmentsDir,
+    handoffKey: createHmac('sha256', config.encryptionKey).update('clam:agent-handoff:v1').digest(),
     externalHalt: () => killSwitchService.getState().status === 'HALTED',
     onTrip: (reason, runId) => killSwitchService.engage({ reason, runId, triggerMode: 'circuit_breaker' }),
     onRun: (id, controller) => killSwitchService.registerInFlight(id, 'ag_autonomous', controller),
-    modelReview: process.env.CLAM_INBOX_MODEL_REVIEW === 'true' ? {
-      config: getLlmConfig,
-      input: Math.max(0, Number(process.env.CLAM_MODEL_INPUT_USD_PER_M) || 0),
-      output: Math.max(0, Number(process.env.CLAM_MODEL_OUTPUT_USD_PER_M) || 0),
-    } : undefined,
+    agent: overrides?.agent ?? resolveAgentConfig(),
     live: config.inboxLive ? {
-      ready: () => mailService.getMode() === 'gmail',
-      target: (guard, store) => new LiveTarget(store, mailService.createGmailProvider(), config.calendarId, guard),
-      reader: async () => new LiveTarget(inbox.store, mailService.createGmailProvider(), config.calendarId, inbox.guard).readerMessages(),
+      ready: (mode) => mode.startsWith('live:') && accounts.connection(mode.slice(5))?.status === 'active',
+      modes: () => accounts.activeInboxIds().map((id) => `live:${id}` as const),
+      target: (mode, guard, store) => {
+        const inboxId = mode.slice(5);
+        return new LiveTarget(store, new GmailLiveAdapter(accounts, inboxId, guard), config.calendarId, guard, { inboxId, accounts });
+      },
+      reader: async (mode) => {
+        const inboxId = mode.slice(5);
+        return new LiveTarget(inbox.store, new GmailLiveAdapter(accounts, inboxId, inbox.guard),
+          config.calendarId, inbox.guard, { inboxId, accounts }).readerMessages();
+      },
+      mutationScope: (mode, kind) => {
+        if (['mail','send','draft'].includes(kind)) accounts.requireScope(mode.slice(5), 'mail:write');
+        if (kind === 'calendar') accounts.requireScope(mode.slice(5), 'calendar:write');
+        if (kind === 'workspace') accounts.requireScope(mode.slice(5), 'drive:write');
+      },
+      workspace: (mode, guard, registry) => new LiveGoogleWorkspaceAdapter(accounts, mode.slice(5), registry, guard, config.mailAttachmentsDir),
+      redact: (mode, value) => accounts.redact(mode.slice(5), value),
     } : undefined,
   });
   killSwitchService.attachExternalHalt(inbox.halted, () => {
@@ -156,7 +186,12 @@ export async function createClamApp(overrides?: {
   });
   if (inbox.halted()) inbox.latch(true);
   inbox.startScheduler();
-  registerInboxRoutes(app, inbox, config, killSwitchService, lockfile);
+  const platform = new PlatformService(inbox.store, dbHandle.sqlite, inbox.registry);
+  const missions = new MissionRunner(inbox, platform, { webOrigin: config.webOrigin });
+  missions.start();
+  registerPlatformRoutes(app, { inbox, platform, missions, accounts, config });
+  registerGoogleAuthRoutes(app, accounts, config, inbox);
+  registerInboxRoutes(app, inbox, config, killSwitchService, accounts, lockfile, platform);
 
   registerWebhookRoutes(app, approvalService);
 
@@ -168,6 +203,14 @@ export async function createClamApp(overrides?: {
     auditLogger,
     killSwitchService,
     artifactsDir: config.artifactsDir,
+    accounts,
+    inbox,
+    platform,
+    missions,
+    calendarId: config.calendarId,
+    stagingDir: config.mailAttachmentsDir,
+    tracesDir: config.tracesDir,
+    verificationRedirects: verificationRedirects(process.env.CLAM_VERIFICATION_REDIRECTS),
   });
 
   return {
@@ -183,9 +226,13 @@ export async function createClamApp(overrides?: {
     runnerService,
     hub,
     inbox,
+    accounts,
+    platform,
+    missions,
     close: async () => {
       approvalService.stopExpirySweeper();
       app.server.closeAllConnections?.();
+      await missions.close();
       await app.close();
       await inbox.close();
       dbHandle.close();

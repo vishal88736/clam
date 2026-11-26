@@ -16,6 +16,10 @@ export const inboxIntentSchema = z.object({
   receivedAt: z.string().datetime({ offset: true }),
   confidence: z.number().min(0).max(1),
   evidence: z.string().max(240),
+  priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
+  guidance: z.enum(['proceed', 'review']).optional(),
+  reply: z.object({ subject: z.string().max(120), text: z.string().max(360) }).strict().optional(),
+  contextIds: z.array(z.string()).optional(),
   fields: z.record(z.string()),
   taintedTargets: z.array(z.string()),
   ruleIds: z.array(z.string()),
@@ -25,6 +29,7 @@ export type InboxIntent = z.infer<typeof inboxIntentSchema>;
 export const inboxPolicySchema = z.object({
   confidenceThreshold: z.number().min(0).max(1),
   allowlist: z.array(z.string().email()).max(100),
+  blocklist: z.array(z.string().email()).max(100).default([]),
   contacts: z.array(z.string().email()).max(500),
   vips: z.array(z.string().email()).max(100),
   trustedAirlines: z.array(z.string().regex(/^[a-z\d.-]+\.[a-z]+$/i)).max(100),

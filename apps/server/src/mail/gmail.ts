@@ -1,24 +1,9 @@
 import type { EphemeralEmail } from '@clam/shared';
-import type {
-  CreateDraftInput,
-  MailActionResult,
-  MailProvider,
-  SendMessageInput,
-} from './types.js';
-
-export interface StoredGmailTokens {
-  access_token: string;
-  refresh_token?: string;
-  expires_at: number; // epoch ms
-  scope: string;
-  email?: string;
-}
-
-export interface GmailTokenStore {
-  getTokens(): Promise<StoredGmailTokens | null>;
-  saveTokens(tokens: StoredGmailTokens): Promise<void>;
-}
-
+import { scanPromptInjection } from '@clam/shared';
+import { address, stripHtml } from '../inbox/reader.js';
+import { externalHandoffThreats } from '../handoffs/externalHeaders.js';
+import type { GoogleAccounts } from '../auth/google.js';
+import type { MailboxAdapter } from './inboxAdapter.js';
 interface GmailMessagePart {
   mimeType?: string;
   filename?: string;
@@ -40,18 +25,16 @@ interface GmailRawMessage {
   };
 }
 
+const attachmentLimit = 750_000;
+const attachmentMimes = new Set(['application/pdf', 'text/plain', 'text/calendar', 'text/csv']);
+const attachmentParts = (part?: GmailMessagePart): GmailMessagePart[] => part
+  ? [...(part.filename && part.mimeType && attachmentMimes.has(part.mimeType) ? [part] : []), ...(part.parts ?? []).flatMap(attachmentParts)]
+  : [];
+
 function decodeBase64Url(input?: string): string {
-  if (!input) return '';
+  if (!input || input.length > 120_000) return '';
   const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
   return Buffer.from(normalized, 'base64').toString('utf8');
-}
-
-function encodeBase64Url(input: string): string {
-  return Buffer.from(input, 'utf8')
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
 }
 
 function extractBodyAndAttachments(part?: GmailMessagePart): {
@@ -67,9 +50,9 @@ function extractBodyAndAttachments(part?: GmailMessagePart): {
   if (part.filename) {
     attachments.push(part.filename);
   }
-  if (part.mimeType === 'text/plain' && part.body?.data) {
+  if (!part.filename && part.mimeType === 'text/plain' && part.body?.data) {
     text += decodeBase64Url(part.body.data);
-  } else if (part.mimeType === 'text/html' && part.body?.data) {
+  } else if (!part.filename && part.mimeType === 'text/html' && part.body?.data) {
     html += decodeBase64Url(part.body.data);
   }
   for (const child of part.parts ?? []) {
@@ -92,7 +75,7 @@ function parseGmailMessage(raw: GmailRawMessage): EphemeralEmail {
   const dmarcDomain = auth?.match(/\bdmarc=pass\b[^;]*\bheader\.from=([a-z\d.-]+)/i)?.[1]?.toLowerCase();
   const plainBody =
     extracted.text ||
-    extracted.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ||
+    stripHtml(extracted.html).trim() ||
     raw.snippet ||
     '';
 
@@ -107,11 +90,13 @@ function parseGmailMessage(raw: GmailRawMessage): EphemeralEmail {
     from: getHeader('From') || 'unknown@sender',
     to: toList,
     subject: getHeader('Subject') || '(No Subject)',
-    date: getHeader('Date') || new Date(Number(raw.internalDate || Date.now())).toISOString(),
+    date: new Date(Number(raw.internalDate || 0)).toISOString(),
     snippet: raw.snippet || plainBody.slice(0, 140),
     body: plainBody,
     html: extracted.html || undefined,
     replyTo: getHeader('Reply-To') || undefined,
+    internetId: getHeader('Message-ID').match(/<[^<> ]+>/)?.[0],
+    references: (getHeader('References') + ' ' + getHeader('In-Reply-To')).match(/<[^<> ]+>/g) ?? [],
     verifiedSender: Boolean(sender && auth?.startsWith('mx.google.com;') && dmarcDomain === sender),
     labels: raw.labelIds ?? [],
     hasAttachments: extracted.attachments.length > 0,
@@ -120,137 +105,36 @@ function parseGmailMessage(raw: GmailRawMessage): EphemeralEmail {
   };
 }
 
-export class GmailMailProvider implements MailProvider {
-  public readonly mode = 'gmail' as const;
-
-  constructor(
-    private readonly oauth: {
-      clientId: string;
-      clientSecret: string;
-      redirectUri: string;
-    },
-    private readonly tokenStore: GmailTokenStore
-  ) {}
-
-  static buildAuthUrl(params: {
-    clientId: string;
-    redirectUri: string;
-    scopes: string[];
-    state: string;
-  }): string {
-    const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    url.searchParams.set('client_id', params.clientId);
-    url.searchParams.set('redirect_uri', params.redirectUri);
-    url.searchParams.set('response_type', 'code');
-    url.searchParams.set('access_type', 'offline');
-    url.searchParams.set('prompt', 'consent');
-    url.searchParams.set('scope', params.scopes.join(' '));
-    url.searchParams.set('state', params.state);
-    return url.toString();
+export class GmailLiveAdapter implements MailboxAdapter {
+  constructor(private readonly accounts: GoogleAccounts, readonly inboxId: string, private readonly guard: () => void) {
   }
 
-  async exchangeCode(code: string): Promise<StoredGmailTokens> {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: this.oauth.clientId,
-        client_secret: this.oauth.clientSecret,
-        redirect_uri: this.oauth.redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Gmail OAuth token exchange failed (${res.status}): ${txt}`);
-    }
-    const json = (await res.json()) as {
-      access_token: string;
-      refresh_token?: string;
-      expires_in: number;
-      scope?: string;
-    };
-
-    // Fetch profile email address (metadata only, zero message retention)
-    let email: string | undefined;
-    try {
-      const profRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
-        headers: { Authorization: `Bearer ${json.access_token}` },
-      });
-      if (profRes.ok) {
-        const prof = (await profRes.json()) as { emailAddress?: string };
-        email = prof.emailAddress;
-      }
-    } catch {
-      // Ignore optional profile lookup failure
-    }
-
-    const tokens: StoredGmailTokens = {
-      access_token: json.access_token,
-      refresh_token: json.refresh_token,
-      expires_at: Date.now() + (json.expires_in - 60) * 1000,
-      scope: json.scope ?? '',
-      email,
-    };
-    await this.tokenStore.saveTokens(tokens);
-    return tokens;
-  }
-
-  async getValidAccessToken(): Promise<string> {
-    const tokens = await this.tokenStore.getTokens();
-    if (!tokens) {
-      throw new Error('Gmail is not connected. Authorize via Settings -> Connect Gmail.');
-    }
-    if (Date.now() < tokens.expires_at) {
-      return tokens.access_token;
-    }
-    if (!tokens.refresh_token) {
-      throw new Error('Gmail access token expired and no refresh_token is available.');
-    }
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.oauth.clientId,
-        client_secret: this.oauth.clientSecret,
-        refresh_token: tokens.refresh_token,
-        grant_type: 'refresh_token',
-      }),
-    });
-    if (!res.ok) {
-      throw new Error(`Gmail token refresh failed (${res.status})`);
-    }
-    const refreshed = (await res.json()) as {
-      access_token: string;
-      expires_in: number;
-      scope?: string;
-    };
-    const updated: StoredGmailTokens = {
-      ...tokens,
-      access_token: refreshed.access_token,
-      expires_at: Date.now() + (refreshed.expires_in - 60) * 1000,
-      scope: refreshed.scope ?? tokens.scope,
-    };
-    await this.tokenStore.saveTokens(updated);
-    return updated.access_token;
+  async request(path: string, init: RequestInit = {}) {
+    const operation = !init.method || init.method === 'GET' ? 'mail:read' : 'mail:write';
+    const cost = path === '/messages/send' ? 100 : 20;
+    return this.accounts.api(this.inboxId, operation, 'https://gmail.googleapis.com/gmail/v1/users/me' + path, this.guard, init, cost);
   }
 
   private async gmailFetch<T>(path: string, init?: RequestInit): Promise<T> {
-    const token = await this.getValidAccessToken();
-    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Gmail API error ${res.status}: ${body}`);
-    }
-    return (await res.json()) as T;
+    const response = await this.request(path, init);
+    if (!response.ok) throw new Error('GMAIL_' + response.status);
+    return (response.status === 204 ? undefined : await response.json()) as T;
+  }
+
+  private normalize(raw: GmailRawMessage) {
+    const message = parseGmailMessage(raw);
+    const redact = (value: string) => this.accounts.redact(this.inboxId, value);
+    const rule = scanPromptInjection([message.subject, message.body, message.html ?? '', ...(message.attachmentNames ?? [])].join('\n'));
+    const mismatch = message.replyTo && address(message.replyTo) !== address(message.from);
+    const forged = externalHandoffThreats((raw.payload?.headers ?? []).map((header) => header.name));
+    const signals = [...forged, ...rule.signals, ...(mismatch ? ['SENDER_REPLY_TO_MISMATCH'] : [])];
+    return {
+      ...message, subject: redact(message.subject), body: redact(message.body), snippet: redact(message.body).slice(0, 140),
+      from: redact(message.from), to: message.to.map(redact), replyTo: message.replyTo ? redact(message.replyTo) : undefined,
+      attachmentNames: message.attachmentNames?.map(redact),
+      html: message.html ? redact(message.html) : undefined, trust_level: 'untrusted_external' as const,
+      threat_signals: signals, quarantined: Boolean(forged.length) || rule.detected || Boolean(mismatch),
+    };
   }
 
   async listMessages(query?: string, maxResults = 20): Promise<EphemeralEmail[]> {
@@ -272,122 +156,84 @@ export class GmailMailProvider implements MailProvider {
       const raw = await this.gmailFetch<GmailRawMessage>(
         `/messages/${encodeURIComponent(messageId)}?format=full`
       );
-      return parseGmailMessage(raw);
-    } catch {
-      return null;
+      return this.normalize(raw);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'GMAIL_404') return null;
+      throw error;
     }
+  }
+
+  async listThreads(query = '', maxResults = 20) {
+    const params = new URLSearchParams({ maxResults: String(Math.max(1, Math.min(maxResults, 20))) });
+    if (query) params.set('q', query);
+    const list = await this.gmailFetch<{ threads?: { id: string }[] }>('/threads?' + params);
+    return Promise.all((list.threads ?? []).map(({ id }) => this.getThread(id)));
+  }
+
+  async getThread(id: string) {
+    const thread = await this.gmailFetch<{ id: string; messages?: GmailRawMessage[] }>(
+      '/threads/' + encodeURIComponent(id) + '?format=full',
+    );
+    return { id: thread.id, messages: (thread.messages ?? []).slice(-30).map((entry) => this.normalize(entry)) };
+  }
+
+  async listAttachments(messageId: string) {
+    const raw = await this.gmailFetch<GmailRawMessage>('/messages/' + encodeURIComponent(messageId) + '?format=full');
+    return attachmentParts(raw.payload).slice(0, 3).map((part, index) => ({
+      index, name: part.filename!, mime: part.mimeType!, size: part.body?.size ?? 0,
+    }));
+  }
+
+  private async loadAttachment(id: string, part: GmailMessagePart) {
+    if ((part.body?.size ?? 0) > attachmentLimit) throw new Error('ATTACHMENT_TOO_LARGE');
+    const data = part.body?.data ?? (part.body?.attachmentId ? (
+      await this.gmailFetch<{ data: string }>(`/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(part.body.attachmentId)}`)
+    ).data : '');
+    if (!data || data.length > Math.ceil(attachmentLimit * 4 / 3) + 4 ||
+        !/^[A-Za-z0-9_-]+={0,2}$/.test(data) || Buffer.from(data, 'base64url').length > attachmentLimit) {
+      throw new Error('ATTACHMENT_INVALID');
+    }
+    return { name: part.filename!, mime: part.mimeType!, data };
+  }
+
+  async getAttachment(messageId: string, index: number) {
+    const raw = await this.gmailFetch<GmailRawMessage>('/messages/' + encodeURIComponent(messageId) + '?format=full');
+    const part = attachmentParts(raw.payload).slice(0, 3)[index];
+    if (!part) throw new Error('ATTACHMENT_NOT_AVAILABLE');
+    return this.loadAttachment(messageId, part);
   }
 
   async listForInbox(query: string): Promise<EphemeralEmail[]> {
     const list = await this.gmailFetch<{ messages?: { id: string }[] }>(
       `/messages?${new URLSearchParams({ maxResults: '50', q: query })}`
     );
-    return Promise.all((list.messages ?? []).map(async ({ id }) => {
+    const messages = await Promise.all((list.messages ?? []).map(async ({ id }) => {
       const raw = await this.gmailFetch<GmailRawMessage>(`/messages/${encodeURIComponent(id)}?format=full`);
-      const message = parseGmailMessage(raw);
-      const collect = (part?: GmailMessagePart): GmailMessagePart[] => part
-        ? [...(part.filename && /\.(?:pdf|ics|txt)$/i.test(part.filename) ? [part] : []), ...(part.parts ?? []).flatMap(collect)]
-        : [];
+      const message = this.normalize(raw);
       message.attachmentParts = [];
-      for (const part of collect(raw.payload).slice(0, 3)) {
-        if ((part.body?.size ?? 0) > 750_000) { message.attachmentParts.push({ name: part.filename!, mime: part.mimeType ?? '', data: '' }); continue; }
-        const data = part.body?.data ?? (part.body?.attachmentId ? (
-          await this.gmailFetch<{ data: string }>(`/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(part.body.attachmentId)}`)
-        ).data : '');
-        message.attachmentParts.push({ name: part.filename!, mime: part.mimeType ?? '', data });
+      for (const part of attachmentParts(raw.payload).slice(0, 3)) {
+        try { message.attachmentParts.push(await this.loadAttachment(id, part)); }
+        catch (error) {
+          if (!(error instanceof Error) || !['ATTACHMENT_TOO_LARGE','ATTACHMENT_INVALID'].includes(error.message)) throw error;
+          message.attachmentParts.push({ name: part.filename!, mime: part.mimeType!, data: 'invalid' });
+        }
       }
       return message;
     }));
-  }
-
-  private buildRawMime(input: { to: string; subject: string; body: string }): string {
-    const lines = [
-      `To: ${input.to}`,
-      `Subject: ${input.subject}`,
-      'Content-Type: text/plain; charset="UTF-8"',
-      'MIME-Version: 1.0',
-      '',
-      input.body,
-    ];
-    return encodeBase64Url(lines.join('\r\n'));
-  }
-
-  async createDraft(input: CreateDraftInput): Promise<MailActionResult> {
-    const raw = this.buildRawMime(input);
-    const res = await this.gmailFetch<{ id: string }>('/drafts', {
-      method: 'POST',
-      body: JSON.stringify({
-        message: {
-          raw,
-          ...(input.threadId ? { threadId: input.threadId } : {}),
-        },
-      }),
-    });
-    return {
-      ok: true,
-      provider: 'gmail',
-      id: res.id,
-      detail: `Gmail draft created (${res.id})`,
-    };
-  }
-
-  async sendMessage(input: SendMessageInput): Promise<MailActionResult> {
-    const raw = this.buildRawMime(input);
-    const res = await this.gmailFetch<{ id: string }>('/messages/send', {
-      method: 'POST',
-      body: JSON.stringify({
-        raw,
-        ...(input.threadId ? { threadId: input.threadId } : {}),
-      }),
-    });
-    return {
-      ok: true,
-      provider: 'gmail',
-      id: res.id,
-      detail: `Gmail message sent (${res.id})`,
-    };
-  }
-
-  async archiveMessage(messageId: string): Promise<MailActionResult> {
-    await this.gmailFetch(`/messages/${encodeURIComponent(messageId)}/modify`, {
-      method: 'POST',
-      body: JSON.stringify({ removeLabelIds: ['INBOX'] }),
-    });
-    return {
-      ok: true,
-      provider: 'gmail',
-      id: messageId,
-      detail: `Archived Gmail message ${messageId}`,
-    };
-  }
-
-  async applyLabel(messageId: string, label: string): Promise<MailActionResult> {
-    const labelsRes = await this.gmailFetch<{ labels?: { id: string; name: string }[] }>('/labels');
-    let labelId = labelsRes.labels?.find(
-      (l) => l.name.toLowerCase() === label.trim().toLowerCase()
-    )?.id;
-
-    if (!labelId) {
-      const created = await this.gmailFetch<{ id: string }>('/labels', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: label.trim(),
-          labelListVisibility: 'labelShow',
-          messageListVisibility: 'show',
-        }),
-      });
-      labelId = created.id;
+    const seen = new Set(messages.map((message) => message.id));
+    const primary = messages.filter((message) => message.labels.includes('INBOX') || message.labels.includes('SENT'));
+    for (const message of messages) message.contextOnly = !primary.includes(message);
+    const threads = [...new Set(primary.map((message) => message.threadId))].slice(0, 12);
+    const history = await Promise.all(threads.map((thread) => this.gmailFetch<{ messages?: GmailRawMessage[] }>(
+      '/threads/' + encodeURIComponent(thread) + '?format=full',
+    )));
+    for (const thread of history) {
+      for (const raw of (thread.messages ?? []).filter((entry) => !seen.has(entry.id)).slice(-3)) {
+        seen.add(raw.id);
+        messages.push({ ...this.normalize(raw), contextOnly: true });
+      }
     }
-
-    await this.gmailFetch(`/messages/${encodeURIComponent(messageId)}/modify`, {
-      method: 'POST',
-      body: JSON.stringify({ addLabelIds: [labelId] }),
-    });
-    return {
-      ok: true,
-      provider: 'gmail',
-      id: messageId,
-      detail: `Applied Gmail label ${label}`,
-    };
+    return messages;
   }
+
 }

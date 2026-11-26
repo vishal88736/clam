@@ -4,13 +4,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { inboxPolicySchema, type InboxPolicy, type InboxSchedule } from '@clam/shared';
-import { livePolicy, sandboxEvents, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
+import { livePolicy, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
 import type { ActionKind, Attention, Claim, Mode, RunRecord, RunTrace, Snapshot, TraceStep } from './contracts.js';
 import { genesisHash } from './trace.js';
+import { handoffSchema } from '../handoffs/schema.js';
+import { platformSchema } from '../platform/schema.js';
+import { sandboxPhotos, vendorQuoteReplies, workspaceMessages } from '../sandbox/seed.js';
 
 export const sandboxAddress = 'sandbox';
 const latestSchedule: InboxSchedule = { enabled: false, frequency: 'daily', intervalMinutes: 1440 };
 const ddl = `
+BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS system_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   kill_switch_active INTEGER NOT NULL CHECK (kill_switch_active IN (0, 1))
@@ -50,24 +54,29 @@ CREATE TABLE IF NOT EXISTS inbox_changes (
   run_id TEXT NOT NULL REFERENCES inbox_runs(id), ordinal INTEGER NOT NULL, body TEXT NOT NULL,
   PRIMARY KEY(run_id, ordinal)
 );
-CREATE TRIGGER IF NOT EXISTS inbox_actions_guard_insert BEFORE INSERT ON inbox_actions BEGIN
+DROP TRIGGER IF EXISTS inbox_actions_guard_insert;
+DROP TRIGGER IF EXISTS inbox_actions_guard_update;
+CREATE TRIGGER inbox_actions_guard_insert BEFORE INSERT ON inbox_actions BEGIN
   SELECT RAISE(ABORT, 'INBOX_HALTED') WHERE (SELECT kill_switch_active FROM system_state WHERE singleton=1)=1;
   SELECT RAISE(ABORT, 'INBOX_BUDGET_EXCEEDED') WHERE
-    (NEW.kind='send' AND (SELECT count(*) FROM inbox_actions WHERE run_id=NEW.run_id AND kind='send')
+    (NEW.kind IN ('send','draft','handoff') AND (SELECT count(*) FROM inbox_actions WHERE run_id=NEW.run_id AND kind IN ('send','draft','handoff'))
       >= (SELECT outbound_limit FROM inbox_runs WHERE id=NEW.run_id))
     OR (NEW.kind='calendar' AND (SELECT count(*) FROM inbox_actions WHERE run_id=NEW.run_id AND kind='calendar')
       >= (SELECT calendar_limit FROM inbox_runs WHERE id=NEW.run_id));
 END;
-CREATE TRIGGER IF NOT EXISTS inbox_actions_guard_update BEFORE UPDATE ON inbox_actions BEGIN
+CREATE TRIGGER inbox_actions_guard_update BEFORE UPDATE ON inbox_actions BEGIN
   SELECT RAISE(ABORT, 'INBOX_HALTED') WHERE (SELECT kill_switch_active FROM system_state WHERE singleton=1)=1;
   SELECT RAISE(ABORT, 'INBOX_ACTION_IDENTITY_IMMUTABLE') WHERE NEW.id!=OLD.id OR NEW.run_id!=OLD.run_id
     OR NEW.kind!=OLD.kind OR NEW.target!=OLD.target OR NEW.mode!=OLD.mode OR NEW.ordinal!=OLD.ordinal;
   SELECT RAISE(ABORT, 'INBOX_BUDGET_EXCEEDED') WHERE
-    (NEW.kind='send' AND (SELECT count(*) FROM inbox_actions WHERE run_id=NEW.run_id AND kind='send')
+    (NEW.kind IN ('send','draft','handoff') AND (SELECT count(*) FROM inbox_actions WHERE run_id=NEW.run_id AND kind IN ('send','draft','handoff'))
       > (SELECT outbound_limit FROM inbox_runs WHERE id=NEW.run_id))
     OR (NEW.kind='calendar' AND (SELECT count(*) FROM inbox_actions WHERE run_id=NEW.run_id AND kind='calendar')
       > (SELECT calendar_limit FROM inbox_runs WHERE id=NEW.run_id));
 END;
+${handoffSchema}
+${platformSchema}
+COMMIT;
 `;
 
 type BodyRow = { body: string };
@@ -104,6 +113,29 @@ export class InboxStore {
         });
         this.setState('seed-v1', true);
       }
+      if (!this.state('seed-v2')) {
+        for (const message of sandboxMessages.filter(({ id }) =>
+          ['flight-delay', 'meeting-team', 'newsletter-news', 'stale-nudge'].includes(id))) {
+          this.sqlite.prepare("UPDATE inbox_sandbox_messages SET body=? WHERE id=? AND scope='inbox'")
+            .run(JSON.stringify(message), message.id);
+        }
+        for (const message of sandboxHistory) {
+          this.sqlite.prepare('INSERT OR IGNORE INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(message.id, 'history', JSON.stringify(message));
+          this.setEntity('sandbox', 'mail', message.id, { labels: message.labels });
+        }
+        this.setState('seed-v2', true);
+      }
+      if (!this.state('seed-v3-workspace')) {
+        for (const [scope, fixtures] of [['workspace', workspaceMessages], ['vendor_pending', vendorQuoteReplies]] as const) {
+          for (const message of fixtures) {
+            this.sqlite.prepare('INSERT OR IGNORE INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(message.id, scope, JSON.stringify(message));
+          }
+        }
+        for (const photo of sandboxPhotos) {
+          this.sqlite.prepare('INSERT OR IGNORE INTO sandbox_photos VALUES (?, ?)').run(photo.id, JSON.stringify(photo));
+        }
+        this.setState('seed-v3-workspace', true);
+      }
     });
   }
 
@@ -132,6 +164,9 @@ export class InboxStore {
   }
 
   policy(mode: Mode) {
+    if (mode.startsWith('live:')) this.sqlite.prepare(
+      'INSERT OR IGNORE INTO inbox_policies VALUES (?, 1, ?, ?)',
+    ).run(mode, JSON.stringify(livePolicy), new Date().toISOString());
     const row = this.sqlite.prepare('SELECT version,body FROM inbox_policies WHERE mode=? ORDER BY version DESC LIMIT 1').get(mode);
     if (!row) throw new Error('Policy unavailable.');
     return { version: Number(row.version), policy: inboxPolicySchema.parse(decode(row)) };
@@ -155,8 +190,12 @@ export class InboxStore {
     this.sqlite.prepare('INSERT INTO inbox_state VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body').run(key, JSON.stringify(data));
   }
 
-  schedule(): InboxSchedule {
-    return this.state<InboxSchedule>('schedule') ?? latestSchedule;
+  schedule(mode: Mode = 'sandbox'): InboxSchedule {
+    return this.state<InboxSchedule>(mode === 'sandbox' ? 'schedule' : 'schedule:' + mode) ?? latestSchedule;
+  }
+
+  saveSchedule(mode: Mode, schedule: InboxSchedule) {
+    this.setState(mode === 'sandbox' ? 'schedule' : 'schedule:' + mode, schedule);
   }
 
   acquireLease(owner: string, now = Date.now()): boolean {
@@ -198,8 +237,9 @@ export class InboxStore {
     return row ? decode(row) : null;
   }
 
-  runs(mode: Mode): RunRecord[] {
-    return rows(this.sqlite.prepare('SELECT body FROM inbox_runs WHERE mode=? ORDER BY rowid DESC LIMIT 100').all(mode));
+  runs(mode: Mode, includeObservations = true): RunRecord[] {
+    return rows(this.sqlite.prepare(`SELECT body FROM inbox_runs WHERE mode=?
+      AND (? OR json_extract(body,'$.trigger') NOT LIKE 'mcp.%') ORDER BY rowid DESC LIMIT 100`).all(mode, Number(includeObservations)));
   }
 
   addStep(step: TraceStep, index: number) {
@@ -208,7 +248,9 @@ export class InboxStore {
 
   trace(runId: string): RunTrace {
     const steps = rows<TraceStep>(this.sqlite.prepare('SELECT body FROM inbox_steps WHERE run_id=? ORDER BY ordinal').all(runId));
-    return { run_id: runId, steps, step_count: steps.length, head_hash: steps.at(-1)?.step_hash ?? genesisHash };
+    const terminal = steps.at(-1);
+    return { run_id: runId, steps, step_count: steps.length, head_hash: terminal?.step_hash ?? genesisHash,
+      mode: terminal?.mode, model_usage: terminal?.stage === 'REPORT' ? terminal.model_usage : undefined };
   }
 
   addChange(runId: string, data: unknown) {

@@ -1,5 +1,5 @@
 import type { InboxCalendarEvent, InboxIntent, InboxPolicy } from '@clam/shared';
-import type { Change, ProposedAction, Snapshot } from '../contracts.js';
+import type { Change, ProposedAction, Snapshot, ThreadSource } from '../contracts.js';
 import { address, validDateTime, validDay } from '../reader.js';
 import { sha256 } from '../trace.js';
 
@@ -31,10 +31,12 @@ interface PlanInput {
   mailStates: Record<string, Snapshot>;
   bills: Snapshot[];
   now: Date;
+  agentMode?: 'llm' | 'offline-smoke';
+  threadSources?: ThreadSource[];
   policy: InboxPolicy;
 }
 
-export function buildPlan({ intents, calendar, mailStates, bills, now, policy }: PlanInput) {
+export function buildPlan({ intents, calendar, mailStates, bills, now, policy, agentMode = 'offline-smoke', threadSources = [] }: PlanInput) {
   const actions: ProposedAction[] = [];
   const conflicts: Change[] = [];
   const proposedCalendar = [...calendar];
@@ -43,9 +45,21 @@ export function buildPlan({ intents, calendar, mailStates, bills, now, policy }:
   const add = (playbook: PlaybookId, intent: InboxIntent, kind: ProposedAction['kind'], target: string,
     after: Snapshot, requestedTier: ProposedAction['requestedTier'] = 0,
     options: Partial<Pick<ProposedAction, 'reason' | 'contact' | 'externalGuests' | 'sensitiveTarget' | 'expectedBefore'>> = {}) => {
+    let payload = after;
+    let tier = requestedTier;
+    let reason = options.reason;
+    if (agentMode === 'llm' && (kind === 'send' || kind === 'draft') && after) {
+      if (intent.reply) payload = { ...after, subject: intent.reply.subject, text: intent.reply.text + '\n\n' + after.text };
+      else { tier = 2; reason ??= 'MODEL_DRAFT_REQUIRED'; }
+    }
+    if (intent.guidance === 'review' && reason !== 'quarantine') {
+      tier = 2;
+      reason ??= 'MODEL_GUIDANCE_REVIEW';
+    }
     actions.push({
-      playbook, intent, kind, target, version: sha256(JSON.stringify(after)),
-      after, requestedTier, ...options,
+      playbook, intent, kind, target,
+      version: sha256(JSON.stringify(kind === 'send' || kind === 'draft' ? after : payload)),
+      after: payload, requestedTier: tier, ...options, reason,
     });
   };
   const review = (playbook: PlaybookId, intent: InboxIntent, target: string, reason: string, after: Snapshot) =>
@@ -61,7 +75,7 @@ export function buildPlan({ intents, calendar, mailStates, bills, now, policy }:
     const existing = proposedCalendar.find((item) => item.id === event.id);
     const externalGuests = Boolean(existing && existing.guests.some((guest) => !contactIn(guest, policy.allowlist)));
     add(playbook, intent, 'calendar', event.id, { ...event, etag: undefined }, tier, { externalGuests, reason, expectedBefore: existing ?? null });
-    if (!externalGuests && tier < 2 && intent.confidence >= policy.confidenceThreshold) {
+    if (!externalGuests && intent.guidance !== 'review' && tier < 2 && intent.confidence >= policy.confidenceThreshold) {
       if (existing) proposedCalendar.splice(proposedCalendar.indexOf(existing), 1);
       proposedCalendar.push(event);
     }
@@ -276,9 +290,14 @@ export function buildPlan({ intents, calendar, mailStates, bills, now, policy }:
       continue;
     }
     const recipient = address(waitingOn ?? '');
-    const replied = Boolean(recipient && intents.some((entry) => entry.sender === recipient &&
-      Date.parse(entry.receivedAt) > Date.parse(item.receivedAt) &&
-      (entry.threadId === item.threadId || slug(entry.fields.project ?? '') === key)));
+    const initialThread = threadSources.filter((entry) => entry.threadId === item.threadId &&
+      Date.parse(entry.receivedAt) <= Date.parse(item.receivedAt));
+    const referenceIds = new Set(initialThread.flatMap((entry) => entry.internetId ? [entry.internetId] : []));
+    const subjectKeys = new Set(initialThread.map((entry) => entry.subjectKey).filter((subject) => subject.length >= 12));
+    const replied = Boolean(recipient && threadSources.some((entry) => !entry.sent && entry.verified &&
+      entry.sender === recipient && Date.parse(entry.receivedAt) > Date.parse(item.receivedAt) &&
+      (entry.threadId === item.threadId || entry.references?.some((id) => referenceIds.has(id)) ||
+        subjectKeys.has(entry.subjectKey))));
     add('commitment_radar_and_chaser', item, 'commitment', key, { project, deadline, waitingOn: recipient, replied });
     if (!sent) reminder('commitment_radar_and_chaser', item, 'deadline:' + key, deadline, 'Deadline · ' + project);
     const elapsed = now.getTime() - Date.parse(item.receivedAt);
@@ -333,6 +352,7 @@ export function buildPlan({ intents, calendar, mailStates, bills, now, policy }:
     ].filter(Boolean).join(' · '));
     if (booked?.after) {
       booked.after = { ...booked.after, dossier };
+      booked.relatedPlaybooks = ['pre_meeting_dossier'];
       booked.version = sha256(JSON.stringify(booked.after));
     } else {
       setCalendar('pre_meeting_dossier', context[0], { ...event, dossier });

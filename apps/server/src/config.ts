@@ -26,6 +26,9 @@ export interface ClamConfig {
   googleClientId: string;
   googleClientSecret: string;
   googleRedirectUri: string;
+  mailAttachmentsDir: string;
+  googleTokenKey: string;
+  sessionSecret: string;
   llmProvider: LlmProvider;
   llmModel: string;
   openaiApiKey: string;
@@ -119,7 +122,10 @@ export function loadConfig(): ClamConfig {
     googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET?.trim() || '',
     googleRedirectUri:
-      process.env.GOOGLE_REDIRECT_URI?.trim() || 'http://localhost:4000/api/auth/gmail/callback',
+      process.env.GOOGLE_REDIRECT_URI?.trim() || 'http://localhost:4000/api/auth/google/callback',
+    mailAttachmentsDir: path.resolve(workspaceRoot, process.env.CLAM_MAIL_ATTACHMENTS_DIR?.trim() || 'workspace/mail-attachments'),
+    googleTokenKey: process.env.CLAM_TOKEN_ENCRYPTION_KEY?.trim() || '',
+    sessionSecret: process.env.CLAM_SESSION_SECRET?.trim() || '',
     llmProvider,
     llmModel: process.env.CLAM_LLM_MODEL?.trim() || '',
     openaiApiKey: process.env.OPENAI_API_KEY?.trim() || '',

@@ -11,14 +11,16 @@
     "build": "pnpm --filter @clam/shared build && pnpm --filter @clam/agent build && pnpm --filter @clam/server build && pnpm --filter @clam/web build",
     "typecheck": "pnpm --filter @clam/shared typecheck && pnpm --filter @clam/agent typecheck && pnpm --filter @clam/server typecheck && pnpm --filter @clam/web typecheck",
     "agent:run": "tsx scripts/run-demo.ts",
-    "trap-pack:run": "tsx scripts/run-trap-pack.ts",
     "kill": "tsx scripts/kill.ts",
     "resume": "tsx scripts/kill.ts --resume",
     "verify:zero-retention": "tsx scripts/verify-zero-retention.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "agent": "tsx scripts/inbox-agent.ts",
-    "run-trap-pack": "tsx scripts/inbox-agent.ts run-trap-pack"
+    "clam-mcp": "tsx apps/server/src/mcp/stdio.ts",
+    "run-trap-pack": "tsx scripts/inbox-agent.ts run-official-trap-pack",
+    "test:adversarial": "tsx scripts/inbox-agent.ts test-adversarial",
+    "run-official-trap-pack": "tsx scripts/inbox-agent.ts run-official-trap-pack"
   },
   "devDependencies": {
     "pnpm": "^10.10.0",

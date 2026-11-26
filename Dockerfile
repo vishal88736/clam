@@ -10,5 +10,5 @@ COPY apps/web/package.json apps/web/package.json
 COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile
 COPY . .
-RUN pnpm build && install -d -o node -g node data artifacts traces apps/web/.next/cache
+RUN pnpm build && install -d -o node -g node data artifacts traces apps/web/.next/cache workspace/mail-attachments
 USER node
