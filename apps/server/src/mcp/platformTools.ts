@@ -1,8 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { GoogleAccounts, GoogleCapability, McpGrant } from '../auth/google.js';
+import { mcpScopes, type GoogleAccounts, type GoogleCapability, type McpGrant } from '../auth/google.js';
 import type { McpCaller, Mode } from '../inbox/contracts.js';
 import type { InboxEngine } from '../inbox/engine.js';
+import { genericStepScopes } from '../platform/generic.js';
 import { detectSourceCli, type MissionRunner } from '../platform/runner.js';
 import { services, type PlatformService, type Service } from '../platform/service.js';
 import { extractPhotoDetails } from '../workspace/photos.js';
@@ -81,6 +82,11 @@ export function registerPlatformTools(server: McpServer, args: {
             ...(needed.includes('photos') ? ['photos:read'] : []), ...(needed.includes('gmail') ? ['mail:read'] : []),
             ...(compiled.plan.template === 'vendor_rfq' ? ['mail:send'] : []), ...(needed.includes('calendar') ? ['calendar:propose'] : []),
           ]);
+          const program = compiled.plan.params.program;
+          if (program) {
+            requireToken(program.flatMap(genericStepScopes));
+            compiled.plan.params.mcp_scopes = mcpScopes.filter((scope) => grant.scopes.includes(scope));
+          }
           requireLive(needed);
         },
       });

@@ -11,7 +11,7 @@ export type Agent = {
   id: string; name: string; goal_prompt: string; source_cli: string; allowed_services: string[]; schedule_mode: string;
   interval_seconds: number | null; status: AgentStatus; run_count: number; last_run_at: string | null; next_run_at: string | null;
   created_at: string; state: { phase: string; pending_approvals: string[]; last_error?: string | null; picker_uri?: string | null; notes?: string[] };
-  workflow_plan: { template: string; planner: string; steps: Array<{ id: string; service: string; action: string; label: string; tier_hint: number }> };
+  workflow_plan: { template: string; planner: string; params?: { reasoning?: string }; steps: Array<{ id: string; service: string; action: string; label: string; tier_hint: number }> };
 };
 export type Profile = {
   id: string; email: string; display_name: string; avatar_url: string | null; active_agent_id: string | null; mode: 'sandbox' | 'live';
@@ -281,7 +281,8 @@ export function AgentsView({ data, revision, onTrace, onError }: {
                 <ImageIcon size={14} /> Select receipts in Google Photos</a>}
             {agent.state.phase === 'awaiting_quotes' && agent.state.notes?.[0] && <p>{agent.state.notes[0]}</p>}
             {agent.state.last_error && <p className="inbox-error">{agent.state.last_error}</p>}
-            <details><summary>Plan · {agent.workflow_plan.template} · {agent.workflow_plan.steps.length} steps</summary>
+            <details><summary>Plan · {agent.workflow_plan.planner === 'llm-planner' ? 'LLM-composed' : 'offline'} · {agent.workflow_plan.template} · {agent.workflow_plan.steps.length} steps</summary>
+              {agent.workflow_plan.params?.reasoning && <p className="agent-reasoning">{agent.workflow_plan.params.reasoning}</p>}
               <ol className="agent-plan">{agent.workflow_plan.steps.map((step) => <li key={step.id}>
                 {serviceIcon(step.service, 13)} {step.label}{step.tier_hint === 2 && <Tag tone="amber">Tier 2</Tag>}</li>)}</ol>
             </details>

@@ -92,7 +92,17 @@ The CLI calls `provision_and_run_agent`. Clam compiles the request into a valida
 | Receipt photos | Read-only Photos search, bounded extraction, receipt Sheet, Calendar payment reminders | — |
 | Anything else | A sanitized digest Doc, plus an optional tracker Sheet and Drive folder | Any outbound email |
 
-With `CLAM_AGENT_MODE=llm`, the configured model chooses the workflow and its parameters. Clam still builds the plan itself, keeps only recipients you typed, and falls back to the deterministic compiler on any model error. Add phrases like "wait up to 48 hours for replies" to set the quote window; the default is 24 hours live and immediate in the sandbox. Raster receipt photos are OCR'd with Tesseract when it is installed.
+**Any task, not only the built-in workflows.** With `CLAM_AGENT_MODE=llm`, the configured model plans every request. It writes its reasoning and composes a program from Clam's step library:
+- read: `mail.search` and `photos.extract`;
+- shape the data: `filter` and `summarize`;
+- write: `drive.folder`, `drive.save_attachments`, `drive.save_text`, `sheets.append`, `docs.write`, `calendar.reminders` and `mail.label`;
+- outbound: `mail.draft_replies` and `mail.send`.
+
+The model may also pick one of the ready-made workflows when one fits better. After the program runs, the model reviews sanitized results (counts, field names, short redacted samples) and can add up to two rounds of follow-up steps. Clam executes every step itself under the policy engine. A model can never call an unlisted tool or add a recipient you didn't write, and replies always wait for approval. Without a model, an offline composer builds a general program from the sources and outputs your request names, and the log records that fallback.
+
+For MCP-created agents, grant `mail:label` for labeling, `mail:draft` for drafts, `mail:send` for outbound mail, and `attachment:extract` when a program reads or saves attachments.
+
+Add phrases like "wait up to 48 hours for replies" to set the quote window; the default is 24 hours live and immediate in the sandbox. Raster receipt photos are OCR'd with Tesseract when it is installed.
 
 To check a real Google account end to end, run `CLAM_INBOX_LIVE=true pnpm workspace:smoke [inbox-id] [--keep]`. It creates a folder, a file, a Sheet (including a formula-injection row), and a Doc, verifies every read-back, checks Photos, then rolls back what it created unless you pass `--keep`.
 

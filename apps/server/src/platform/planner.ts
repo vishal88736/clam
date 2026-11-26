@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { mcpScopes } from '../auth/google.js';
 import { sandboxVendors } from '../sandbox/seed.js';
+import { composeProgram, describeStep, genericProgramSchema, opService, type GenericStep } from './generic.js';
 
 const serviceEnum = z.enum(['gmail', 'calendar', 'drive', 'docs', 'sheets', 'photos', 'policy', 'system']);
-export const templates = ['invoice_ledger', 'vendor_rfq', 'photo_receipts', 'inbox_digest', 'interactive'] as const;
+export const templates = ['invoice_ledger', 'vendor_rfq', 'photo_receipts', 'inbox_digest', 'generic', 'interactive'] as const;
 export type Template = (typeof templates)[number];
 
 const stepSchema = z.object({
@@ -28,6 +30,9 @@ export const workflowPlanSchema = z.object({
     calendar_reminders: z.boolean().optional(),
     folder_path: z.array(z.string().min(1).max(80)).max(5).optional(),
     quote_wait_hours: z.number().min(0).max(336).optional(),
+    program: genericProgramSchema.optional(),
+    mcp_scopes: z.array(z.enum(mcpScopes)).max(mcpScopes.length).optional(),
+    reasoning: z.string().max(1200).optional(),
     sheet_title: z.string().max(120).optional(),
     doc_title: z.string().max(120).optional(),
     keywords: z.array(z.string().max(40)).max(10).optional(),
@@ -195,8 +200,38 @@ export function planFromChoice(choice: PlannerChoice, instruction: string, optio
   return { name: (choice.name || `Agent · ${titleCase(short)}`).slice(0, 80), plan: workflowPlanSchema.parse(plan), services, scheduleMode: choice.schedule_mode };
 }
 
+/**
+ * Builds a plan from a free-form program (LLM-composed or offline-composed). Recipient guard: `mail.send` may only
+ * target addresses the user typed; anything else is removed before the plan is stored.
+ */
+export function planFromProgram(input: { program: GenericStep[]; name: string; scheduleMode: CompiledIntent['scheduleMode']; reasoning?: string },
+  instruction: string, planner: WorkflowPlan['planner']): CompiledIntent {
+  const typed = new Set(emailsIn(instruction));
+  const program = input.program.flatMap((entry): GenericStep[] => {
+    if (entry.op !== 'mail.send') return [entry];
+    const to = entry.to.map((address) => address.toLowerCase()).filter((address) => typed.has(address));
+    return to.length ? [{ ...entry, to }] : [];
+  });
+  const valid = genericProgramSchema.parse(program);
+  const services = [...new Set(valid.map((entry) => opService[entry.op]).filter((service) => service !== 'system'))] as WorkflowPlan['services'];
+  const plan: WorkflowPlan = {
+    version: 1, planner, template: 'generic', matched_playbooks: ['generic_program'], services,
+    params: { program: valid, reasoning: input.reasoning?.slice(0, 1200) },
+    steps: valid.map((entry) => step(entry.id, opService[entry.op], entry.op.replace('.', '_'), describeStep(entry).slice(0, 160),
+      'from' in entry && entry.from ? [entry.from] : [], entry.op === 'mail.draft_replies' || entry.op === 'mail.send' ? 2 : 0)),
+  };
+  return { name: input.name.slice(0, 80), plan: workflowPlanSchema.parse(plan), services, scheduleMode: input.scheduleMode };
+}
+
+/** Offline ($0) planning: specialised workflows when clearly requested, otherwise a composed general program. */
 export function compileIntent(instruction: string, options: CompileOptions): CompiledIntent {
-  return planFromChoice(deterministicChoice(instruction, options), instruction, options, 'deterministic-intent-compiler');
+  const choice = deterministicChoice(instruction, options);
+  if (choice.template !== 'inbox_digest') return planFromChoice(choice, instruction, options, 'deterministic-intent-compiler');
+  const composed = composeProgram(instruction, new Set((options.services ?? []).map((value) => value.toLowerCase())));
+  const short = instruction.replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' ');
+  return planFromProgram({ program: composed.program, name: `Agent · ${titleCase(short)}`, scheduleMode: choice.schedule_mode,
+    reasoning: 'Offline composer: no language model configured, so steps were chosen from the sources and outputs named in the request.' },
+  instruction, 'deterministic-intent-compiler');
 }
 
 export function interactivePlan(): WorkflowPlan {

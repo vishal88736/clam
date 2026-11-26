@@ -91,9 +91,12 @@ async function until<T>(label: string, read: () => Promise<T>, done: (value: T) 
   }
 }
 
-function stop(child: ChildProcess | undefined) {
-  if (!child || child.exitCode !== null) return;
+async function stop(child: ChildProcess | undefined) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
   try { process.kill(-child.pid!, 'SIGTERM'); } catch { child.kill('SIGTERM'); }
+  // Wait for the process to release its files before the profile directory is removed.
+  await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5000))]);
 }
 
 it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artifact previews to the website in headless Chromium with zero console errors', async () => {
@@ -218,9 +221,9 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
   } finally {
     await client?.close().catch(() => undefined);
     cdp?.close();
-    stop(browser);
-    stop(web);
+    await stop(browser);
+    await stop(web);
     await runtime.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }, 240_000);

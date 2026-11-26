@@ -43,8 +43,8 @@ const createAgent = async (runtime: Runtime, instruction: string) => {
 
 it('plans with the LLM when available, drops model-invented recipients, and falls back to the deterministic compiler', async () => {
   const replies = [
-    JSON.stringify({ template: 'vendor_rfq', schedule_mode: 'one_shot', name: 'Mug Quotes', vendors: ['alice@supply.example', 'evil@attacker.example'],
-      item: '200 ceramic mugs', quantity: 200, book: null, keywords: null }),
+    JSON.stringify({ reasoning: 'The user wants supplier pricing compared; the vendor RFQ workflow fits.', name: 'Mug Quotes', schedule_mode: 'one_shot',
+      workflow: { template: 'vendor_rfq', vendors: ['alice@supply.example', 'evil@attacker.example'], item: '200 ceramic mugs', quantity: 200, book: null } }),
     'I think you should email some vendors!',
   ];
   const prompts: string[] = [];
@@ -66,6 +66,7 @@ it('plans with the LLM when available, drops model-invented recipients, and fall
       expect(planned.plan_summary).toMatchObject({ template: 'vendor_rfq', planner: 'llm-planner' });
       const agent = runtime.platform.agent(planned.agent_id)!;
       expect(agent.name).toBe('Mug Quotes');
+      expect(agent.workflow_plan.params.reasoning).toContain('vendor RFQ workflow fits');
       // The model invented evil@attacker.example; only addresses the user typed survive.
       expect(agent.workflow_plan.params).toMatchObject({ vendors: ['alice@supply.example'], item: '200 ceramic mugs', quantity: 200 });
       expect(agent.workflow_plan.steps.some((step) => step.id === 'booking')).toBe(false);
@@ -144,3 +145,166 @@ it.skipIf(!hasTesseract)('OCRs a raster receipt photo in the bounded parser with
     fields: { merchant: 'CORNER PHARMACY', amount: 23.45, currency: 'USD', date: '2026-12-03', due: '2026-12-18', reference: 'RX-7781' } });
   expect(JSON.stringify(details)).not.toContain(data.toString('base64').slice(0, 40));
 }, 30_000);
+
+const generic = (runtime: Runtime, agentId: string) => runtime.platform.agent(agentId)!;
+const sheetRows = (runtime: Runtime, title: string) => {
+  const row = runtime.platform.artifacts(user).find((item) => item.title === title)!;
+  return (runtime.inbox.store.entity('sandbox', 'workspace', row.logical_key) as { tabs: { headers: string[]; rows: unknown[][] }[] }).tabs[0];
+};
+
+it('composes any request offline into a general program across Gmail, Sheets, labels, and Calendar', () => runtimeTest(async (runtime) => {
+  const { agent_id, plan_summary } = await createAgent(runtime,
+    'Find emails about the launch, put them in a tracker sheet, label them, and remind me of any deadlines on my calendar.');
+  expect(plan_summary).toMatchObject({ template: 'generic', planner: 'deterministic-intent-compiler' });
+  const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
+  expect(agent.workflow_plan.params.program!.map((entry) => entry.op)).toEqual(['mail.search', 'sheets.append', 'mail.label', 'calendar.reminders']);
+  const tab = sheetRows(runtime, 'Clam - Launch');
+  expect(tab.headers).toEqual(['Date', 'From', 'Subject', 'Deadline', 'Source ID']);
+  expect(tab.rows.map((row) => row[3]).sort()).toEqual(['2026-12-10', '2026-12-11']);
+  for (const id of ['deadline-a', 'deadline-b']) {
+    expect((runtime.inbox.store.entity('sandbox', 'mail', id) as { labels: string[] }).labels).toContain('CLAM_LAUNCH');
+  }
+  const reminders = runtime.inbox.store.entities<{ id: string; start: string }>('sandbox', 'calendar').filter((event) => event.id.startsWith('clam-reminder-'));
+  expect(reminders.map((event) => event.start).sort()).toEqual(['2026-12-10T09:00:00.000Z', '2026-12-11T09:00:00.000Z']);
+  const logs = runtime.platform.logs(user, { agentId: agent_id });
+  expect(new Set(logs.map((entry) => entry.service))).toEqual(new Set(['system', 'gmail', 'sheets', 'calendar']));
+}), 60_000);
+
+it('drafts replies for a free-form request and holds every draft for approval', () => runtimeTest(async (runtime) => {
+  const { agent_id } = await createAgent(runtime, 'Draft replies to everyone who emailed me about meetings.');
+  const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'input_required');
+  const drafts = agent.state.pending_approvals.map((id) => runtime.inbox.store.approval(id)!);
+  expect(drafts.map((item) => item.proposed_action.effectiveContact).sort()).toEqual(['new@outside.example', 'sam@team.example']);
+  expect(drafts.every((item) => item.triggered_rule_id === 'AGENT_REPLY_APPROVAL' && item.proposed_action.kind === 'draft')).toBe(true);
+  expect(runtime.inbox.store.sqlite.prepare("SELECT count(*) AS n FROM inbox_actions WHERE kind='draft'").get()).toEqual({ n: 0 });
+}), 60_000);
+
+it('lets the LLM think: it composes its own program, reviews sanitized results, and adds steps under the same gates', async () => {
+  const prompts: string[] = [];
+  const replies = [
+    JSON.stringify({ reasoning: 'Look for order and delivery mail, track it in a sheet, then tell Sam.', name: 'Order Watch', schedule_mode: 'one_shot',
+      program: [
+        { id: 'orders', op: 'mail.search', keywords: ['order'] },
+        { id: 'sheet', op: 'sheets.append', from: 'orders', title: 'Order Tracker', columns: ['Date', 'Order', 'Status', 'Return by'] },
+        { id: 'tell', op: 'mail.send', to: ['sam@team.example', 'attacker@evil.example'], subject: 'Order update', body: '{{count}} order emails tracked.', from: 'orders' },
+      ] }),
+    JSON.stringify({ reasoning: 'One order has a return deadline; add a reminder.', done: false,
+      steps: [{ id: 'returns', op: 'filter', from: 'orders', field: 'return_by', exists: true },
+        { id: 'remind', op: 'calendar.reminders', from: 'returns', date_field: 'return_by', title: 'Return window closes for {{order}}' }] }),
+    JSON.stringify({ reasoning: 'Everything requested is done.', done: true }),
+  ];
+  const model: Server = createServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => { prompts.push(JSON.parse(body).prompt); response.end(JSON.stringify({ response: replies.shift() ?? '{}' })); });
+  });
+  await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
+  try {
+    await runtimeTest(async (runtime) => {
+      const { agent_id, plan_summary } = await createAgent(runtime, 'Keep an eye on my orders in a sheet and email sam@team.example an update.');
+      expect(plan_summary).toMatchObject({ template: 'generic', planner: 'llm-planner' });
+      const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
+      // The model-injected recipient never reaches the plan.
+      expect(agent.workflow_plan.params.program!.find((entry) => entry.op === 'mail.send')).toMatchObject({ to: ['sam@team.example'] });
+      expect(agent.workflow_plan.params.program!.map((entry) => entry.id)).toEqual(['orders', 'sheet', 'tell', 'returns', 'remind']);
+      expect(sheetRows(runtime, 'Order Tracker').rows.map((row) => row[2]).sort()).toEqual(['confirmed', 'delivered', 'shipped']);
+      const reminder = runtime.inbox.store.entities<{ id: string; title: string; start: string }>('sandbox', 'calendar').find((event) => event.id.startsWith('clam-reminder-'))!;
+      expect(reminder).toMatchObject({ title: 'Return window closes for ORDER-500', start: '2026-12-21T09:00:00.000Z' });
+      // sam@team.example is allowlisted, so the update was sent autonomously with disclosure.
+      const sent = runtime.inbox.store.entities<{ to: string; headers: Record<string, string> }>('sandbox', 'review').filter((entry) => entry?.headers);
+      expect(sent).toEqual([expect.objectContaining({ to: 'sam@team.example', headers: { 'X-Agent-Automated': 'true' } })]);
+      const reviews = runtime.platform.logs(user, { agentId: agent_id, service: 'system' }).filter((entry) => entry.action_name === 'llm_review');
+      expect(reviews.map((entry) => entry.output_summary)).toEqual(['Everything requested is done. → done', 'One order has a return deadline; add a reminder. → 2 more step(s)']);
+      // Review prompts carry sanitized observations, not raw email bodies.
+      expect(prompts[1]).toContain('"step":"orders"');
+      expect(prompts[1]).not.toContain('Return by: 2026-12-21\\nStatus');
+    }, { mode: 'llm', provider: 'ollama', model: 'fake-planner', endpoint: 'http://127.0.0.1:' + (model.address() as { port: number }).port,
+      timeoutMs: 5000, rates: { input: 0, output: 0 } });
+  } finally {
+    model.close();
+  }
+}, 60_000);
+
+it('keeps model review steps inside the originating MCP token scopes', async () => {
+  const replies = [
+    { reasoning: 'Find orders first.', program: [{ id: 'orders', op: 'mail.search', keywords: ['order'] }] },
+    { reasoning: 'Label the matching mail and count the items.', done: false, steps: [
+      { id: 'label', op: 'mail.label', from: 'orders', label: 'CLAM_ORDERS' },
+      { id: 'summary', op: 'summarize', from: 'orders' },
+    ] },
+    { reasoning: 'Review finished.', done: true },
+  ];
+  const model = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => response.end(JSON.stringify({ response: JSON.stringify(replies.shift()) })));
+  });
+  await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
+  try {
+    await runtimeTest(async (runtime, base) => {
+      const scopes = ['agent:manage', 'mail:read'];
+      const minted = await runtime.app.inject({ method: 'POST', url: '/api/inbox/mcp-tokens', payload: { inbox_id: 'sandbox', scopes } });
+      expect(minted.statusCode).toBe(200);
+      const client = new Client({ name: 'cline', version: '1' });
+      await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp'), {
+        requestInit: { headers: { Authorization: 'Bearer ' + minted.json().token } },
+      }));
+      try {
+        const result = payload(await client.callTool({ name: 'provision_and_run_agent', arguments: {
+          user_instruction: 'Summarize order emails', wait_seconds: 15,
+        } }));
+        expect(result).toMatchObject({ status: 'completed', plan_summary: { planner: 'llm-planner' } });
+        const agent = generic(runtime, result.agent_id);
+        expect(agent.workflow_plan.params.mcp_scopes).toEqual(expect.arrayContaining(scopes));
+        expect(agent.workflow_plan.params.program!.map((step) => step.id)).toEqual(['orders', 'summary']);
+        const log = runtime.platform.logs(user, { agentId: agent.id, service: 'policy' });
+        expect(log).toContainEqual(expect.objectContaining({ action_name: 'review_step_rejected', policy_rule_id: 'MCP_SCOPE_REQUIRED' }));
+        expect(runtime.inbox.store.sqlite.prepare("SELECT count(*) AS n FROM inbox_actions WHERE kind='mail'").get()).toEqual({ n: 0 });
+      } finally {
+        await client.close();
+      }
+    }, { mode: 'llm', provider: 'ollama', model: 'fake-planner', endpoint: 'http://127.0.0.1:' + (model.address() as { port: number }).port,
+      timeoutMs: 5000, rates: { input: 0, output: 0 } });
+  } finally {
+    model.close();
+  }
+}, 60_000);
+
+it('repairs real model mistakes and drops ungrounded senders, time windows, and placeholder recipients', async () => {
+  const { repairProgram } = await import('../apps/server/src/platform/generic.js');
+  // Verbatim shapes produced by qwen2.5:7b during evaluation.
+  const { steps, issues } = repairProgram([
+    { id: 'search_emails', op: 'mail.search', keywords: ['order', 'delivery'], from_contains: 'example.com', newer_than_days: 30, include_attachments: false, limit: 100 },
+    { id: 'create_tracker_sheet', op: 'sheets.append', from: 'search_emails', title: 'Tracker', tab: true, columns: ['From', 'Subject', 'Date', 'Deadline'] },
+    { id: 'label_emails', op: 'mail.label', from: 'search_emails', label: 'CLAM_UPPER_SNAKE' },
+    { id: 'add_calendar_reminders', op: 'calendar.reminders', from: 'search_emails', date_field: 'Deadline', title: 'Due', time_utc: true },
+    { id: 'write_doc', op: 'docs.write', title: 'Summary', heading: 'Summary', content: '{{summary}}', folder: 'Summary Docs', mode: 'overwrite' },
+    { id: 'send_email', op: 'mail.send', to: ['sam@team.example', 'user_email'], subject: 'Summary', body: 'Done', from: 'clam@example.com' },
+    { id: 'approval', op: 'mail.send', to: ['user_email'], subject: 'x', body: 'y' },
+    { id: 'mystery', op: 'shell.exec', command: 'rm -rf /' },
+  ], 'Summarize my order and delivery emails into a doc, track them, and email sam@team.example');
+  expect(steps.find((step) => step.op === 'mail.search')).toEqual({ id: 'search_emails', op: 'mail.search', keywords: ['order', 'delivery'],
+    include_attachments: false, limit: 50 });
+  expect(steps.find((step) => step.op === 'sheets.append')).toMatchObject({ tab: 'Rows' });
+  expect(steps.find((step) => step.op === 'mail.label')).toMatchObject({ label: 'CLAM_ORDER' });
+  expect(steps.find((step) => step.op === 'calendar.reminders')).toMatchObject({ date_field: 'deadline', time_utc: '09:00' });
+  expect(steps.find((step) => step.op === 'docs.write')).toMatchObject({ folder: ['Summary Docs'], mode: 'replace_section' });
+  expect(steps.filter((step) => step.op === 'mail.send')).toEqual([{ id: 'send_email', op: 'mail.send', to: ['sam@team.example'], subject: 'Summary', body: 'Done' }]);
+  expect(issues).toEqual(['step "approval": mail.send needs a recipient the user wrote; removed', 'step 8: unknown op "shell.exec"']);
+});
+
+it('repairs data flow: recipients are not senders, attachments come from mail, and {{summary}} gets a summarize step', async () => {
+  const { repairProgram } = await import('../apps/server/src/platform/generic.js');
+  // Verbatim shapes from the second qwen2.5:7b evaluation.
+  const { steps } = repairProgram([
+    { id: 'search_orders', op: 'mail.search', keywords: ['order'], from_contains: 'sam@team.example' },
+    { id: 'search_emails', op: 'mail.search', keywords: ['billing', 'invoice'], include_attachments: true },
+    { id: 'extract_pdfs', op: 'photos.extract', category: 'DOCUMENTS' },
+    { id: 'save_attachments', op: 'drive.save_attachments', from: 'extract_pdfs', folder: ['Invoices'] },
+    { id: 'send_summary', op: 'mail.send', to: ['sam@team.example'], subject: 'Summary', body: '{{summary}}' },
+  ], 'Make a doc summarizing my order emails, save invoice PDFs, then email it to sam@team.example');
+  expect(steps.find((step) => step.id === 'search_orders')).not.toHaveProperty('from_contains');
+  expect(steps.find((step) => step.id === 'save_attachments')).toMatchObject({ from: 'search_emails' });
+  expect(steps.map((step) => step.id)).toEqual(['search_orders', 'search_emails', 'extract_pdfs', 'save_attachments', 'summary_for_send_summary', 'send_summary']);
+  expect(repairProgram([{ id: 'a', op: 'mail.search', keywords: ['x'], from_contains: 'billing@aws.example' }],
+    'Track invoices from billing@aws.example').steps[0]).toMatchObject({ from_contains: 'billing@aws.example' });
+});

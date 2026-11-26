@@ -174,6 +174,14 @@ export class PlatformService extends EventEmitter {
     return agent;
   }
 
+  /** Records follow-up steps the LLM added while reviewing its own progress. */
+  updatePlan(id: string, plan: WorkflowPlan) {
+    this.store.sqlite.prepare('UPDATE user_agents SET workflow_plan_json=?, updated_at=? WHERE id=?').run(JSON.stringify(plan), now(), id);
+    const agent = this.agent(id)!;
+    this.publish({ type: 'agent.updated', user_id: agent.user_id, data: agent });
+    return agent;
+  }
+
   dueAgents(at = now()): AgentRecord[] {
     return (this.store.sqlite.prepare("SELECT * FROM user_agents WHERE status='active' AND next_run_at IS NOT NULL AND next_run_at<=? ORDER BY next_run_at LIMIT 5")
       .all(at) as Record<string, unknown>[]).map(decodeAgent);
@@ -230,7 +238,7 @@ export class PlatformService extends EventEmitter {
   }): LogEntry {
     const entry: LogEntry = {
       id: randomUUID(), user_id: input.userId, agent_id: input.agentId, mission_run_id: input.runId, step_index: this.nextStepIndex(input.agentId),
-      service: input.service, action_name: input.action, input_summary: clip(input.input), output_summary: clip(input.output),
+      service: input.service, action_name: input.action, input_summary: clip(input.input), output_summary: clip(input.output, 700),
       artifact_id: input.artifactId ?? null, policy_verdict: input.verdict, policy_rule_id: input.ruleId, verified: input.verified,
       trace_step_hash: input.traceStepHash ?? null, created_at: now(),
     };

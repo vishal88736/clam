@@ -10,6 +10,7 @@ import { actionsGranted, authRequest, connectionStatus, GoogleAccountBar, useGoo
 const choices = [
   ['mail:read', 'Read mail and threads'], ['attachment:extract', 'Extract attachment text'],
   ['mail:draft', 'Request drafts'], ['mail:send', 'Request or send policy-allowed mail'],
+  ['mail:label', 'Label matching mail in agent workflows'],
   ['calendar:propose', 'Read or propose calendar changes'],
   ['agent:manage', 'Create, switch, and inspect persistent agents'], ['workspace:write', 'Write Drive folders/files, Docs, and Sheets'],
   ['photos:read', 'Search and extract receipt photos (read-only)'],

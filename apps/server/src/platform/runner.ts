@@ -11,8 +11,9 @@ import { canonicalJson, sha256 } from '../inbox/trace.js';
 import { sandboxClock, type ReaderMessage } from '../sandbox/seed.js';
 import { extractPhotoDetails, type PhotoDetails } from '../workspace/photos.js';
 import { sanitizeCell } from '../workspace/sanitize.js';
-import { compileIntent, interactivePlan, planFromChoice, type CompiledIntent, type WorkflowPlan } from './planner.js';
-import { llmChoice } from './llmPlanner.js';
+import { compileIntent, interactivePlan, planFromChoice, planFromProgram, type CompiledIntent, type WorkflowPlan } from './planner.js';
+import { llmPlan } from './llmPlanner.js';
+import { ProgramExecutor } from './programExecutor.js';
 import type { AgentRecord, PlatformService, ScheduleMode, Service, SourceCli } from './service.js';
 import { namespace, verdictLabel, WorkspaceOps } from './workspaceOps.js';
 
@@ -124,11 +125,18 @@ export class MissionRunner {
   }
 
   /** LLM planner when the agent runs in llm mode; any planner failure falls back to the deterministic compiler. */
-  async plan(instruction: string, services: string[] | undefined, inboxId: string): Promise<{ compiled: CompiledIntent; fallback: string | null }> {
+  async plan(instruction: string, services: string[] | undefined, inboxId: string): Promise<{ compiled: CompiledIntent; fallback: string | null; repairs?: string[] }> {
     const options = { services, mode: inboxId === 'sandbox' ? 'sandbox' as const : 'live' as const };
     if (this.engine.agent.mode === 'llm') {
       try {
-        return { compiled: planFromChoice(await llmChoice(this.engine.agent, instruction), instruction, options, 'llm-planner'), fallback: null };
+        const planned = await llmPlan(this.engine.agent, instruction, options.mode);
+        if (planned.kind === 'program') {
+          return { compiled: planFromProgram({ program: planned.program, name: planned.name, scheduleMode: planned.scheduleMode, reasoning: planned.reasoning },
+            instruction, 'llm-planner'), fallback: null, repairs: planned.issues };
+        }
+        const compiled = planFromChoice(planned.choice, instruction, options, 'llm-planner');
+        compiled.plan.params.reasoning = planned.reasoning;
+        return { compiled, fallback: null };
       } catch (error) {
         return { compiled: compileIntent(instruction, options), fallback: errorCode(error) };
       }
@@ -142,7 +150,7 @@ export class MissionRunner {
     authorize?: (compiled: CompiledIntent, services: Service[]) => void;
   }) {
     this.engine.guard();
-    const { compiled, fallback } = await this.plan(input.instruction, input.services, input.inboxId);
+    const { compiled, fallback, repairs } = await this.plan(input.instruction, input.services, input.inboxId);
     this.engine.guard();
     const services = [...new Set([...compiled.services, ...(input.services ?? []).filter((value): value is Service =>
       ['gmail', 'calendar', 'drive', 'docs', 'sheets', 'photos'].includes(value))])];
@@ -155,8 +163,13 @@ export class MissionRunner {
     });
     this.platform.log({ userId: input.userId, agentId: agent.id, runId: null, service: 'system', action: 'compile_plan',
       input: input.instruction, output: `${compiled.plan.planner}: ${compiled.plan.template} · ${compiled.plan.steps.length} steps · ${services.join(', ')}` +
-        (fallback ? ` (LLM planner unavailable: ${fallback})` : ''),
+        (fallback ? ` (LLM planner unavailable: ${fallback})` : '') + (compiled.plan.params.reasoning ? ` — ${compiled.plan.params.reasoning}` : ''),
       verdict: 'ALLOW_TIER_0', ruleId: fallback ? 'PLAN_FALLBACK_DETERMINISTIC' : 'PLAN_VALIDATED', verified: true });
+    if (repairs?.length) {
+      this.platform.log({ userId: input.userId, agentId: agent.id, runId: null, service: 'policy', action: 'plan_steps_rejected',
+        input: `${repairs.length} model step(s) failed validation or grounding`, output: repairs.join(' | '),
+        verdict: 'BLOCKED', ruleId: 'PLAN_STEP_REJECTED', verified: true });
+    }
     const switched = input.autoSwitch ? this.platform.switchAgent(input.userId, agent.id, input.switchedBy,
       input.switchedBy === 'cli_auto' ? `Auto-switched after ${input.sourceCli} provisioned "${agent.name}"` : `Created "${agent.name}" from the web console`) : null;
     setImmediate(() => void this.tick());
@@ -164,6 +177,7 @@ export class MissionRunner {
       agent_id: agent.id, name: agent.name, status: agent.status, switched: Boolean(switched),
       plan_summary: {
         template: compiled.plan.template, planner: compiled.plan.planner, services, schedule_mode: scheduleMode,
+        reasoning: compiled.plan.params.reasoning ?? null,
         steps: compiled.plan.steps.map((step) => `${step.service}.${step.action}${step.tier_hint === 2 ? ' [Tier 2 approval]' : ''}: ${step.label}`),
       },
       dashboard_url: this.options.webOrigin.replace(/\/$/, '') + '/#agents',
@@ -316,6 +330,7 @@ export class MissionRunner {
       case 'vendor_rfq': return this.vendorRfq(agent, context, ops);
       case 'photo_receipts': return this.photoReceipts(agent, context, ops);
       case 'inbox_digest': return this.inboxDigest(agent, context, ops);
+      case 'generic': return new ProgramExecutor(this.engine, this.platform, agent, context, ops).run();
       default: return Promise.resolve({ pending: [], phase: 'done', notes: [] });
     }
   }

@@ -278,12 +278,18 @@ it('enforces least-privilege Workspace scopes, token scopes, and the determinist
       after: { type: 'google_sheet', title: 'T', folder: null, tabs: [{ name: 'A', headers: ['x'], rows: [['=CMD|"/c calc"!A1']] }] } }).ruleId)
       .toBe('WORKSPACE_FORMULA_INJECTION');
     for (const instruction of ['Remind me about stuff', 'Make a tracker sheet of newsletters in a Drive folder']) {
-      expect(compileIntent(instruction, { mode: 'sandbox' }).plan.template).toBe('inbox_digest');
+      expect(compileIntent(instruction, { mode: 'sandbox' }).plan.template).toBe('generic');
     }
 
     const readOnly = await connect(runtime, base, ['agent:manage', 'mail:read']);
     expect(payload(await readOnly.callTool({ name: 'provision_and_run_agent', arguments: { user_instruction: 'Log my invoices into a Google Sheet' } })))
       .toEqual({ error: 'MCP_SCOPE_REQUIRED' });
+    for (const user_instruction of ['Email sam@team.example a summary of order emails', 'Draft replies to people who emailed me about meetings',
+      'Label launch emails CLAM_LAUNCH']) {
+      expect(compileIntent(user_instruction, { mode: 'sandbox' }).plan.template).toBe('generic');
+      expect(payload(await readOnly.callTool({ name: 'provision_and_run_agent', arguments: { user_instruction } })))
+        .toEqual({ error: 'MCP_SCOPE_REQUIRED' });
+    }
     expect(runtime.platform.agents('clam-local-sandbox')).toHaveLength(0);
     await readOnly.close();
   }), 60_000);

@@ -35,7 +35,7 @@ const tokenEndpoint = 'https://oauth2.googleapis.com/token';
 const retiring = 30_000;
 export const sessionCookie = 'clam_session';
 export const flowCookie = 'clam_google_flow';
-export const mcpScopes = ['mail:read', 'attachment:extract', 'mail:draft', 'mail:send', 'calendar:propose', 'inbox:manage',
+export const mcpScopes = ['mail:read', 'attachment:extract', 'mail:draft', 'mail:send', 'mail:label', 'calendar:propose', 'inbox:manage',
   'agent:manage', 'workspace:write', 'photos:read'] as const;
 export const sandboxMcpOwner = 'clam-local-sandbox';
 export type AuthStage = keyof typeof scopes;

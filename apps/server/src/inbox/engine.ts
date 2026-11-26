@@ -77,6 +77,7 @@ export interface MissionContext {
   readonly signal: AbortSignal;
   record(stage: 'PLAN' | 'CHECK' | 'POLICY', detail: Record<string, unknown>): TraceStep;
   execute(action: SafeAction): Promise<MissionOutcome>;
+  read(kind: ActionKind, target: string): Promise<Snapshot>;
   queueBatch(actions: SafeAction[], reason: string): Promise<MissionOutcome>;
   checkout(): void;
   charge(): Promise<void>;
@@ -481,6 +482,7 @@ export class InboxEngine extends EventEmitter {
         checkout: () => this.checkout(session),
         charge: () => this.charge(session),
         execute: (action) => this.missionAction(session, action),
+        read: async (kind, target) => { this.checkout(session); return this.target(mode).read({ kind, target }); },
         queueBatch: (actions, reason) => this.missionBatch(session, actions, reason),
       };
       await work(context);
