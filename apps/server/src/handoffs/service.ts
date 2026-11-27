@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { handoffDefaults, handoffId, scanOutboundSecrets, scanPromptInjection, type HandoffInput } from '@clam/shared';
+import { handoffDefaults, handoffId, scanOutboundSecrets, scanPromptInjection, type HandoffInput } from '@siftvane/shared';
 import { canonicalJson, sha256 } from '../inbox/trace.js';
 import type { InboxStore } from '../inbox/store.js';
 import type { Snapshot } from '../inbox/contracts.js';
@@ -67,7 +67,7 @@ export class HandoffService {
   provision(id: string) {
     const member = this.member(id);
     if (member) return member;
-    const email = id + '@clam.local';
+    const email = id + '@siftvane.local';
     this.store.sqlite.prepare("INSERT INTO pod_inboxes VALUES (?, 'sandbox-pod', ?, 'agent')").run(id, email);
     return this.member(id)!;
   }
@@ -75,7 +75,7 @@ export class HandoffService {
   mint(inboxId: string, scopes: string[]) {
     if (!this.member(inboxId)) throw new Error('INBOX_NOT_AVAILABLE');
     if (!scopes.length || scopes.some((scope) => !podScopes.some((allowed) => scope === allowed))) throw new Error('MCP_SCOPE_REQUIRED');
-    const token = 'clm_pod_' + randomBytes(32).toString('base64url');
+    const token = 'siftvane_pod_' + randomBytes(32).toString('base64url');
     const expiry = Date.now() + 7 * 86_400_000;
     this.store.sqlite.prepare('INSERT INTO pod_mcp_tokens VALUES (?,?,?,?,?)')
       .run(sha256(token), randomUUID(), inboxId, JSON.stringify([...new Set(scopes)]), expiry);
@@ -83,7 +83,7 @@ export class HandoffService {
   }
 
   authenticate(token: string): PodGrant | undefined {
-    if (!/^clm_pod_[\w-]{43}$/.test(token)) return undefined;
+    if (!/^(?:siftvane|clm)_pod_[\w-]{43}$/.test(token)) return undefined;
     const row = this.store.sqlite.prepare('SELECT * FROM pod_mcp_tokens WHERE token_hash=? AND expires_at>?').get(sha256(token), Date.now());
     if (!row) return undefined;
     return { tokenId: String(row.token_id), inboxId: String(row.inbox_id), scopes: JSON.parse(String(row.scopes)) as string[] };
@@ -97,22 +97,23 @@ export class HandoffService {
 
   private headers(message: Omit<SignedHandoff, 'headers'>) {
     return {
-      'X-Clam-Agent-Origin': message.from_inbox_id,
-      'X-Clam-Handoff-Id': message.id,
-      'X-Clam-Hop-Count': String(message.hop_count),
-      'X-Clam-Max-Hops': String(message.max_hops),
-      'X-Clam-Handoff-Sig': this.signature(message),
+      'X-Siftvane-Agent-Origin': message.from_inbox_id,
+      'X-Siftvane-Handoff-Id': message.id,
+      'X-Siftvane-Hop-Count': String(message.hop_count),
+      'X-Siftvane-Max-Hops': String(message.max_hops),
+      'X-Siftvane-Handoff-Sig': this.signature(message),
     };
   }
 
   verify(message: SignedHandoff) {
     if (message.payload.trust_level !== 'untrusted_external') return false;
-    const expected = this.headers(message);
-    return Object.entries(expected).every(([key, value]) => {
-      const provided = message.headers[key];
+    const expected = Object.entries(this.headers(message));
+    const matches = (prefix: string) => expected.every(([key, value]) => {
+      const provided = message.headers[key.replace('X-Siftvane-', prefix)];
       return typeof provided === 'string' && provided.length === value.length &&
         timingSafeEqual(Buffer.from(provided), Buffer.from(value));
     });
+    return matches('X-Siftvane-') || matches('X-Clam-');
   }
 
   private rows(podId: string, threadId: string, after = 0) {
@@ -190,7 +191,7 @@ export class HandoffService {
     if (!row) return null;
     const { payload_json, ordinal: _ordinal, ...facts } = row;
     const signed = { ...facts, ...JSON.parse(payload_json) } as SignedHandoff & { status: HandoffStatus; trace_step_id: string | null };
-    return this.verify(signed) ? signed : null;
+    return this.verify(signed) ? { ...signed, headers: this.headers(signed) } : null;
   }
 
   list(inboxId: string) {

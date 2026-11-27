@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { EphemeralEmail } from '@clam/shared';
-import { createClamApp } from '../apps/server/src/app.js';
+import type { EphemeralEmail } from '@siftvane/shared';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 import { compilePolicyDeterministic } from '../apps/server/src/policy/compiler.js';
 
-describe('Clam Policy Compiler & Two-Stage Fail-Closed Engine', () => {
+describe('Siftvane Policy Compiler & Two-Stage Fail-Closed Engine', () => {
   it('compiles plain-English travel rule into deterministic gates and semantic scopes', () => {
     const ir = compilePolicyDeterministic(
       'Read flight, hotel and booking emails and build my itinerary. Draft replies to hosts for me to review. Never send.'
@@ -28,7 +28,7 @@ describe('Clam Policy Compiler & Two-Stage Fail-Closed Engine', () => {
   });
 
   it('Default-Deny Test: travel agent denies password resets, bank alerts, OTPs, and medical records', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const travelAgent = (await runtime.agentService.getAgent('ag_travel'))!;
       const sensitiveIds = [
@@ -81,7 +81,7 @@ describe('Clam Policy Compiler & Two-Stage Fail-Closed Engine', () => {
   });
 
   it('Semantic-Over-Sender Test: unseen sender billing@new-unknown-utility.io is ALLOWED for invoice rules without sender whitelist', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const { agent } = await runtime.agentService.createAgent({
         name: 'Ad-hoc Billing Agent',
@@ -120,7 +120,7 @@ describe('Clam Policy Compiler & Two-Stage Fail-Closed Engine', () => {
   });
 
   it('Hard-Deny Test: send_email is deterministically blocked when Never send is set, even with adversarial payload', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const travelAgent = (await runtime.agentService.getAgent('ag_travel'))!;
 
@@ -145,8 +145,8 @@ describe('Clam Policy Compiler & Two-Stage Fail-Closed Engine', () => {
     }
   });
 
-  it('Deterministic Outbound Secret Gate blocks OTP or Clam token leakage', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+  it('Deterministic Outbound Secret Gate blocks OTP or Siftvane token leakage', async () => {
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const { agent } = await runtime.agentService.createAgent({
         name: 'Permissive Sender',
@@ -160,7 +160,7 @@ describe('Clam Policy Compiler & Two-Stage Fail-Closed Engine', () => {
           outbound: {
             to: 'someone@example.com',
             subject: 'Code',
-            body: 'Here is the verification code: 849201 and token clm_ag_0123456789abcdef',
+            body: 'Here is the verification code: 849201 and token siftvane_ag_0123456789abcdef',
           },
         },
         { skipRateLimit: true }
@@ -175,7 +175,7 @@ describe('Clam Policy Compiler & Two-Stage Fail-Closed Engine', () => {
   });
 
   it('Fail-Closed Test: classifier timeout, error, or low confidence results in DENY', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const travelAgent = (await runtime.agentService.getAgent('ag_travel'))!;
       const flightEmail = (await runtime.mailService.sandbox.getMessage('msg_flight_delta_01'))!;

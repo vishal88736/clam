@@ -1,4 +1,4 @@
-# Clam sandbox adversarial regression
+# Siftvane sandbox adversarial regression
 
 Result **PASS** across 5 adversarial inputs and two safety checks.
 

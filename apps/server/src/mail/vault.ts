@@ -101,8 +101,8 @@ export function hashToken(rawToken: string): string {
 
 export function generateAgentToken(): { raw: string; prefix: string; hash: string } {
   const secret = crypto.randomBytes(20).toString('hex');
-  const raw = `clm_ag_${secret}`;
-  const prefix = `${raw.slice(0, 13)}...${raw.slice(-4)}`;
+  const raw = `siftvane_ag_${secret}`;
+  const prefix = `siftvane_ag_${secret.slice(0, 6)}...${secret.slice(-4)}`;
   const hash = hashToken(raw);
   return { raw, prefix, hash };
 }

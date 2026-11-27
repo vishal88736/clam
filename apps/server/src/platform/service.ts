@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { connectedServices, sandboxMcpOwner } from '../auth/google.js';
 import type { InboxStore } from '../inbox/store.js';
 import type { WorkspaceRegistry } from '../workspace/registry.js';
+import type { PlannerCall } from './llmPlanner.js';
 import type { WorkflowPlan } from './planner.js';
 
 export const services = ['gmail', 'calendar', 'drive', 'docs', 'sheets', 'photos'] as const;
@@ -20,10 +21,11 @@ export interface AgentState {
   phase: string;
   pending_approvals: string[];
   phase_started_at?: string;
-  sent_vendors?: string[];
   notes?: string[];
   last_error?: string | null;
   last_run_id?: string | null;
+  running_run_id?: string | null;
+  planning_calls?: PlannerCall[];
   interactive?: boolean;
   picker_uri?: string | null;
 }
@@ -73,6 +75,7 @@ export interface PlatformEvent {
 }
 
 const now = () => new Date().toISOString();
+type AgentPatch = Partial<Pick<AgentRecord, 'status' | 'next_run_at' | 'last_run_at' | 'run_count' | 'state'>>;
 const clip = (value: string, max = 280) => value.length > max ? value.slice(0, max - 1) + '…' : value;
 
 function decodeAgent(row: Record<string, unknown>): AgentRecord {
@@ -104,7 +107,7 @@ export class PlatformService extends EventEmitter {
   ensureUser(userId: string, defaultInbox?: string) {
     const at = now();
     if (userId === sandboxMcpOwner) {
-      this.users.prepare("INSERT OR IGNORE INTO users (id,google_sub,email,name,updated_at) VALUES (?,?,'sandbox@clam.local','Local sandbox operator',?)")
+      this.users.prepare("INSERT OR IGNORE INTO users (id,google_sub,email,name,updated_at) VALUES (?,?,'sandbox@siftvane.local','Local sandbox operator',?)")
         .run(sandboxMcpOwner, 'local:' + sandboxMcpOwner, at);
     }
     this.users.prepare('UPDATE users SET created_at=coalesce(created_at,?), last_seen_at=?, default_inbox_id=coalesce(?,default_inbox_id) WHERE id=?')
@@ -163,20 +166,85 @@ export class PlatformService extends EventEmitter {
       .all(userId) as Record<string, unknown>[]).map(decodeAgent);
   }
 
-  updateAgent(id: string, patch: Partial<Pick<AgentRecord, 'status' | 'next_run_at' | 'last_run_at' | 'run_count' | 'state'>>) {
-    const current = this.agent(id);
-    if (!current) throw new Error('AGENT_NOT_AVAILABLE');
-    const next = { ...current, ...patch };
-    this.store.sqlite.prepare(`UPDATE user_agents SET status=?, next_run_at=?, last_run_at=?, run_count=?, state_json=?, updated_at=? WHERE id=?`)
-      .run(next.status, next.next_run_at, next.last_run_at, next.run_count, JSON.stringify(next.state), now(), id);
-    const agent = this.agent(id)!;
-    this.publish({ type: 'agent.updated', user_id: agent.user_id, data: agent });
-    return agent;
+  private changeAgent(id: string, change: (current: AgentRecord) => AgentPatch | null) {
+    const updated = this.store.transaction(() => {
+      const current = this.agent(id);
+      if (!current) throw new Error('AGENT_NOT_AVAILABLE');
+      const patch = change(current);
+      if (!patch) return null;
+      const next = { ...current, ...patch, updated_at: now() };
+      this.store.sqlite.prepare(`UPDATE user_agents SET status=?, next_run_at=?, last_run_at=?, run_count=?, state_json=?, updated_at=? WHERE id=?`)
+        .run(next.status, next.next_run_at, next.last_run_at, next.run_count, JSON.stringify(next.state), next.updated_at, id);
+      return next;
+    });
+    if (updated) this.publish({ type: 'agent.updated', user_id: updated.user_id, data: updated });
+    return updated;
+  }
+
+  updateAgent(id: string, patch: AgentPatch) {
+    return this.changeAgent(id, () => patch)!;
+  }
+
+  updateAgentIfStatus(id: string, status: AgentStatus, change: (current: AgentRecord) => AgentPatch) {
+    return this.changeAgent(id, (current) => current.status === status ? change(current) : null);
+  }
+
+  claimDueAgent(id: string, runId: string) {
+    const at = now();
+    return this.changeAgent(id, (current) => current.status === 'active' && !current.state.running_run_id &&
+      current.next_run_at !== null && current.next_run_at <= at ? {
+        next_run_at: null, last_run_at: at, run_count: current.run_count + 1,
+        state: { ...current.state, running_run_id: runId, last_error: null },
+      } : null);
+  }
+
+  finishAgentRun(id: string, runId: string, finish: (current: AgentRecord) => AgentPatch) {
+    return this.changeAgent(id, (current) => {
+      if (current.state.running_run_id !== runId) return null;
+      const result = finish(current);
+      const patch = current.status === 'active' ? result : current.status === 'paused' && result.state?.pending_approvals.length ? {
+        state: { ...current.state, phase: result.state.phase, pending_approvals: result.state.pending_approvals },
+      } : {};
+      return { ...patch, state: { ...current.state, ...patch.state, running_run_id: null, last_run_id: runId, planning_calls: undefined } };
+    });
+  }
+
+  recoverAgentRuns(at = Date.now()) {
+    const old = new Date(at - 15_000).toISOString();
+    const rows = this.store.sqlite.prepare(`SELECT a.id, a.last_run_at, json_extract(a.state_json,'$.running_run_id') AS claimed_run,
+      r.id AS ledger_run, r.body
+      FROM user_agents a
+      LEFT JOIN inbox_runs r ON r.id=coalesce(json_extract(a.state_json,'$.running_run_id'), (
+        SELECT id FROM inbox_runs WHERE json_extract(body,'$.trigger')='agent:'||a.id ORDER BY rowid DESC LIMIT 1
+      ))
+      WHERE (json_extract(a.state_json,'$.running_run_id') IS NOT NULL OR (
+          a.status='active' AND a.next_run_at IS NULL AND a.run_count>0 AND coalesce(json_extract(a.state_json,'$.interactive'),0)=0
+        ))
+        AND a.last_run_at<=?
+        AND NOT EXISTS (SELECT 1 FROM inbox_runner_lease WHERE expires_at>?)
+        AND (r.id IS NULL OR json_extract(r.body,'$.status')!='RUNNING')
+        AND (r.id IS NULL OR json_extract(r.body,'$.completedAt')<=?)`).all(old, at, old) as
+      { id: string; last_run_at: string; claimed_run: string | null; ledger_run: string | null; body: string | null }[];
+    for (const row of rows) {
+      const error = row.body ? JSON.parse(row.body).error as string | null : null;
+      const recovery = (current: AgentRecord): AgentPatch => ({
+        status: 'paused', next_run_at: null, state: {
+          ...current.state, last_error: error ?? 'AGENT_RUN_INTERRUPTED', last_run_id: row.ledger_run ?? row.claimed_run,
+        },
+      });
+      if (row.claimed_run) this.finishAgentRun(row.id, row.claimed_run, recovery);
+      else this.changeAgent(row.id, (current) => current.status === 'active' && !current.next_run_at &&
+        !current.state.running_run_id && current.last_run_at === row.last_run_at ? recovery(current) : null);
+    }
   }
 
   /** Records follow-up steps the LLM added while reviewing its own progress. */
-  updatePlan(id: string, plan: WorkflowPlan) {
-    this.store.sqlite.prepare('UPDATE user_agents SET workflow_plan_json=?, updated_at=? WHERE id=?').run(JSON.stringify(plan), now(), id);
+  updatePlan(id: string, plan: WorkflowPlan, runId: string) {
+    const changed = this.store.sqlite.prepare(`UPDATE user_agents SET workflow_plan_json=?,
+      allowed_services_json=(SELECT json_group_array(value) FROM (SELECT value FROM json_each(allowed_services_json) UNION SELECT value FROM json_each(?))),
+      updated_at=? WHERE id=? AND status='active' AND json_extract(state_json,'$.running_run_id')=?`)
+      .run(JSON.stringify(plan), JSON.stringify(plan.services), now(), id, runId);
+    if (!Number(changed.changes)) return null;
     const agent = this.agent(id)!;
     this.publish({ type: 'agent.updated', user_id: agent.user_id, data: agent });
     return agent;

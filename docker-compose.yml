@@ -1,41 +1,41 @@
-name: clam-inbox
+name: siftvane-inbox
 services:
   api:
-    image: clam-inbox:local
+    image: siftvane-inbox:local
     pull_policy: build
     build: .
     command: [node, apps/server/dist/index.js]
     environment:
-      CLAM_BIND_HOST: 0.0.0.0
-      CLAM_MAIL_MODE: sandbox
-      CLAM_AGENT_MODE: offline-smoke
-      CLAM_INBOX_LIVE: "false"
-      DATABASE_PATH: /app/data/clam.db
-      CLAM_ARTIFACTS_DIR: /app/data/artifacts
-      CLAM_TRACES_DIR: /app/data/traces
-      CLAM_KILLSWITCH_FILE: /app/data/.killswitch
-      CLAM_KEY_FILE: /app/data/.clam.key
+      SIFTVANE_BIND_HOST: 0.0.0.0
+      SIFTVANE_MAIL_MODE: sandbox
+      SIFTVANE_AGENT_MODE: offline-smoke
+      SIFTVANE_INBOX_LIVE: "false"
+      DATABASE_PATH: /app/data/siftvane.db
+      SIFTVANE_ARTIFACTS_DIR: /app/data/artifacts
+      SIFTVANE_TRACES_DIR: /app/data/traces
+      SIFTVANE_KILLSWITCH_FILE: /app/data/.killswitch
+      SIFTVANE_KEY_FILE: /app/data/.siftvane.key
     volumes:
       - sandbox:/app/data
     ports:
-      - "127.0.0.1:${CLAM_API_PORT:-4000}:4000"
+      - "127.0.0.1:${SIFTVANE_API_PORT:-4000}:4000"
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:4000/api/health').then(r=>{if(!r.ok) process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 3s
       timeout: 3s
       retries: 12
   web:
-    image: clam-inbox:local
+    image: siftvane-inbox:local
     pull_policy: never
     command: [node, apps/web/node_modules/next/dist/bin/next, start, apps/web, -H, 0.0.0.0, -p, "3000"]
     environment:
-      CLAM_INBOX_API_ORIGIN: http://api:4000
+      SIFTVANE_INBOX_API_ORIGIN: http://api:4000
       NEXT_TELEMETRY_DISABLED: "1"
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${CLAM_WEB_PORT:-3000}:3000"
+      - "127.0.0.1:${SIFTVANE_WEB_PORT:-3000}:3000"
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/inbox/briefing').then(r=>{if(!r.ok) process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 3s
@@ -43,3 +43,4 @@ services:
       retries: 12
 volumes:
   sandbox:
+    name: ${SIFTVANE_SANDBOX_VOLUME:-siftvane-inbox_sandbox}

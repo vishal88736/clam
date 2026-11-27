@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 import { loadConfig, workspaceRoot } from '../apps/server/src/config.js';
 import { renderTrapReport, runInboxTrapPack } from '../apps/server/src/inbox/trapHarness.js';
 import { resolveAgentConfig } from '../apps/server/src/inbox/agentConfig.js';
@@ -12,8 +12,8 @@ const config = loadConfig();
 const base = config.publicUrl.replace(/\/$/, '');
 const headers = {
   'Content-Type': 'application/json',
-  ...(config.operatorToken ? { 'X-Clam-Operator-Token': config.operatorToken } : {}),
-  ...(process.env.CLAM_INBOX_ID ? { 'X-Clam-Inbox-Id': process.env.CLAM_INBOX_ID } : {}),
+  ...(config.operatorToken ? { 'X-Siftvane-Operator-Token': config.operatorToken } : {}),
+  ...(process.env.SIFTVANE_INBOX_ID ? { 'X-Siftvane-Inbox-Id': process.env.SIFTVANE_INBOX_ID } : {}),
 };
 
 async function api(url: string, payload?: unknown) {
@@ -45,7 +45,7 @@ async function watch() {
 }
 
 async function sandboxRun() {
-  const runtime = await createClamApp();
+  const runtime = await createSiftvaneApp();
   try {
     if (runtime.inbox.activeMode() !== 'sandbox') throw new Error('Use agent run for the connected live mode.');
     console.error('[agent] mode: ' + runtime.inbox.agent.mode + ' · ' + runtime.inbox.agent.model);
@@ -76,7 +76,7 @@ async function main() {
     }
     case 'run-official-trap-pack': {
       if (!value) throw new Error('Usage: pnpm run-official-trap-pack <directory-or-manifest>');
-      const agent = resolveAgentConfig({ ...process.env, CLAM_AGENT_MODE: process.env.CLAM_AGENT_MODE === 'llm' ? 'llm' : 'offline-smoke' });
+      const agent = resolveAgentConfig({ ...process.env, SIFTVANE_AGENT_MODE: process.env.SIFTVANE_AGENT_MODE === 'llm' ? 'llm' : 'offline-smoke' });
       console.error('[agent] official pack mode: ' + agent.mode);
       const result = await runOfficialPack(value, {
         agent, report: path.join(workspaceRoot, 'tests', 'official_trap_pack_report.md'),

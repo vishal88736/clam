@@ -9,7 +9,7 @@
   --bg-surface: #111317;
   --bg-elevated: #171a20;
   --border-hairline: #2b2e35;
-  --brand-pearl: #f0ece3;
+  --siftvane-route: #75e0bd;
   --text-primary: #f2f1ee;
   --text-secondary: #9a9ca3;
   --text-muted: #898c96;
@@ -33,7 +33,7 @@
   --bg-surface: #fffdf8;
   --bg-elevated: #efebe0;
   --border-hairline: #ded9cb;
-  --brand-pearl: #262622;
+  --siftvane-route: #267a6b;
   --text-primary: #1c1d19;
   --text-secondary: #55554d;
   --text-muted: #68685e;
@@ -113,29 +113,6 @@ body {
   mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, #000 45%, transparent 100%);
 }
 
-@keyframes clam-blink {
-  0%,
-  92%,
-  100% {
-    transform: scaleY(1);
-  }
-  96% {
-    transform: scaleY(0.12);
-  }
-}
-
-@keyframes clam-pending-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.72;
-    transform: scale(0.95);
-  }
-}
-
 @keyframes row-slide-in {
   from {
     opacity: 0.85;
@@ -145,18 +122,6 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-.animate-clam-blink {
-  animation: clam-blink 4s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.animate-clam-pending {
-  animation: clam-pending-pulse 1.8s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
 }
 
 .animate-row-in {
@@ -447,18 +412,27 @@ body {
   width: min(100%, 54rem);
 }
 
-.landing-hero-mascot {
+.siftvane-hero-mark {
   display: grid;
   place-items: center;
-  width: clamp(10rem, 24vw, 16rem);
-  height: clamp(8.5rem, 19vw, 13.5rem);
-  margin-block: 0.6rem 0.25rem;
+  position: relative;
+  width: clamp(11rem, 26vw, 16rem);
+  aspect-ratio: 256 / 200;
+  margin-block: 1rem 0.55rem;
+  color: var(--siftvane-route);
 }
 
-.landing-hero-mascot svg {
+.siftvane-hero-mark svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
+}
+
+.siftvane-hero-mark img {
+  position: relative;
+  width: 50%;
   height: auto;
-  filter: drop-shadow(0 13px 12px rgba(19, 20, 17, 0.18));
+  filter: drop-shadow(0 12px 20px rgba(19, 42, 52, 0.22));
 }
 
 .landing-hero h1 {
@@ -610,12 +584,6 @@ body {
   line-height: 1.7;
 }
 
-.landing-stage-mascot {
-  width: clamp(6.5rem, 15vw, 11rem);
-  height: auto;
-  flex-shrink: 0;
-}
-
 .landing-pipeline {
   position: relative;
   display: grid;
@@ -733,10 +701,6 @@ body {
     flex-direction: column-reverse;
   }
 
-  .landing-stage-mascot {
-    align-self: center;
-  }
-
   .landing-safety-panel {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -750,11 +714,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .landing-pipeline {
     scroll-behavior: auto;
-  }
-
-  .landing .animate-clam-blink,
-  .landing .animate-clam-pending {
-    animation: none;
   }
 
   .landing svg * {

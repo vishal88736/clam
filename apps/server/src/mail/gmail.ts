@@ -1,5 +1,6 @@
-import type { EphemeralEmail } from '@clam/shared';
-import { scanPromptInjection } from '@clam/shared';
+import type { EphemeralEmail } from '@siftvane/shared';
+import { scanOutboundSecrets, scanPromptInjection, verificationNotice } from '@siftvane/shared';
+import type { MailSearch } from '../inbox/contracts.js';
 import { address, stripHtml } from '../inbox/reader.js';
 import { externalHandoffThreats } from '../handoffs/externalHeaders.js';
 import type { GoogleAccounts } from '../auth/google.js';
@@ -23,6 +24,13 @@ interface GmailRawMessage {
     body?: { data?: string; attachmentId?: string; size?: number };
     parts?: GmailMessagePart[];
   };
+}
+
+type ProgramEmail = EphemeralEmail & { loadAttachments?: () => Promise<NonNullable<EphemeralEmail['attachmentParts']>> };
+
+function searchTerm(value: string) {
+  const term = value.replace(/["\\{}()\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return term ? `"${term}"` : '';
 }
 
 const attachmentLimit = 750_000;
@@ -184,10 +192,11 @@ export class GmailLiveAdapter implements MailboxAdapter {
     }));
   }
 
-  private async loadAttachment(id: string, part: GmailMessagePart) {
+  private async loadAttachment(id: string, part: GmailMessagePart, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if ((part.body?.size ?? 0) > attachmentLimit) throw new Error('ATTACHMENT_TOO_LARGE');
     const data = part.body?.data ?? (part.body?.attachmentId ? (
-      await this.gmailFetch<{ data: string }>(`/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(part.body.attachmentId)}`)
+      await this.gmailFetch<{ data: string }>(`/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(part.body.attachmentId)}`, { signal })
     ).data : '');
     if (!data || data.length > Math.ceil(attachmentLimit * 4 / 3) + 4 ||
         !/^[A-Za-z0-9_-]+={0,2}$/.test(data) || Buffer.from(data, 'base64url').length > attachmentLimit) {
@@ -203,21 +212,64 @@ export class GmailLiveAdapter implements MailboxAdapter {
     return this.loadAttachment(messageId, part);
   }
 
-  async listForInbox(query: string): Promise<EphemeralEmail[]> {
+  private async loadMessageAttachments(raw: GmailRawMessage, signal?: AbortSignal): Promise<NonNullable<EphemeralEmail['attachmentParts']>> {
+    const attachments: NonNullable<EphemeralEmail['attachmentParts']> = [];
+    for (const part of attachmentParts(raw.payload).slice(0, 3)) {
+      try {
+        attachments.push(await this.loadAttachment(raw.id, part, signal));
+      } catch (error) {
+        if (!(error instanceof Error) || !['ATTACHMENT_TOO_LARGE', 'ATTACHMENT_INVALID'].includes(error.message)) throw error;
+        attachments.push({ name: part.filename!, mime: part.mimeType!, data: 'invalid' });
+      }
+    }
+    return attachments;
+  }
+
+  /** Searches Gmail first and reads bodies only for a bounded set of candidates. Attachment bytes are lazy. */
+  async listForProgram(search: MailSearch, signal?: AbortSignal): Promise<ProgramEmail[]> {
+    const keywords = search.keywords.map(searchTerm).filter(Boolean);
+    const sender = search.from_contains ? searchTerm(search.from_contains) : '';
+    const subject = search.subject_contains ? searchTerm(search.subject_contains) : '';
+    const query = [`newer_than:${search.newer_than_days ?? 14}d`, '-in:spam', '-in:trash', '-in:sent', '-in:drafts',
+      sender && 'from:' + sender, subject && 'subject:' + subject, keywords.length && '{' + keywords.join(' ') + '}'].filter(Boolean).join(' ');
+    const matched: ProgramEmail[] = [];
+    const seen = new Set<string>();
+    let pageToken: string | undefined;
+    let inspected = 0;
+    for (let page = 0; page < 4 && inspected < 100 && matched.length < search.limit; page++) {
+      const params = new URLSearchParams({ q: query, maxResults: String(Math.min(50, 100 - inspected, Math.max(10, search.limit - matched.length))) });
+      if (pageToken) params.set('pageToken', pageToken);
+      const list = await this.gmailFetch<{ messages?: { id: string }[]; nextPageToken?: string }>('/messages?' + params, { signal });
+      for (const { id } of list.messages ?? []) {
+        if (matched.length >= search.limit || inspected >= 100) break;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        inspected++;
+        const raw = await this.gmailFetch<GmailRawMessage>(`/messages/${encodeURIComponent(id)}?format=full`, { signal });
+        const email = this.normalize(raw);
+        if (email.quarantined || email.labels.some((name) => ['SENT', 'DRAFT', 'SPAM', 'TRASH'].includes(name)) ||
+            verificationNotice.test(email.subject + '\n' + email.body) || scanOutboundSecrets(email.body)) continue;
+        if (search.from_contains && !email.from.toLowerCase().includes(search.from_contains.toLowerCase())) continue;
+        if (search.subject_contains && !email.subject.toLowerCase().includes(search.subject_contains.toLowerCase())) continue;
+        if (attachmentParts(raw.payload).length) {
+          let loading: Promise<NonNullable<EphemeralEmail['attachmentParts']>> | undefined;
+          matched.push({ ...email, loadAttachments: () => loading ??= this.loadMessageAttachments(raw, signal) });
+        } else matched.push(email);
+      }
+      if (!list.nextPageToken || list.nextPageToken === pageToken) break;
+      pageToken = list.nextPageToken;
+    }
+    return matched;
+  }
+
+  async listForInbox(query: string, signal?: AbortSignal): Promise<EphemeralEmail[]> {
     const list = await this.gmailFetch<{ messages?: { id: string }[] }>(
-      `/messages?${new URLSearchParams({ maxResults: '50', q: query })}`
+      `/messages?${new URLSearchParams({ maxResults: '50', q: query })}`, { signal }
     );
     const messages = await Promise.all((list.messages ?? []).map(async ({ id }) => {
-      const raw = await this.gmailFetch<GmailRawMessage>(`/messages/${encodeURIComponent(id)}?format=full`);
+      const raw = await this.gmailFetch<GmailRawMessage>(`/messages/${encodeURIComponent(id)}?format=full`, { signal });
       const message = this.normalize(raw);
-      message.attachmentParts = [];
-      for (const part of attachmentParts(raw.payload).slice(0, 3)) {
-        try { message.attachmentParts.push(await this.loadAttachment(id, part)); }
-        catch (error) {
-          if (!(error instanceof Error) || !['ATTACHMENT_TOO_LARGE','ATTACHMENT_INVALID'].includes(error.message)) throw error;
-          message.attachmentParts.push({ name: part.filename!, mime: part.mimeType!, data: 'invalid' });
-        }
-      }
+      message.attachmentParts = await this.loadMessageAttachments(raw, signal);
       return message;
     }));
     const seen = new Set(messages.map((message) => message.id));
@@ -225,7 +277,7 @@ export class GmailLiveAdapter implements MailboxAdapter {
     for (const message of messages) message.contextOnly = !primary.includes(message);
     const threads = [...new Set(primary.map((message) => message.threadId))].slice(0, 12);
     const history = await Promise.all(threads.map((thread) => this.gmailFetch<{ messages?: GmailRawMessage[] }>(
-      '/threads/' + encodeURIComponent(thread) + '?format=full',
+      '/threads/' + encodeURIComponent(thread) + '?format=full', { signal },
     )));
     for (const thread of history) {
       for (const raw of (thread.messages ?? []).filter((entry) => !seen.has(entry.id)).slice(-3)) {

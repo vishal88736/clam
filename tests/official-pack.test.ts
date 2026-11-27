@@ -6,7 +6,7 @@ import { runOfficialPack } from '../apps/server/src/inbox/officialPack.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 
 it('ingests supplied formats in isolation and links each degraded or quarantined result', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'clam-pack-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'siftvane-pack-'));
   try {
     await writeFile(path.join(root, 'mismatch.eml'), 'From: sender@example.test\nReply-To: other@outside.test\nSubject: A sample\n\nMessage body.');
     await writeFile(path.join(root, 'note.json'), '{"subject":"Ordinary note","body":"Hello from the isolated test fixture."}');

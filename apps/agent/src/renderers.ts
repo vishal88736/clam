@@ -11,7 +11,7 @@ export function renderItineraryMarkdown(
   }
 ): string {
   const lines: string[] = [
-    `# Clam Autonomous Travel Itinerary & Expense Digest`,
+    `# Siftvane Autonomous Travel Itinerary & Expense Digest`,
     ``,
     `- **Run ID:** \`${digest.run_id}\``,
     `- **Generated At:** ${digest.generated_at}`,
@@ -69,7 +69,7 @@ export function renderItineraryMarkdown(
   lines.push(
     ``,
     `---`,
-    `*Generated strictly over MCP via Clam Zero-Retention Semantic Firewall. Sensitive OTPs, password resets, medical records, legal NDAs, and prompt injections were stripped in RAM.*`,
+    `*Generated strictly over MCP via Siftvane Zero-Retention Semantic Firewall. Sensitive OTPs, password resets, medical records, legal NDAs, and prompt injections were stripped in RAM.*`,
     ``
   );
 
@@ -99,7 +99,7 @@ export function renderTripIcs(digest: ItineraryDigest): string {
     events.push(
       [
         'BEGIN:VEVENT',
-        `UID:clam-${f.flight_number.replace(/\s+/g, '')}-${digest.run_id}@clam.local`,
+        `UID:siftvane-${f.flight_number.replace(/\s+/g, '')}-${digest.run_id}@siftvane.local`,
         `DTSTAMP:${stamp}`,
         `DTSTART:${dtStart}`,
         `DTEND:${dtEnd}`,
@@ -117,7 +117,7 @@ export function renderTripIcs(digest: ItineraryDigest): string {
     events.push(
       [
         'BEGIN:VEVENT',
-        `UID:clam-hotel-${h.confirmation_code.replace(/[^a-zA-Z0-9]/g, '')}-${digest.run_id}@clam.local`,
+        `UID:siftvane-hotel-${h.confirmation_code.replace(/[^a-zA-Z0-9]/g, '')}-${digest.run_id}@siftvane.local`,
         `DTSTAMP:${stamp}`,
         `DTSTART:${dtStart}`,
         `DTEND:${dtEnd}`,
@@ -131,7 +131,7 @@ export function renderTripIcs(digest: ItineraryDigest): string {
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Clam Autonomous Inbox Agent//Agentware 2026//EN',
+    'PRODID:-//Siftvane Autonomous Inbox Agent//Agentware 2026//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     ...events,

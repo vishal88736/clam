@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { EphemeralApprovalPayload } from '@clam/shared';
+import type { EphemeralApprovalPayload } from '@siftvane/shared';
 
 export interface SlackChannelConfig {
   botToken?: string;
@@ -60,7 +60,7 @@ export async function dispatchSlackApproval(
   const blocks = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: `Clam HITL Approval: ${input.agentName}` },
+      text: { type: 'plain_text', text: `Siftvane HITL Approval: ${input.agentName}` },
     },
     {
       type: 'section',
@@ -83,14 +83,14 @@ export async function dispatchSlackApproval(
           type: 'button',
           text: { type: 'plain_text', text: 'Approve' },
           style: 'primary',
-          action_id: 'clam_approve',
+          action_id: 'siftvane_approve',
           value: input.approvalId,
         },
         {
           type: 'button',
           text: { type: 'plain_text', text: 'Deny' },
           style: 'danger',
-          action_id: 'clam_deny',
+          action_id: 'siftvane_deny',
           value: input.approvalId,
         },
       ],
@@ -107,7 +107,7 @@ export async function dispatchSlackApproval(
         },
         body: JSON.stringify({
           channel: cfg.channelId,
-          text: `Clam HITL Approval required for ${input.agentName} (${input.mcpTool})`,
+          text: `Siftvane HITL Approval required for ${input.agentName} (${input.mcpTool})`,
           blocks,
         }),
       });
@@ -122,7 +122,7 @@ export async function dispatchSlackApproval(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: `Clam HITL Approval required for ${input.agentName} (${input.mcpTool})`,
+        text: `Siftvane HITL Approval required for ${input.agentName} (${input.mcpTool})`,
         blocks,
       }),
     });
@@ -169,7 +169,7 @@ export async function dispatchTelegramApproval(
   }
 
   const text = [
-    `CLAM APPROVAL REQUIRED`,
+    `SIFTVANE APPROVAL REQUIRED`,
     `Agent: ${input.agentName}`,
     `Tool: ${input.mcpTool}`,
     `Rule: "${input.ruleCitation}"`,
@@ -235,7 +235,7 @@ export async function dispatchWhatsAppApproval(
   }
 
   const bodyText = [
-    `Clam Approval Required (${input.agentName})`,
+    `Siftvane Approval Required (${input.agentName})`,
     `Tool: ${input.mcpTool}`,
     `Rule: ${input.ruleCitation}`,
     buildActionSummary(input.payload),

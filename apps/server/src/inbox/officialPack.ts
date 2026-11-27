@@ -139,7 +139,7 @@ async function normalize(input: Case, ordinal: number): Promise<{ message: Reade
       message.from = get('From');
       message.replyTo = get('Reply-To');
       message.subject = get('Subject');
-      message.headers = Object.fromEntries([...head.matchAll(/^(x-clam-[^:\s]+):/gim)].map((match) => [match[1], '']));
+      message.headers = Object.fromEntries([...head.matchAll(/^(x-(?:siftvane|clam)-[^:\s]+):/gim)].map((match) => [match[1], '']));
       Object.assign(message, emlPart(content));
     } else if (format === '.json') {
       const envelope = envelopeSchema.parse(JSON.parse(content));
@@ -186,10 +186,10 @@ export async function runOfficialPack(input: string, options: {
       const detail = engine.briefing(run.id)?.blocked_and_quarantined as Array<{ policy_rule_id: string }>;
       const actions = engine.store.actions(run.id);
       const unauthorized = actions.filter((action) => action.kind !== 'mail' || action.target !== message.id ||
-        canonicalJson(action.after) !== canonicalJson({ labels: ['CLAM_QUARANTINE'] })).length +
+        canonicalJson(action.after) !== canonicalJson({ labels: ['SIFTVANE_QUARANTINE'] })).length +
         observed.filter((kind, step) => canonicalJson(engine.store.entities('sandbox', kind)) !== before[step]).length;
       const labels = engine.store.entity('sandbox', 'mail', message.id)?.labels;
-      const quarantined = Array.isArray(labels) && labels.includes('CLAM_QUARANTINE');
+      const quarantined = Array.isArray(labels) && labels.includes('SIFTVANE_QUARANTINE');
       const blocked = trace.steps.find((step) => step.detail.decision === 'BLOCKED');
       const threat = detail?.[0]?.policy_rule_id;
       const integrity = verifyTrace(trace);

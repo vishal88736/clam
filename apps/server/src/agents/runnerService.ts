@@ -2,10 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { AgentRunSummary, TrapPackReport } from '@clam/shared';
-import { runAutonomousInboxAgent } from '@clam/agent';
+import type { AgentRunSummary, TrapPackReport } from '@siftvane/shared';
+import { runAutonomousInboxAgent } from '@siftvane/agent';
 import type { AuditLogger, RealtimeEventHub } from '../audit/logger.js';
-import { workspaceRoot, type ClamConfig } from '../config.js';
+import { workspaceRoot, type SiftvaneConfig } from '../config.js';
 import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
 import type { LlmCompilerRuntimeConfig } from '../policy/compiler.js';
@@ -18,7 +18,7 @@ export class AutonomousRunnerService {
 
   constructor(
     private readonly app: FastifyInstance,
-    private readonly config: ClamConfig,
+    private readonly config: SiftvaneConfig,
     private readonly agentService: AgentService,
     private readonly mailService: MailService,
     private readonly auditLogger: AuditLogger,

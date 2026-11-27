@@ -198,7 +198,7 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     }
   }
 
-  /** Idempotent folder lookup by name + parent, limited by drive.file to folders Clam itself created. */
+  /** Idempotent folder lookup by name + parent, limited by drive.file to folders Siftvane itself created. */
   private async findFolder(key: string) {
     const name = key.split('/').at(-1)!.replace(/^folder:/, '');
     const segments = key.split('/');
@@ -237,7 +237,7 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     }), { method: 'PATCH', body: '{}', signal });
   }
 
-  async write(key: string, before: Snapshot, after: WorkspaceState, signal: AbortSignal): Promise<WriteReceipt> {
+  async write(key: string, before: Snapshot, after: WorkspaceState, signal: AbortSignal, onCreated?: (receipt: WriteReceipt) => void): Promise<WriteReceipt> {
     this.guard();
     const current = await this.read(key);
     if (canonicalJson(current) !== canonicalJson(before)) throw new Error('TARGET_VERSION_CHANGED');
@@ -258,7 +258,7 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
       if (md5(bytes) !== after.md5) throw new Error('WORKSPACE_CONTENT_CHANGED');
       const parent = after.folder ? this.external(after.folder) : null;
       if (after.folder && !parent) throw new Error('WORKSPACE_PARENT_MISSING');
-      const boundary = 'clam' + md5(Buffer.from(key)).slice(0, 16);
+      const boundary = 'siftvane' + md5(Buffer.from(key)).slice(0, 16);
       const metadata = JSON.stringify({ name: after.name, mimeType: after.mime, ...(!id && parent ? { parents: [parent] } : {}) });
       const body = Buffer.concat([
         Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${after.mime}\r\n\r\n`),
@@ -276,6 +276,7 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
         id = (await this.call<{ spreadsheetId: string }>('sheets:write', 'https://sheets.googleapis.com/v4/spreadsheets', {
           method: 'POST', signal, body: JSON.stringify({ properties: { title: after.title }, sheets: after.tabs.map((tab) => ({ properties: { title: tab.name } })) }),
         })).spreadsheetId;
+        onCreated?.({ externalId: id, url: urls.google_sheet(id) });
         await this.move(id, after.folder, signal);
       }
       const existing = before?.type === 'google_sheet' ? (before.tabs as SheetTab[]) : [];
@@ -285,16 +286,28 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
           method: 'POST', signal, body: JSON.stringify({ requests: missing.map((tab) => ({ addSheet: { properties: { title: tab.name } } })) }),
         });
       }
+      const updates: { range: string; majorDimension: 'ROWS'; values: (Cell | null)[][] }[] = [];
       for (const tab of after.tabs) {
         const previous = existing.find((item) => item.name === tab.name);
-        if (previous && canonicalJson(previous) === canonicalJson({ ...tab, rows: tab.rows.map(trimRow) })) continue;
-        const range = `'${tab.name.replace(/'/g, "''")}'!A1:Z1000`;
-        await this.call('sheets:write', 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(id) + '/values/' +
-          encodeURIComponent(range) + ':clear', { method: 'POST', body: '{}', signal });
-        // RAW input: Sheets stores every value literally and never evaluates formulas from untrusted sources.
-        await this.call('sheets:write', 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(id) + '/values/' +
-          encodeURIComponent(`'${tab.name.replace(/'/g, "''")}'!A1`) + '?valueInputOption=RAW', {
-          method: 'PUT', signal, body: JSON.stringify({ majorDimension: 'ROWS', values: [tab.headers, ...tab.rows] }),
+        const next = [tab.headers, ...tab.rows];
+        const old = previous ? [previous.headers, ...previous.rows] : [];
+        const sheet = `'${tab.name.replace(/'/g, "''")}'`;
+        for (let index = 0; index < Math.max(next.length, old.length); index++) {
+          const row = next[index] ?? [];
+          const beforeRow = old[index] ?? [];
+          const values = Array.from({ length: Math.max(row.length, beforeRow.length) }, (_, column) => {
+            const value = row[column] ?? '';
+            return value === (beforeRow[column] ?? '') ? null : value;
+          });
+          if (values.some((value) => value !== null)) {
+            updates.push({ range: `${sheet}!A${index + 1}`, majorDimension: 'ROWS', values: [values] });
+          }
+        }
+      }
+      if (updates.length) {
+        // Empty strings clear trailing cells in the same RAW update that writes their replacements.
+        await this.call('sheets:write', 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(id) + '/values:batchUpdate', {
+          method: 'POST', signal, body: JSON.stringify({ valueInputOption: 'RAW', data: updates }),
         });
       }
       return { externalId: id, url: urls.google_sheet(id) };
@@ -303,6 +316,7 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
       id = (await this.call<{ documentId: string }>('docs:write', 'https://docs.googleapis.com/v1/documents', {
         method: 'POST', signal, body: JSON.stringify({ title: after.title }),
       })).documentId;
+      onCreated?.({ externalId: id, url: urls.google_doc(id) });
       await this.move(id, after.folder, signal);
     }
     const doc = await this.call<DocBody>('docs:write', 'https://docs.googleapis.com/v1/documents/' + encodeURIComponent(id), { signal });
@@ -313,7 +327,7 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
   }
 
   async remove(key: string, signal: AbortSignal) {
-    // drive.file only reaches files Clam created; the id comes from Clam's own artifact registry.
+    // drive.file only reaches files Siftvane created; the id comes from Siftvane's own artifact registry.
     const id = this.external(key);
     if (!id) return;
     await this.call('drive:write', 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id), { method: 'DELETE', signal }, false);

@@ -1,11 +1,11 @@
 import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { describe, expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 
 describe('Live MCP Server Protocol & Silent Filtering End-to-End', () => {
   it('enforces Bearer auth, lists MCP tools, silently filters list_emails, and blocks direct read_email on sensitive messages', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     await runtime.app.listen({ port: 0, host: '127.0.0.1' });
 
     try {
@@ -27,7 +27,7 @@ describe('Live MCP Server Protocol & Silent Filtering End-to-End', () => {
       // 2. Issue scoped token for Travel Itinerary Agent and connect official MCP SDK client
       const issued = await runtime.agentService.issueToken('ag_travel', 'MCP E2E Client');
 
-      const client = new Client({ name: 'clam-e2e-test', version: '1.0.0' });
+      const client = new Client({ name: 'siftvane-e2e-test', version: '1.0.0' });
       const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
         requestInit: {
           headers: {
@@ -80,7 +80,7 @@ describe('Live MCP Server Protocol & Silent Filtering End-to-End', () => {
       });
       expect(deniedRead.isError).toBe(true);
       const deniedBody = (deniedRead.content as { type: string; text: string }[])[0].text;
-      expect(deniedBody).toContain('CLAM_POLICY_DENIED');
+      expect(deniedBody).toContain('SIFTVANE_POLICY_DENIED');
       expect(deniedBody).not.toContain('rst_998123_secret');
 
       // 6. Direct send_email is hard-denied deterministically
@@ -114,7 +114,7 @@ describe('Live MCP Server Protocol & Silent Filtering End-to-End', () => {
   });
 
   it('pushes real-time SSE events and handles Telegram & WhatsApp HITL callbacks', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     await runtime.app.listen({ port: 0, host: '127.0.0.1' });
 
     try {

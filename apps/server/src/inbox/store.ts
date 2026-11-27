@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { inboxPolicySchema, type InboxPolicy, type InboxSchedule } from '@clam/shared';
+import { inboxPolicySchema, type InboxPolicy, type InboxSchedule } from '@siftvane/shared';
 import { livePolicy, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
 import type { ActionKind, Attention, Claim, Mode, RunRecord, RunTrace, Snapshot, TraceStep } from './contracts.js';
 import { genesisHash } from './trace.js';
@@ -89,7 +89,7 @@ export class InboxStore {
   private readonly temporaryDirectory: string | null;
 
   constructor(filename: string) {
-    this.temporaryDirectory = filename === ':memory:' ? mkdtempSync(path.join(tmpdir(), 'clam-inbox-')) : null;
+    this.temporaryDirectory = filename === ':memory:' ? mkdtempSync(path.join(tmpdir(), 'siftvane-inbox-')) : null;
     this.filename = this.temporaryDirectory ? path.join(this.temporaryDirectory, 'inbox.db') : filename;
     mkdirSync(path.dirname(this.filename), { recursive: true });
     this.sqlite = new DatabaseSync(this.filename);

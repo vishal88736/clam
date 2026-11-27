@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import type { InboxCalendarEvent } from '@clam/shared';
+import type { InboxCalendarEvent } from '@siftvane/shared';
 import type { ActionKind, Claim, InboxTarget, SafeAction, Snapshot, Tier } from '../inbox/contracts.js';
 import type { WorkspaceRegistry } from './registry.js';
 import { maxFileBytes } from './adapters.js';
-import { titleOf, type WorkspaceAdapter, type WorkspaceState } from './types.js';
+import { titleOf, type WorkspaceAdapter, type WorkspaceState, type WriteReceipt } from './types.js';
 
 export interface WorkspaceOwner {
   userId: string;
@@ -33,7 +33,7 @@ export class CompositeTarget implements InboxTarget {
     return this.base.all(kind);
   }
 
-  async dispatch(action: SafeAction, tier: Tier, before: Snapshot, id: string, signal: AbortSignal) {
+  async dispatch(action: SafeAction, tier: Tier, before: Snapshot, id: string, signal: AbortSignal, onCreated?: (providerId: string) => void) {
     if (action.kind !== 'workspace') return this.base.dispatch(action, tier, before, id, signal);
     const state = action.after as unknown as WorkspaceState;
     const owner = action.workspaceOwner;
@@ -45,13 +45,17 @@ export class CompositeTarget implements InboxTarget {
         this.registry.saveBackup(this.inboxId, action.target, String(before.md5), previous.mime, previous.data);
       }
     }
-    const receipt = await this.workspace.write(action.target, before, state, signal);
-    this.registry.upsert({
+    const register = (receipt: WriteReceipt) => this.registry.upsert({
       inboxId: this.inboxId, key: action.target, userId: owner.userId, agentId: owner.agentId, service: state.type,
       title: titleOf(state), externalId: receipt.externalId, url: receipt.url,
       parentKey: state.type === 'drive_folder' ? state.parent : state.folder, runId: owner.runId ?? null,
     });
-    return action.target;
+    const receipt = await this.workspace.write(action.target, before, state, signal, (created) => {
+      register(created);
+      onCreated?.(created.externalId);
+    });
+    register(receipt);
+    return receipt.externalId;
   }
 
   async restore(claim: Claim, signal: AbortSignal) {

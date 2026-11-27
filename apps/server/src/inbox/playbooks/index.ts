@@ -1,4 +1,4 @@
-import type { InboxCalendarEvent, InboxIntent, InboxPolicy } from '@clam/shared';
+import type { InboxCalendarEvent, InboxIntent, InboxPolicy } from '@siftvane/shared';
 import type { Change, ProposedAction, Snapshot, ThreadSource } from '../contracts.js';
 import { address, validDateTime, validDay } from '../reader.js';
 import { sha256 } from '../trace.js';
@@ -94,13 +94,13 @@ export function buildPlan({ intents, calendar, mailStates, bills, now, policy, a
     if (!validDay(date)) return;
     const start = Date.parse(date + 'T09:00:00Z');
     setCalendar(playbook, intent, {
-      id: 'clam' + hashId(key), title: title.slice(0, 140), start: iso(start), end: iso(start + minutes(15)),
+      id: 'siftvane' + hashId(key), title: title.slice(0, 140), start: iso(start), end: iso(start + minutes(15)),
       kind: 'reminder', guests: [], flexible: true,
     });
   };
 
   for (const item of find('hostile_suspected')) {
-    labels('hostile_input_quarantine', item, ['INBOX'], ['CLAM_QUARANTINE'], 'quarantine');
+    labels('hostile_input_quarantine', item, ['INBOX'], ['SIFTVANE_QUARANTINE'], 'quarantine');
   }
 
   const flightUpdates = find('flight_update').sort((left, right) => Date.parse(right.receivedAt) - Date.parse(left.receivedAt));
@@ -204,7 +204,7 @@ export function buildPlan({ intents, calendar, mailStates, bills, now, policy, a
       Number(localEnd.hour) * 60 + Number(localEnd.minute) > policy.workEnd * 60 ||
       localEnd.day !== localStart.day || ['Sat', 'Sun'].includes(localStart.weekday);
     const event: Calendar = {
-      id: 'clam' + hashId('meeting', item.threadId), title, start: iso(startMs), end: iso(endMs),
+      id: 'siftvane' + hashId('meeting', item.threadId), title, start: iso(startMs), end: iso(endMs),
       kind: 'meeting', guests: item.sender ? [item.sender] : [], flexible: false,
     };
     const buffer: Calendar = {
@@ -324,13 +324,13 @@ export function buildPlan({ intents, calendar, mailStates, bills, now, policy, a
   }
 
   for (const item of find('otp_ephemeral')) {
-    if (now.getTime() - Date.parse(item.receivedAt) >= minutes(20)) labels('ephemeral_otp_expiry', item, ['INBOX'], ['CLAM_EXPIRED_OTP']);
+    if (now.getTime() - Date.parse(item.receivedAt) >= minutes(20)) labels('ephemeral_otp_expiry', item, ['INBOX'], ['SIFTVANE_EXPIRED_OTP']);
   }
   for (const item of find('newsletter_promo')) {
     add('newsletter_outreach_rollup', item, 'newsletter', item.messageId, { title: item.fields.title, sender: item.sender });
-    labels('newsletter_outreach_rollup', item, [], ['CLAM_NEWSLETTER']);
+    labels('newsletter_outreach_rollup', item, [], ['SIFTVANE_NEWSLETTER']);
   }
-  for (const item of find('cold_outreach')) labels('newsletter_outreach_rollup', item, ['INBOX'], ['CLAM_COLD_OUTREACH', 'MUTED']);
+  for (const item of find('cold_outreach')) labels('newsletter_outreach_rollup', item, ['INBOX'], ['SIFTVANE_COLD_OUTREACH', 'MUTED']);
 
   const newMeetings = actions.filter((action) => action.playbook === 'autonomous_meeting_scheduler' &&
     action.kind === 'calendar' && action.after?.kind === 'meeting' && action.requestedTier === 1);

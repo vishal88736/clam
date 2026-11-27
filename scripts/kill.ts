@@ -1,7 +1,6 @@
-import path from 'node:path';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 
-const DEFAULT_BASE_URL = process.env.CLAM_PUBLIC_URL?.replace(/\/$/, '') || 'http://localhost:4000';
+const DEFAULT_BASE_URL = process.env.SIFTVANE_PUBLIC_URL?.replace(/\/$/, '') || 'http://localhost:4000';
 
 function getArg(flag: string): string | undefined {
   const idx = process.argv.indexOf(flag);
@@ -50,8 +49,7 @@ async function main() {
     if (err instanceof Error && !err.message.includes('fetch failed') && !err.message.includes('ECONNREFUSED')) {
       throw err;
     }
-    const runtime = await createClamApp({
-      databasePath: path.resolve(process.cwd(), 'data/clam.db'),
+    const runtime = await createSiftvaneApp({
     });
     try {
       const state = isResume
@@ -74,6 +72,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[clam-kill] Error:', err);
+  console.error('[siftvane-kill] Error:', err);
   process.exit(1);
 });

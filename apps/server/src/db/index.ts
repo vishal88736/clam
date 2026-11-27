@@ -4,10 +4,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { drizzle, type SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import * as schema from './schema.js';
 
-export type ClamDatabase = SqliteRemoteDatabase<typeof schema>;
+export type SiftvaneDatabase = SqliteRemoteDatabase<typeof schema>;
 
 export interface DbHandle {
-  db: ClamDatabase;
+  db: SiftvaneDatabase;
   sqlite: DatabaseSync;
   close(): void;
 }
@@ -109,9 +109,13 @@ CREATE TABLE IF NOT EXISTS inboxes (
   id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id), adapter_type TEXT NOT NULL,
   google_sub TEXT, email TEXT NOT NULL, UNIQUE(user_id, google_sub)
 );
-INSERT OR IGNORE INTO inboxes (id, adapter_type, email) VALUES ('sandbox', 'sandbox', 'sandbox@clam.local');
+INSERT OR IGNORE INTO inboxes (id, adapter_type, email) VALUES ('sandbox', 'sandbox', 'sandbox@siftvane.local');
 INSERT OR IGNORE INTO inboxes (id, adapter_type, email) VALUES
-  ('triage', 'agent_local', 'triage@clam.local'), ('executor', 'agent_local', 'executor@clam.local');
+  ('triage', 'agent_local', 'triage@siftvane.local'), ('executor', 'agent_local', 'executor@siftvane.local');
+UPDATE inboxes SET email=id || '@siftvane.local'
+  WHERE adapter_type IN ('sandbox','agent_local') AND email=id || '@clam.local';
+UPDATE users SET email='sandbox@siftvane.local'
+  WHERE google_sub='local:clam-local-sandbox' AND email='sandbox@clam.local';
 CREATE TABLE IF NOT EXISTS oauth_connections (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
   inbox_id TEXT NOT NULL UNIQUE REFERENCES inboxes(id), google_sub TEXT NOT NULL, email TEXT NOT NULL,

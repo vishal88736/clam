@@ -23,7 +23,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   if (!allowed.some((pattern) => pattern.test(endpoint))) {
     return Response.json({ error: 'UNKNOWN_INBOX_ENDPOINT' }, { status: 404 });
   }
-  const origin = process.env.CLAM_INBOX_API_ORIGIN || 'http://127.0.0.1:4000';
+  const origin = process.env.SIFTVANE_INBOX_API_ORIGIN || process.env.CLAM_INBOX_API_ORIGIN || 'http://127.0.0.1:4000';
   const headers: Record<string, string> = {};
   const sessionCookie = request.headers.get('cookie');
   if (sessionCookie) headers.Cookie = sessionCookie;

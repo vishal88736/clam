@@ -6,8 +6,8 @@ import type {
   EphemeralEmail,
   TrapPackCaseResult,
   TrapPackReport,
-} from '@clam/shared';
-import { runAutonomousInboxAgent } from '@clam/agent';
+} from '@siftvane/shared';
+import { runAutonomousInboxAgent } from '@siftvane/agent';
 import type { AgentService } from '../agents/service.js';
 import type { AuditLogger } from '../audit/logger.js';
 import type { KillSwitchService } from '../killswitch/service.js';
@@ -181,12 +181,12 @@ export async function runTrapPackSuite(params: {
       params.mailService.sandbox.getStateSummary().sentCount === 0;
 
     // Phase 2: Probe each Trap Pack email + hijack vector directly over real MCP
-    const client = new Client({ name: 'clam-trap-pack-probe', version: '1.0.0' });
+    const client = new Client({ name: 'siftvane-trap-pack-probe', version: '1.0.0' });
     const transport = new StreamableHTTPClientTransport(new URL(params.mcpUrl), {
       requestInit: {
         headers: {
           Authorization: `Bearer ${issued.rawToken}`,
-          'X-Clam-Run-Id': runId,
+          'X-Siftvane-Run-Id': runId,
         },
       },
     });
@@ -291,7 +291,7 @@ export async function runTrapPackSuite(params: {
     };
 
     const mdLines = [
-      `# Clam Trap Pack Adversarial Evaluation Report`,
+      `# Siftvane Trap Pack Adversarial Evaluation Report`,
       ``,
       `- **Generated At:** ${report.generated_at}`,
       `- **Run ID:** \`${runId}\``,

@@ -1,4 +1,4 @@
-# Clam safety controls
+# Siftvane safety controls
 
 | Control | Enforcement |
 | --- | --- |
@@ -10,7 +10,7 @@
 | Automation disclosure | Both transport implementations in `apps/server/src/inbox/targets.ts` call `outboundPayload` after draft assembly. It appends a fixed footer and `X-Agent-Automated: true`. The tests attempt to strip the disclosure from the sandbox outbox and Gmail MIME payload. |
 | Verification and compensation | `InboxEngine.apply` stores the before and expected state and checks read-back before `VERIFIED`. `rollback` checks for intervening changes, restores eligible actions in reverse order, and verifies the result. Delivered messages have a manual-correction receipt. |
 | Google account security | `apps/server/src/auth/google.ts` binds one-time state to a browser cookie and uses S256 PKCE and an ID-token nonce. It encrypts access and refresh tokens independently using AES-256-GCM, checks the granted scope before provider calls, and verifies inbox ownership for browser and scoped MCP access. |
-| Agent handoffs | `apps/server/src/handoffs/service.ts` binds the caller to a Pod inbox, signs the canonical envelope, and keeps the delivered payload marked untrusted. The journal reservation and SQLite trigger gate delivery. Loop attempts latch the thread and require operator review. Gmail and imported email quarantine external `X-Clam-*` headers. |
+| Agent handoffs | `apps/server/src/handoffs/service.ts` binds the caller to a Pod inbox, signs the canonical envelope, and keeps the delivered payload marked untrusted. The journal reservation and SQLite trigger gate delivery. Loop attempts latch the thread and require operator review. Gmail and imported email quarantine external `X-Siftvane-*` headers. |
 | Scoped verification | `apps/server/src/mcp/verification.ts` pins hosts, excludes recovery notices, and deduplicates message consumption per inbox. The hash-chained trace and SSE include a masked receipt and caller identifier. |
 | Credentials and retention | The OAuth vault stores ciphertext. The trace keeps source IDs, decisions, hashes, structured state, and model telemetry. Raw live bodies, attachments, and draft content used by the transport are excluded from execution receipts. MCP extraction stages bounded input temporarily and removes the staged file after extraction. |
 | Trace integrity | `apps/server/src/inbox/trace.ts` recursively sorts object keys for canonical JSON, omits `step_hash` from that step’s input, and hashes `prev_hash + canonical_json(step)`. The terminal report, step count, and head hash are checked by the verifier. Keep a trusted independent copy of the head for provenance. |
@@ -25,8 +25,8 @@ Run `pnpm test` for SQLite guards, taint and confidence decisions, disclosure, r
 
 Persistent agents created through `provision_and_run_agent` or the web console run as ordinary engine missions. They hold the same single-writer lease, kill-switch latch, budgets, hash-chained trace, Tier 0/1/2 gate, claim ledger, and read-back `CHECK` as inbox runs.
 
-- **General programs.** Free-form requests compile into a program built only from Clam's typed step library. In LLM mode the model composes it and may add follow-up steps after reviewing sanitized observations: counts, field names, and short samples passed through the taint firewall. Raw email bodies are never sent to the model. Added steps are validated against the same schema, recipient guard, and policy gates, then journaled with the model's reasoning.
-- **Planning cannot widen authority.** Clam validates both model-composed programs and ready-made workflows. Send and vendor recipients must appear verbatim in the user's own request. For MCP-created programs, Clam checks each operation against the originating token's scopes, including steps added during review. Google operations also require the corresponding OAuth grants. If the planner fails, Clam falls back to the deterministic compiler and records `PLAN_FALLBACK_DETERMINISTIC`.
+- **General programs.** Free-form requests compile into a program built only from Siftvane's typed step library. In LLM mode the model composes it and may add follow-up steps after reviewing sanitized observations: counts, field names, and short samples passed through the taint firewall. Raw email bodies are never sent to the model. Added steps are validated against the same schema, recipient guard, and policy gates, then journaled with the model's reasoning.
+- **Planning cannot widen authority.** Siftvane validates both model-composed programs and ready-made workflows. Send and vendor recipients must appear verbatim in the user's own request. For MCP-created programs, Siftvane checks each operation against the originating token's scopes, including steps added during review. Google operations also require the corresponding OAuth grants. If the planner fails, Siftvane falls back to the deterministic compiler and records `PLAN_FALLBACK_DETERMINISTIC`.
 - **Taint firewall.** Untrusted text from email, PDFs, or photos is sanitized before it reaches a Sheet or Doc:
   - formula prefixes and functions such as `IMPORTXML`, `HYPERLINK`, and `CMD|` are neutralized;
   - prompt-injection text and secrets are redacted;
@@ -42,11 +42,11 @@ Persistent agents created through `provision_and_run_agent` or the web console r
   
   An expired approval counts as declined.
 - **Least-privilege Google scopes.**
-  - The Workspace grant requests only `drive.file` and the Photos Picker scope `photospicker.mediaitems.readonly`. Clam can read only the photos the user picks in Google's own UI.
+  - The Workspace grant requests only `drive.file` and the Photos Picker scope `photospicker.mediaitems.readonly`. Siftvane can read only the photos the user picks in Google's own UI.
   - `documents` and `spreadsheets` are requested only to edit pre-existing files.
   - Full `drive` access and every Photos write or share scope are rejected with `GOOGLE_SCOPE_BANNED`.
 - **Photos parsing.** Image bytes are bounded to 2 MB and parsed in-process (SVG text layer) or by a sandboxed Tesseract OCR child process (no shell, 6 s limit, 16 KB output). Only structured fields leave the parser.
-- **Rollback.** Rolling back a run deletes only the artifacts that run created, using provider ids from Clam's own registry. Overwritten Drive files are restored from an MD5-verified backup of the previous bytes taken before the overwrite.
+- **Rollback.** Rolling back a run deletes only the artifacts that run created, using provider ids from Siftvane's own registry. Overwritten Drive files are restored from an MD5-verified backup of the previous bytes taken before the overwrite.
 - **Audit.**
   - `agent_execution_logs` and `agent_switch_history` are append-only; SQLite triggers reject updates and deletes.
   - New `workspace_artifacts` rows and agent reactivation are rejected while the kill switch is latched.

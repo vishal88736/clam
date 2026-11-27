@@ -11,7 +11,7 @@ import './inbox.css';
 import { ThemeProvider } from '@/components/ThemeContext';
 
 export const metadata: Metadata = {
-  title: 'Clam · Agentic Inbox & Calendar',
+  title: 'Siftvane · Agentic Inbox & Calendar',
   description:
     'An inbox and calendar agent with verified changes and policy-gated approvals.',
 };

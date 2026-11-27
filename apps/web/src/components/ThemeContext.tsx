@@ -8,7 +8,7 @@ const Context = createContext({ theme: 'light' as Theme, toggleTheme: () => {} }
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>('light');
   useEffect(() => {
-    const saved = localStorage.getItem('clam_theme');
+    const saved = localStorage.getItem('siftvane_theme') ?? localStorage.getItem('clam_theme');
     if (saved === 'dark') {
       setTheme('dark');
       document.documentElement.dataset.theme = 'dark';
@@ -18,7 +18,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const next: Theme = theme === 'light' ? 'dark' : 'light';
     setTheme(next);
     document.documentElement.dataset.theme = next;
-    localStorage.setItem('clam_theme', next);
+    localStorage.setItem('siftvane_theme', next);
   }
   return <Context.Provider value={{ theme, toggleTheme }}>{children}</Context.Provider>;
 }

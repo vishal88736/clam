@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,20 +8,20 @@ import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/di
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { StdioClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
 import { expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 import { podCase } from '../apps/server/src/handoffs/sample.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 
 const payload = (result: { content: unknown }) => JSON.parse((result.content as { text: string }[])[0].text);
 
-async function runtimeTest(work: (runtime: Awaited<ReturnType<typeof createClamApp>>, base: string, dir: string) => Promise<void>) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'clam-mcp-acceptance-'));
-  const runtime = await createClamApp({ databasePath: ':memory:',
+async function runtimeTest(work: (runtime: Awaited<ReturnType<typeof createSiftvaneApp>>, base: string, dir: string) => Promise<void>) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-mcp-acceptance-'));
+  const runtime = await createSiftvaneApp({ databasePath: ':memory:',
     config: { inboxLive: false, tracesDir: path.join(dir, 'traces'), mailAttachmentsDir: path.join(dir, 'workspace', 'mail-attachments') } });
   try { await work(runtime, await runtime.app.listen({ port: 0, host: '127.0.0.1' }), dir); }
   finally { await runtime.close(); await rm(dir, { recursive: true, force: true }); }
 }
-type Runtime = Awaited<ReturnType<typeof createClamApp>>;
+type Runtime = Awaited<ReturnType<typeof createSiftvaneApp>>;
 const mint = async (runtime: Runtime, scopes: string[]) => {
   const response = await runtime.app.inject({ method: 'POST', url: '/api/inbox/mcp-tokens', payload: { inbox_id: 'sandbox', scopes } });
   expect(response.statusCode).toBe(200);
@@ -32,14 +33,30 @@ const connect = async (base: string, token: string) => {
   return client;
 };
 
+it('advertises Siftvane while accepting an existing MCP token', () => runtimeTest(async (runtime, base) => {
+  const grant = await mint(runtime, ['mail:read']);
+  expect(grant.token).toMatch(/^siftvane_inbox_/);
+  const legacyToken = 'clm_inbox_' + randomBytes(32).toString('base64url');
+  const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+  runtime.dbHandle.sqlite.prepare('UPDATE inbox_mcp_tokens SET token_hash=? WHERE token_hash=?')
+    .run(hash(legacyToken), hash(grant.token));
+  const client = await connect(base, legacyToken);
+  try {
+    expect(client.getServerVersion()?.name).toBe('siftvane-inbox');
+    expect(payload(await client.callTool({ name: 'list_threads', arguments: { max_results: 1 } }))).toHaveLength(1);
+  } finally {
+    await client.close();
+  }
+}));
+
 it('uses x-api-key and the actual pnpm stdio bridge, scopes a read-only token, rejects query credentials, and revokes the token', () =>
   runtimeTest(async (runtime, base) => {
     const grant = await mint(runtime, ['mail:read']);
     const http = await connect(base, grant.token);
     const local = new Client({ name: 'acceptance-stdio', version: '1.0.0' });
     const transport = new StdioClientTransport({
-      command: path.resolve('node_modules/.bin/pnpm'), args: ['--silent', 'clam-mcp'], cwd: process.cwd(),
-      env: { CLAM_PUBLIC_URL: base, CLAM_MCP_TOKEN: grant.token },
+      command: path.resolve('node_modules/.bin/pnpm'), args: ['--silent', 'siftvane-mcp'], cwd: process.cwd(),
+      env: { SIFTVANE_PUBLIC_URL: base, SIFTVANE_MCP_TOKEN: grant.token },
     });
     try {
       expect(payload(await http.callTool({ name: 'list_threads', arguments: { max_results: 3 } }))).toHaveLength(3);
@@ -161,7 +178,7 @@ it('authenticates scoped HTTP POST and GET sessions using either header and bind
       const init = await fetch(base + '/mcp', { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
         params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'Codex CLI test', version: '1' } } }) });
       expect(init.status).toBe(200);
-      expect((await init.json()).result.serverInfo.name).toBe('clam-inbox');
+      expect((await init.json()).result.serverInfo.name).toBe('siftvane-inbox');
       const id = init.headers.get('mcp-session-id');
       expect(id).toBeTruthy();
       headers.set('Mcp-Session-Id', id!);
@@ -183,8 +200,8 @@ it('authenticates scoped HTTP POST and GET sessions using either header and bind
 it('emits only JSON RPC over the pnpm stdio bridge and journals the original client and token ID with no credentials', () =>
   runtimeTest(async (runtime, base, dir) => {
     const grant = await mint(runtime, ['mail:read']);
-    const child = spawn(path.resolve('node_modules/.bin/pnpm'), ['--silent', 'clam-mcp'], {
-      env: { ...process.env, CLAM_API_URL: base, CLAM_MCP_TOKEN: grant.token }, stdio: ['pipe', 'pipe', 'pipe'],
+    const child = spawn(path.resolve('node_modules/.bin/pnpm'), ['--silent', 'siftvane-mcp'], {
+      env: { ...process.env, SIFTVANE_API_URL: base, SIFTVANE_MCP_TOKEN: grant.token }, stdio: ['pipe', 'pipe', 'pipe'],
     });
     const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
     const diagnostics: string[] = [];
@@ -199,13 +216,13 @@ it('emits only JSON RPC over the pnpm stdio bridge and journals the original cli
     };
     try {
       send('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'Claude Code bridge test', version: '1' } }, 1);
-      expect((await receive(1)).serverInfo.name).toBe('clam-stdio');
+      expect((await receive(1)).serverInfo.name).toBe('siftvane-stdio');
       send('notifications/initialized');
       send('tools/list', {}, 2);
       const schemas = (await receive(2)).tools as Array<{ name: string; inputSchema: { type: string } }>;
       expect(schemas.find((tool) => tool.name === 'get_thread')?.inputSchema.type).toBe('object');
       expect(schemas.every((tool) => tool.inputSchema.type === 'object')).toBe(true);
-      send('tools/call', { name: 'get_thread', arguments: { thread_id: 'trip-clam42' } }, 3);
+      send('tools/call', { name: 'get_thread', arguments: { thread_id: 'trip-siftvane42' } }, 3);
       expect(payload(await receive(3)).messages).toHaveLength(2);
       child.stdin.end();
       expect((await lines.next()).done).toBe(true);
@@ -225,7 +242,7 @@ it('requires sandbox inbox-management scope and applies recipient rules to exist
     const call = async (name: string, args: Record<string, unknown> = {}, client = admin) => payload(await client.callTool({ name, arguments: args }));
     try {
       expect(await call('provision_inbox', { inbox_id: 'archive-agent' }, reader)).toEqual({ error: 'MCP_SCOPE_REQUIRED' });
-      expect(await call('provision_inbox', { inbox_id: 'archive-agent' })).toMatchObject({ email: 'archive-agent@clam.local' });
+      expect(await call('provision_inbox', { inbox_id: 'archive-agent' })).toMatchObject({ email: 'archive-agent@siftvane.local' });
       expect((await call('list_inboxes')).inboxes).toContainEqual(expect.objectContaining({ id: 'archive-agent' }));
       const recipient = 'clerk@example.test';
       await call('update_recipient_policy', { list: 'allowlist', operation: 'add', address: recipient });

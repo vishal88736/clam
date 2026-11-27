@@ -7,10 +7,10 @@ import type {
   ChannelDeliveryMap,
   EphemeralApprovalPayload,
   McpToolName,
-} from '@clam/shared';
+} from '@siftvane/shared';
 import type { AuditLogger, RealtimeEventHub } from '../audit/logger.js';
-import type { ClamConfig } from '../config.js';
-import type { ClamDatabase } from '../db/index.js';
+import type { SiftvaneConfig } from '../config.js';
+import type { SiftvaneDatabase } from '../db/index.js';
 import { approvalRequests } from '../db/schema.js';
 import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
@@ -59,11 +59,11 @@ export class ApprovalService {
   private sweeperTimer?: NodeJS.Timeout;
 
   constructor(
-    private readonly db: ClamDatabase,
+    private readonly db: SiftvaneDatabase,
     private readonly mailService: MailService,
     private readonly auditLogger: AuditLogger,
     private readonly hub: RealtimeEventHub,
-    private readonly config: ClamConfig,
+    private readonly config: SiftvaneConfig,
     private readonly killSwitchService?: KillSwitchService
   ) {}
 
@@ -177,7 +177,7 @@ export class ApprovalService {
     );
 
     const initialDelivery: ChannelDeliveryMap = {
-      app: { status: 'delivered', detail: 'Pushed to Clam live queue via SSE' },
+      app: { status: 'delivered', detail: 'Pushed to Siftvane live queue via SSE' },
       slack: { status: 'not_configured', detail: 'Checking channel configuration' },
       telegram: { status: 'not_configured', detail: 'Checking channel configuration' },
       whatsapp: { status: 'not_configured', detail: 'Checking channel configuration' },
@@ -467,7 +467,7 @@ export class ApprovalService {
         tool: 'create_draft',
         to: 'kenji.host@airbnb-messages.example',
         subject: 'Re: Kyoto check-in arrival time (Test)',
-        body: 'Hi Kenji! This is a Clam HITL test notification verifying App, Slack, Telegram, and WhatsApp delivery.',
+        body: 'Hi Kenji! This is a Siftvane HITL test notification verifying App, Slack, Telegram, and WhatsApp delivery.',
       },
       ttlSeconds: 300,
       isTest: true,

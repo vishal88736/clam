@@ -6,19 +6,21 @@ import path from 'node:path';
 import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
+import { sandboxMcpOwner as user } from '../apps/server/src/auth/google.js';
 import type { AgentConfig } from '../apps/server/src/inbox/agentConfig.js';
+import { planFromProgram } from '../apps/server/src/platform/planner.js';
+import { genericStepSchema } from '../apps/server/src/platform/generic.js';
 import { extractPhotoDetails, parseReceiptText } from '../apps/server/src/workspace/photos.js';
 import type { WorkspaceAdapter } from '../apps/server/src/workspace/types.js';
 
-type Runtime = Awaited<ReturnType<typeof createClamApp>>;
+type Runtime = Awaited<ReturnType<typeof createSiftvaneApp>>;
 const payload = (result: { content: unknown }) => JSON.parse((result.content as { text: string }[])[0].text);
-const user = 'clam-local-sandbox';
 const hasTesseract = (() => { try { execFileSync('tesseract', ['--version'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 
 async function runtimeTest(work: (runtime: Runtime, base: string) => Promise<void>, agent?: AgentConfig) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'clam-workspace-gaps-'));
-  const runtime = await createClamApp({ databasePath: ':memory:', agent, config: {
+  const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-workspace-gaps-'));
+  const runtime = await createSiftvaneApp({ databasePath: ':memory:', agent, config: {
     inboxLive: false, tracesDir: path.join(dir, 'traces'), mailAttachmentsDir: path.join(dir, 'workspace', 'mail-attachments'),
   } });
   try { await work(runtime, await runtime.app.listen({ port: 0, host: '127.0.0.1' })); }
@@ -88,7 +90,7 @@ it('restores an overwritten Drive file from its verified backup on rollback', ()
   const client = new Client({ name: 'cline', version: '1' });
   await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer ' + minted.json().token } } }));
   const save = async (text: string) => payload(await client.callTool({ name: 'drive_save_file', arguments: {
-    folder_path: ['Clam', 'Notes'], file_name: 'notes.md', mime_type: 'text/markdown', content_text: text } }));
+    folder_path: ['Siftvane', 'Notes'], file_name: 'notes.md', mime_type: 'text/markdown', content_text: text } }));
   const first = await save('# Version one\n');
   const second = await save('# Version two\n');
   expect(second).toMatchObject({ verified: true });
@@ -128,6 +130,91 @@ it('waits for missing vendor replies until the requested quote window closes', (
   expect(runtime.platform.artifacts(user, agent_id).map((row) => row.service).sort()).toEqual(['google_doc', 'google_sheet']);
 }), 60_000);
 
+it('closes a quote window with no usable replies and leaves booking untouched', () => runtimeTest(async (runtime) => {
+  const { agent_id } = await createAgent(runtime, 'Email 4 vendors for quotes on 500 custom boxes, compare them, and book the cheapest.');
+  const waiting = await until(() => runtime.platform.agent(agent_id)!, (agent) => agent.status === 'input_required');
+  runtime.inbox.store.sqlite.prepare("DELETE FROM inbox_sandbox_messages WHERE scope='vendor_pending'").run();
+  await runtime.app.inject({ method: 'POST', url: '/api/inbox/approvals/' + waiting.state.pending_approvals[0], payload: { approve: true } });
+  const agent = await until(() => runtime.platform.agent(agent_id)!, (entry) => entry.status === 'completed');
+  expect(agent).toMatchObject({ next_run_at: null, state: { phase: 'no_usable_quotes', pending_approvals: [] } });
+  expect(agent.state.notes).toContain('The quote window closed without a usable price.');
+  expect(runtime.platform.artifacts(user, agent_id)).toHaveLength(0);
+}), 60_000);
+
+it('keeps an agent paused when a required workspace action is blocked', () => runtimeTest(async (runtime) => {
+  const instruction = 'Put order emails in a sheet';
+  const steps = [
+    genericStepSchema.parse({ id: 'source', op: 'mail.search', keywords: ['order'] }),
+    genericStepSchema.parse({ id: 'sheet', op: 'sheets.append', from: 'source', title: 'Orders', columns: ['='] }),
+  ];
+  const compiled = planFromProgram({ program: steps, name: 'Blocked sheet', scheduleMode: 'one_shot' }, instruction, 'deterministic-intent-compiler');
+  const agent = runtime.platform.createAgent({ userId: user, inboxId: 'sandbox', name: compiled.name, goal: instruction, sourceCli: 'web',
+    plan: compiled.plan, services: compiled.services, scheduleMode: 'one_shot', intervalSeconds: null });
+  const stopped = await until(() => runtime.platform.agent(agent.id)!, (entry) => entry.status === 'paused');
+  expect(stopped.state.last_error).toBe('WORKSPACE_FORMULA_INJECTION');
+  expect(runtime.inbox.store.run(stopped.state.last_run_id!)).toMatchObject({ status: 'FAILED', error: 'WORKSPACE_FORMULA_INJECTION' });
+  expect(runtime.platform.artifacts(user, agent.id)).toHaveLength(0);
+}));
+
+it('keeps pause and cancel decisions after a worker finishes and cancels pending approvals', () => runtimeTest(async (runtime) => {
+  const { agent_id: draftId } = await createAgent(runtime, 'Draft replies to everyone who emailed me about meetings.');
+  const waiting = await until(() => runtime.platform.agent(draftId)!, (entry) => entry.status === 'input_required');
+  const cancelled = await runtime.app.inject({ method: 'POST', url: `/api/inbox/platform/agents/${draftId}/cancel` });
+  expect(cancelled.json()).toMatchObject({ status: 'archived', next_run_at: null });
+  expect(waiting.state.pending_approvals.map((id) => runtime.inbox.store.approval(id)?.status)).toEqual(['REJECTED', 'REJECTED']);
+
+  const workspace = runtime.inbox.workspace('sandbox');
+  const originalRead = workspace.read.bind(workspace);
+  let release!: () => void;
+  const waitingRead = new Promise<void>((resolve) => { release = resolve; });
+  workspace.read = async (key) => {
+    if (key.includes('/doc:')) await waitingRead;
+    return originalRead(key);
+  };
+  try {
+    const { agent_id } = await createAgent(runtime, 'Summarize order emails in a Doc.');
+    const running = await until(() => runtime.platform.agent(agent_id)!, (entry) => Boolean(entry.state.running_run_id));
+    const paused = await runtime.app.inject({ method: 'POST', url: `/api/inbox/platform/agents/${agent_id}/pause` });
+    expect(paused.json()).toMatchObject({ status: 'paused', next_run_at: null });
+    release();
+    const stopped = await until(() => runtime.platform.agent(agent_id)!, (entry) => !entry.state.running_run_id);
+    expect(stopped).toMatchObject({ run_count: 1, status: 'paused', next_run_at: null });
+    expect(runtime.inbox.store.run(running.state.running_run_id!)).toMatchObject({ status: 'FAILED', error: 'AGENT_RUN_PAUSED' });
+    expect(runtime.platform.artifacts(user, agent_id)).toHaveLength(0);
+  } finally {
+    release();
+    workspace.read = originalRead;
+  }
+}));
+
+it('keeps a due agent scheduled when another worker holds the lease and surfaces abandoned claims', () => runtimeTest(async (runtime) => {
+  expect(runtime.inbox.store.acquireLease('other-worker')).toBe(true);
+  const { agent_id } = await createAgent(runtime, 'Summarize order emails in a Doc.');
+  try {
+    await expect(runtime.missions.runAgent(agent_id)).rejects.toThrow('RUN_ALREADY_ACTIVE');
+    expect(runtime.platform.agent(agent_id)).toMatchObject({ status: 'active', run_count: 0, next_run_at: expect.any(String) });
+    expect(runtime.platform.claimDueAgent(agent_id, 'lost-run')).not.toBeNull();
+    expect(runtime.platform.claimDueAgent(agent_id, 'duplicate-claim')).toBeNull();
+  } finally {
+    runtime.inbox.store.releaseLease('other-worker');
+  }
+  runtime.platform.recoverAgentRuns(Date.now() + 16_000);
+  expect(runtime.platform.agent(agent_id)).toMatchObject({
+    status: 'paused', run_count: 1, next_run_at: null,
+    state: { running_run_id: null, last_run_id: 'lost-run', last_error: 'AGENT_RUN_INTERRUPTED' },
+  });
+  expect(runtime.inbox.store.acquireLease('legacy-worker')).toBe(true);
+  const legacy = await createAgent(runtime, 'Summarize shipment emails in a Doc.');
+  try {
+    runtime.platform.updateAgent(legacy.agent_id, { next_run_at: null, run_count: 1,
+      last_run_at: new Date(Date.now() - 60_000).toISOString() });
+  } finally {
+    runtime.inbox.store.releaseLease('legacy-worker');
+  }
+  runtime.platform.recoverAgentRuns();
+  expect(runtime.platform.agent(legacy.agent_id)).toMatchObject({ status: 'paused', state: { last_error: 'AGENT_RUN_INTERRUPTED' } });
+}));
+
 it('parses labelled and OCR-style receipt text', () => {
   expect(parseReceiptText('Merchant: City Parking Authority\nTicket: PK-55821\nDate: 2026-12-06\nTotal: 32.00 USD\nPay by: 2026-12-20'))
     .toEqual({ merchant: 'City Parking Authority', reference: 'PK-55821', date: '2026-12-06', amount: 32, currency: 'USD', due: '2026-12-20' });
@@ -158,13 +245,13 @@ it('composes any request offline into a general program across Gmail, Sheets, la
   expect(plan_summary).toMatchObject({ template: 'generic', planner: 'deterministic-intent-compiler' });
   const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
   expect(agent.workflow_plan.params.program!.map((entry) => entry.op)).toEqual(['mail.search', 'sheets.append', 'mail.label', 'calendar.reminders']);
-  const tab = sheetRows(runtime, 'Clam - Launch');
+  const tab = sheetRows(runtime, 'Siftvane - Launch');
   expect(tab.headers).toEqual(['Date', 'From', 'Subject', 'Deadline', 'Source ID']);
   expect(tab.rows.map((row) => row[3]).sort()).toEqual(['2026-12-10', '2026-12-11']);
   for (const id of ['deadline-a', 'deadline-b']) {
-    expect((runtime.inbox.store.entity('sandbox', 'mail', id) as { labels: string[] }).labels).toContain('CLAM_LAUNCH');
+    expect((runtime.inbox.store.entity('sandbox', 'mail', id) as { labels: string[] }).labels).toContain('SIFTVANE_LAUNCH');
   }
-  const reminders = runtime.inbox.store.entities<{ id: string; start: string }>('sandbox', 'calendar').filter((event) => event.id.startsWith('clam-reminder-'));
+  const reminders = runtime.inbox.store.entities<{ id: string; start: string }>('sandbox', 'calendar').filter((event) => event.id.startsWith('siftvane-reminder-'));
   expect(reminders.map((event) => event.start).sort()).toEqual(['2026-12-10T09:00:00.000Z', '2026-12-11T09:00:00.000Z']);
   const logs = runtime.platform.logs(user, { agentId: agent_id });
   expect(new Set(logs.map((entry) => entry.service))).toEqual(new Set(['system', 'gmail', 'sheets', 'calendar']));
@@ -196,7 +283,9 @@ it('lets the LLM think: it composes its own program, reviews sanitized results, 
   const model: Server = createServer((request, response) => {
     let body = '';
     request.on('data', (chunk) => { body += chunk; });
-    request.on('end', () => { prompts.push(JSON.parse(body).prompt); response.end(JSON.stringify({ response: replies.shift() ?? '{}' })); });
+    request.on('end', () => { prompts.push(JSON.parse(body).prompt); response.end(JSON.stringify({
+      response: replies.shift() ?? '{}', model: 'fake-planner', prompt_eval_count: 250, eval_count: 35,
+    })); });
   });
   await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
   try {
@@ -208,13 +297,17 @@ it('lets the LLM think: it composes its own program, reviews sanitized results, 
       expect(agent.workflow_plan.params.program!.find((entry) => entry.op === 'mail.send')).toMatchObject({ to: ['sam@team.example'] });
       expect(agent.workflow_plan.params.program!.map((entry) => entry.id)).toEqual(['orders', 'sheet', 'tell', 'returns', 'remind']);
       expect(sheetRows(runtime, 'Order Tracker').rows.map((row) => row[2]).sort()).toEqual(['confirmed', 'delivered', 'shipped']);
-      const reminder = runtime.inbox.store.entities<{ id: string; title: string; start: string }>('sandbox', 'calendar').find((event) => event.id.startsWith('clam-reminder-'))!;
+      const reminder = runtime.inbox.store.entities<{ id: string; title: string; start: string }>('sandbox', 'calendar').find((event) => event.id.startsWith('siftvane-reminder-'))!;
       expect(reminder).toMatchObject({ title: 'Return window closes for ORDER-500', start: '2026-12-21T09:00:00.000Z' });
       // sam@team.example is allowlisted, so the update was sent autonomously with disclosure.
       const sent = runtime.inbox.store.entities<{ to: string; headers: Record<string, string> }>('sandbox', 'review').filter((entry) => entry?.headers);
       expect(sent).toEqual([expect.objectContaining({ to: 'sam@team.example', headers: { 'X-Agent-Automated': 'true' } })]);
       const reviews = runtime.platform.logs(user, { agentId: agent_id, service: 'system' }).filter((entry) => entry.action_name === 'llm_review');
       expect(reviews.map((entry) => entry.output_summary)).toEqual(['Everything requested is done. → done', 'One order has a return deadline; add a reminder. → 2 more step(s)']);
+      const liveRun = runtime.inbox.store.run(agent.state.last_run_id!)!;
+      expect(liveRun.model_usage).toMatchObject({ provider: 'ollama', prompt_tokens: 750, completion_tokens: 105, estimated_usd: 0 });
+      expect(runtime.inbox.store.trace(liveRun.id).steps.filter((step) => step.detail.event === 'AGENT_MODEL_CALL')
+        .map((step) => step.detail.phase)).toEqual(['planning', 'review', 'review']);
       // Review prompts carry sanitized observations, not raw email bodies.
       expect(prompts[1]).toContain('"step":"orders"');
       expect(prompts[1]).not.toContain('Return by: 2026-12-21\\nStatus');
@@ -225,11 +318,36 @@ it('lets the LLM think: it composes its own program, reviews sanitized results, 
   }
 }, 60_000);
 
+it('validates the full plan before review can execute a new step', async () => {
+  const program = [{ id: 'orders', op: 'mail.search', keywords: ['order'] },
+    ...Array.from({ length: 14 }, (_, index) => ({ id: 'filter_' + index, op: 'filter', from: 'orders', field: 'subject', exists: true }))];
+  const replies = [
+    { reasoning: 'Check the order messages.', program },
+    { reasoning: 'Create another folder.', done: false, steps: [{ id: 'output', op: 'drive.folder', path: ['Overflow'] }] },
+  ];
+  const model = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => response.end(JSON.stringify({ response: JSON.stringify(replies.shift()) })));
+  });
+  await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
+  try {
+    await runtimeTest(async (runtime) => {
+      const { agent_id } = await createAgent(runtime, 'Check order emails.');
+      const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
+      expect(agent.workflow_plan.params.program).toHaveLength(15);
+      expect(runtime.platform.artifacts(user, agent_id)).toHaveLength(0);
+      expect(runtime.platform.logs(user, { agentId: agent_id }).find((entry) => entry.action_name === 'llm_review')?.output_summary)
+        .toContain('combined plan failed validation or exceeded the step limit');
+    }, { mode: 'llm', provider: 'ollama', model: 'fake-planner', endpoint: 'http://127.0.0.1:' + (model.address() as { port: number }).port,
+      timeoutMs: 5000, rates: { input: 0, output: 0 } });
+  } finally { model.close(); }
+});
+
 it('keeps model review steps inside the originating MCP token scopes', async () => {
   const replies = [
     { reasoning: 'Find orders first.', program: [{ id: 'orders', op: 'mail.search', keywords: ['order'] }] },
     { reasoning: 'Label the matching mail and count the items.', done: false, steps: [
-      { id: 'label', op: 'mail.label', from: 'orders', label: 'CLAM_ORDERS' },
+      { id: 'label', op: 'mail.label', from: 'orders', label: 'SIFTVANE_ORDERS' },
       { id: 'summary', op: 'summarize', from: 'orders' },
     ] },
     { reasoning: 'Review finished.', done: true },
@@ -275,17 +393,17 @@ it('repairs real model mistakes and drops ungrounded senders, time windows, and 
   const { steps, issues } = repairProgram([
     { id: 'search_emails', op: 'mail.search', keywords: ['order', 'delivery'], from_contains: 'example.com', newer_than_days: 30, include_attachments: false, limit: 100 },
     { id: 'create_tracker_sheet', op: 'sheets.append', from: 'search_emails', title: 'Tracker', tab: true, columns: ['From', 'Subject', 'Date', 'Deadline'] },
-    { id: 'label_emails', op: 'mail.label', from: 'search_emails', label: 'CLAM_UPPER_SNAKE' },
+    { id: 'label_emails', op: 'mail.label', from: 'search_emails', label: 'SIFTVANE_UPPER_SNAKE' },
     { id: 'add_calendar_reminders', op: 'calendar.reminders', from: 'search_emails', date_field: 'Deadline', title: 'Due', time_utc: true },
     { id: 'write_doc', op: 'docs.write', title: 'Summary', heading: 'Summary', content: '{{summary}}', folder: 'Summary Docs', mode: 'overwrite' },
-    { id: 'send_email', op: 'mail.send', to: ['sam@team.example', 'user_email'], subject: 'Summary', body: 'Done', from: 'clam@example.com' },
+    { id: 'send_email', op: 'mail.send', to: ['sam@team.example', 'user_email'], subject: 'Summary', body: 'Done', from: 'siftvane@example.com' },
     { id: 'approval', op: 'mail.send', to: ['user_email'], subject: 'x', body: 'y' },
     { id: 'mystery', op: 'shell.exec', command: 'rm -rf /' },
   ], 'Summarize my order and delivery emails into a doc, track them, and email sam@team.example');
   expect(steps.find((step) => step.op === 'mail.search')).toEqual({ id: 'search_emails', op: 'mail.search', keywords: ['order', 'delivery'],
     include_attachments: false, limit: 50 });
   expect(steps.find((step) => step.op === 'sheets.append')).toMatchObject({ tab: 'Rows' });
-  expect(steps.find((step) => step.op === 'mail.label')).toMatchObject({ label: 'CLAM_ORDER' });
+  expect(steps.find((step) => step.op === 'mail.label')).toMatchObject({ label: 'SIFTVANE_ORDER' });
   expect(steps.find((step) => step.op === 'calendar.reminders')).toMatchObject({ date_field: 'deadline', time_utc: '09:00' });
   expect(steps.find((step) => step.op === 'docs.write')).toMatchObject({ folder: ['Summary Docs'], mode: 'replace_section' });
   expect(steps.filter((step) => step.op === 'mail.send')).toEqual([{ id: 'send_email', op: 'mail.send', to: ['sam@team.example'], subject: 'Summary', body: 'Done' }]);

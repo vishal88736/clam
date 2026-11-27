@@ -7,9 +7,9 @@ import path from 'node:path';
 import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 
-const chromium = process.env.CLAM_CHROMIUM ?? ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find((file) => existsSync(file));
+const chromium = process.env.SIFTVANE_CHROMIUM ?? ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find((file) => existsSync(file));
 const payload = (result: { content: unknown }) => JSON.parse((result.content as { text: string }[])[0].text);
 
 const freePort = () => new Promise<number>((resolve, reject) => {
@@ -100,8 +100,8 @@ async function stop(child: ChildProcess | undefined) {
 }
 
 it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artifact previews to the website in headless Chromium with zero console errors', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'clam-web-e2e-'));
-  const runtime = await createClamApp({ databasePath: ':memory:', config: {
+  const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-web-e2e-'));
+  const runtime = await createSiftvaneApp({ databasePath: ':memory:', config: {
     inboxLive: false, tracesDir: path.join(dir, 'traces'), mailAttachmentsDir: path.join(dir, 'workspace', 'mail-attachments'),
   } });
   let web: ChildProcess | undefined;
@@ -112,9 +112,9 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
     const base = await runtime.app.listen({ port: 0, host: '127.0.0.1' });
     const webPort = await freePort();
     const origin = `http://127.0.0.1:${webPort}`;
-    web = spawn(path.resolve('node_modules/.bin/pnpm'), ['--filter', '@clam/web', 'exec', 'next', 'dev', '-p', String(webPort), '-H', '127.0.0.1'], {
+    web = spawn(path.resolve('node_modules/.bin/pnpm'), ['--filter', '@siftvane/web', 'exec', 'next', 'dev', '-p', String(webPort), '-H', '127.0.0.1'], {
       cwd: process.cwd(), detached: true, stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, CLAM_INBOX_API_ORIGIN: base, CLAM_NEXT_DIST_DIR: '.next-e2e', NEXT_TELEMETRY_DISABLED: '1', PORT: String(webPort) },
+      env: { ...process.env, SIFTVANE_INBOX_API_ORIGIN: base, SIFTVANE_NEXT_DIST_DIR: '.next-e2e', NEXT_TELEMETRY_DISABLED: '1', PORT: String(webPort) },
     });
     let webLog = '';
     web.stdout?.on('data', (chunk) => { webLog += chunk; });
@@ -143,6 +143,10 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
     await cdp.attach(origin + '/#agents');
     const page = cdp;
     await until('agents view', () => page.evaluate<string>('document.body.innerText'), (text) => text.includes('Create an agent') && text.includes('Active agent'), 90_000);
+    await until('Siftvane sidebar brand', () => page.evaluate<boolean>(`(() => {
+      const brand = document.querySelector('.inbox-brand');
+      return brand?.textContent?.trim() === 'Siftvane' && brand.querySelector('img')?.naturalWidth > 0;
+    })()`), Boolean);
     await until('live SSE connection', () => page.evaluate<string>('document.body.innerText'), (text) => /Status\s*Ready/.test(text), 30_000);
 
     const minted = await runtime.app.inject({ method: 'POST', url: '/api/inbox/mcp-tokens', payload: { inbox_id: 'sandbox',
@@ -166,7 +170,7 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
       state.logs >= 10 && state.artifacts >= 7 && state.switches === 1 && state.status === 'Needs Approval');
     expect(synced.text).toContain('Claude Code');
     expect(synced.text).toContain('Scan my email for daily invoices');
-    expect(synced.text).toContain('Clam Invoice Ledger');
+    expect(synced.text).toContain('Siftvane Invoice Ledger');
     expect(synced.text).toMatch(/ALLOW TIER 0/);
     expect(synced.text).toMatch(/GATE TIER 2/);
 
@@ -181,7 +185,7 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
 
     // 3. The interactive Sheet viewer renders the verified rows inside the browser.
     await page.evaluate(`[...document.querySelectorAll('[data-testid=artifact-card][data-service=google_sheet]')]
-      .find((card) => card.innerText.includes('Clam Invoice Ledger')).querySelector('[data-testid=artifact-open]').click()`);
+      .find((card) => card.innerText.includes('Siftvane Invoice Ledger')).querySelector('[data-testid=artifact-open]').click()`);
     const preview = await until('sheet preview', () => page.evaluate<{ rows: number; text: string }>(`({
       rows: document.querySelectorAll('[data-testid=artifact-preview] [data-testid=sheet-row]').length,
       text: document.querySelector('[data-testid=artifact-preview]')?.innerText ?? '' })`), (state) => state.rows >= 5);
@@ -198,7 +202,7 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
     await until('photos log filter', () => page.evaluate<string[]>(`[...document.querySelectorAll('[data-testid=log-row]')].map((row) => row.dataset.service)`),
       (services) => services.length > 0 && services.every((service) => service === 'photos'));
 
-    const shots = process.env.CLAM_E2E_SCREENSHOTS;
+    const shots = process.env.SIFTVANE_E2E_SCREENSHOTS;
     if (shots) {
       await page.evaluate(`document.querySelector('[aria-label="Close preview"]')?.click()`);
       await page.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 2200, deviceScaleFactor: 1, mobile: false });
@@ -212,10 +216,18 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
         await writeFile(path.join(shots, `agents-${theme}.png`), Buffer.from(data, 'base64'));
       }
       await page.evaluate(`[...document.querySelectorAll('[data-testid=artifact-card][data-service=google_sheet]')]
-        .find((card) => card.innerText.includes('Vendor') || card.innerText.includes('Clam Invoice Ledger')).querySelector('[data-testid=artifact-open]').click()`);
+        .find((card) => card.innerText.includes('Vendor') || card.innerText.includes('Siftvane Invoice Ledger')).querySelector('[data-testid=artifact-open]').click()`);
       await new Promise((resolve) => setTimeout(resolve, 600));
       const { data } = await page.send<{ data: string }>('Page.captureScreenshot', { format: 'png' });
       await writeFile(path.join(shots, 'sheet-preview.png'), Buffer.from(data, 'base64'));
+      await page.send('Page.navigate', { url: origin + '/about' });
+      await until('Siftvane About hero', () => page.evaluate<boolean>(
+        "document.querySelector('.siftvane-hero-mark img')?.naturalWidth > 0"), Boolean);
+      for (const [size, width, height] of [['desktop', 1280, 800], ['mobile', 390, 844]] as const) {
+        await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: size === 'mobile' });
+        const hero = await page.send<{ data: string }>('Page.captureScreenshot', { format: 'png' });
+        await writeFile(path.join(shots, `about-${size}.png`), Buffer.from(hero.data, 'base64'));
+      }
     }
     expect(page.errors).toEqual([]);
   } finally {

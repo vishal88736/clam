@@ -1,4 +1,4 @@
-# Clam acceptance audit
+# Siftvane acceptance audit
 
 Audit date **2026-11-26 UTC**. The browser, CLI, local model, and Docker checks used disposable ports and SQLite databases. The results describe the local worktree. The public remote's default branch was `main`, and `origin/main` was at `482b29b` during the audit.
 
@@ -6,7 +6,7 @@ Audit date **2026-11-26 UTC**. The browser, CLI, local model, and Docker checks 
 
 | Check | Status | Observed evidence |
 | --- | --- | --- |
-| Official coding window | FAIL | The published rules require project code during the 72-hour event. Kickoff is November 27 at 18:00 UTC. `git log --all` showed the initial Clam commit `c38207f` on Nov 25 at 04:59:56 +05:30 and the Agentic Inbox release `482b29b` on Nov 26 at 04:12:42 +05:30. [Organizer rules](https://www.agentwarehack.com/) |
+| Official coding window | FAIL | The published rules require project code during the 72-hour event. Kickoff is November 27 at 18:00 UTC. `git log --all` showed the initial Siftvane commit `c38207f` on Nov 25 at 04:59:56 +05:30 and the Agentic Inbox release `482b29b` on Nov 26 at 04:12:42 +05:30. [Organizer rules](https://www.agentwarehack.com/) |
 | Public source and required artifacts | PASS | GitHub repository API returned HTTP 200 with `visibility: public`, `private: false`, and `default_branch: main`. The artifact script checked nine nonempty files or directories, parsed the Track 1 TOML, and verified MIT license text. |
 | Credential scan | PASS | Pattern scan of 163 publishable entries and 196 historical Git blobs found zero credential candidates. `git ls-files '.env*' '**/.env*'` returned only `.env.example`. No `.env` or hosted/Google credential variables were present. |
 | Track 1 surface | FIXED | Documentation link audit initially found `README.md → LINK_TBD`. The link now opens the local walkthrough, and the relative-link scan returned zero broken links. The recorded demo is unpublished. |
@@ -26,12 +26,12 @@ Audit date **2026-11-26 UTC**. The browser, CLI, local model, and Docker checks 
 | Travel delays | AC402 changed from 14:20 to 16:45 UTC. The flexible block moved to 16:00. The VIP notice had a pending `VIP_RECIPIENT` decision. |
 | Meeting scheduling | Demo rehearsal booked at 09:00 UTC using an earlier thread. Prep ran from 08:45 to 09:00. The allowed meeting had Tier 1 evidence. The external request had an `OFF_HOURS` approval. |
 | Bills and subscriptions | Studio changed from $25 to $35. The renewal reminder existed in Calendar. AWS-1207 had a duplicate/spoof flag and a 42.50 to 420.50 conflict with two sources. |
-| Suspicious email quarantine | `newsletter-news` stored `CLAM_QUARANTINE` with `SENDER_REPLY_TO_MISMATCH`. Injection and forged-header cases also ran through the regression tests and official-runner dry run. |
+| Suspicious email quarantine | `newsletter-news` stored `SIFTVANE_QUARANTINE` with `SENDER_REPLY_TO_MISMATCH`. Injection and forged-header cases also ran through the regression tests and official-runner dry run. |
 | Pre-meeting briefs | Demo rehearsal stored two related threads, two commitments, and file references for `overview.pdf` and `figures.csv`. |
 | Commitment tracking | Launch notes recorded a December 15 deadline and a waiting-on contact. The executed cross-thread reply test suppressed the stale follow-up. |
 | Delivery tracking | There was one delivered ORDER-500 record and a December 21 calendar reminder. |
-| OTP cleanup | Both expired OTPs had `CLAM_EXPIRED_OTP`. The password-security alert retained `INBOX`. |
-| Newsletter and outreach cleanup | One digest record was retained. Cold outreach had `CLAM_COLD_OUTREACH` and `MUTED`. |
+| OTP cleanup | Both expired OTPs had `SIFTVANE_EXPIRED_OTP`. The password-security alert retained `INBOX`. |
+| Newsletter and outreach cleanup | One digest record was retained. Cold outreach had `SIFTVANE_COLD_OUTREACH` and `MUTED`. |
 
 ## Gates 3–5 · Safety, MCP, and Google
 
@@ -40,7 +40,7 @@ Audit date **2026-11-26 UTC**. The browser, CLI, local model, and Docker checks 
 | 3 | Reader, disclosure, and taint | PASS | An attempted UPDATE on the actual Plane A connection returned read-only. The captured model request had structured output and no tool bindings. All 3 Tier 1 outbox records had the header and footer. The omit-footer regression passed for sandbox and Gmail MIME. An actual MCP call to a recipient found only in message text returned `TAINT_RECIPIENT`. |
 | 3 | SSE budgets and trace integrity | PASS | `pnpm agent watch` streamed all six stages and terminal budgets `outbound:3, calendar:6, steps:64, tokens:0, usd:0`. `pnpm agent verify-trace` returned `Verified 72 steps · 7399695e4f2966bc49a0286e844a9266d36b4cf9a5ff5e1fa954cc6724a41d2a`, exit 0. Editing one byte returned `Trace integrity check failed.`, exit 1. The tampered copy was deleted. |
 | 3 | Kill switch and rollback | PASS | `pnpm agent halt "audit pause"` returned `halted:true`. Run API returned 423, the MCP write was blocked, and raw SQLite raised `INBOX_HALTED`. With the API stopped, the CLI used the lockfile and created it with mode 0600. Attack bursts returned `ACTIVE_ATTACK_HALT`, and the zero-budget run halted with `INBOX_BUDGET_EXCEEDED` and zero sends. Resume recorded `Kill Switch disarmed by inbox_operator: audit resumed`. CLI rollback restored AC402 to 14:20 UTC, removed the AWS ledger row, restored the OTP label, and recorded three irreversible sends. |
-| 4 | HTTP, stdio, and scopes | FIXED | Baseline accepted Bearer and rejected a valid `x-api-key` with HTTP 401. The SDK acceptance test used the working header and launched `pnpm --silent clam-mcp` to list tools and invoke `list_threads`. Token-in-query requests had HTTP 401, read-only send returned `MCP_SCOPE_REQUIRED`, and using the revoked bearer returned 401. |
+| 4 | HTTP, stdio, and scopes | FIXED | Baseline accepted Bearer and rejected a valid `x-api-key` with HTTP 401. The SDK acceptance test used the working header and launched `pnpm --silent siftvane-mcp` to list tools and invoke `list_threads`. Token-in-query requests had HTTP 401, read-only send returned `MCP_SCOPE_REQUIRED`, and using the revoked bearer returned 401. |
 | 4 | Attachments and outbound scanning | FIXED | `stage_attachment_workspace` was absent at baseline. The actual MCP call staged the seeded CSV under `workspace/mail-attachments/` with mode 0600. A traversal filename and `.sh`/`.exe` filenames were rejected. A synthetic AWS-shaped key was initially allowed. The regression now returns `OUTBOUND_CONTENT_BLOCKED` for AWS and environment-secret fixtures, with zero receipts. Mocked Gmail PDF extraction also passed. |
 | 4 | Grouped batch approval | FIXED | A four-recipient batch created one Tier 2 item and zero immediate sends. Approval produced two runs with write counts `[3, 1]` and four total receipts. Reapproval returned 409 and created no additional sends. |
 | 4 | Verification and handoffs | PASS | A matching OTP and HTTPS link were each returned once. Replay returned `found:false`. The wildcard, mismatched host, and open-redirect-shaped fixture yielded no verification credential. The tested traces, SQLite tables, and SSE frames contained zero raw codes or verification URLs. The two-hop handoff passed independent HMAC verification and retained the untrusted payload tag. The budget and ping-pong tests halted the thread, emitted `AGENT_LOOP_PREVENTED`, and queued Tier 2. The forged `.eml` was quarantined with `FORGED_AGENT_HANDOFF_HEADER`. |

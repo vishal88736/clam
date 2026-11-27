@@ -8,7 +8,7 @@ import {
   type PolicyEvaluationTrace,
   type PolicyIR,
   type SemanticClassificationResult,
-} from '@clam/shared';
+} from '@siftvane/shared';
 import {
   classifyEmailWithProvider,
   type ClassifierRuntimeConfig,
@@ -294,7 +294,7 @@ export class PolicyEngine {
       const syntheticEmail: EphemeralEmail = {
         id: 'outbound_eval',
         threadId: 'outbound_eval',
-        from: 'self@clam.local',
+        from: 'self@siftvane.local',
         to: input.outbound.to ? [input.outbound.to] : [],
         subject: input.outbound.subject ?? '',
         date: new Date().toISOString(),

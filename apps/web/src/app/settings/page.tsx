@@ -20,20 +20,20 @@ function SetupCommands() {
   const [copyError, setCopyError] = useState('');
   const apiOrigin = 'http://localhost:4000';
   const endpoint = apiOrigin + '/mcp';
-  const settings = (type?: string) => JSON.stringify({ mcpServers: { 'clam-mail': {
+  const settings = (type?: string) => JSON.stringify({ mcpServers: { 'siftvane-mail': {
     ...(type ? { type } : {}), url: endpoint,
     headers: { Authorization: 'Bearer REPLACE_WITH_MCP_TOKEN' },
   } } }, null, 2);
   const commands = [
-    ['Claude Code', `claude mcp add --transport http clam-mail ${endpoint} --header "Authorization: Bearer $CLAM_MCP_TOKEN"`],
-    ['Claude Code (stdio)', `claude mcp add --env CLAM_API_URL=${apiOrigin} --env CLAM_MCP_TOKEN="$CLAM_MCP_TOKEN" --transport stdio clam-mail -- pnpm --silent clam-mcp`],
-    ['Codex', `[mcp_servers.clam-mail]\nurl = "${endpoint}"\nbearer_token_env_var = "CLAM_MCP_TOKEN"`],
-    ['Codex (stdio)', `[mcp_servers.clam-mail]\ncommand = "pnpm"\nargs = ["--silent", "clam-mcp"]\nenv_vars = ["CLAM_MCP_TOKEN"]\nstartup_timeout_sec = 30\n\n[mcp_servers.clam-mail.env]\nCLAM_API_URL = "${apiOrigin}"`],
+    ['Claude Code', `claude mcp add --transport http siftvane-mail ${endpoint} --header "Authorization: Bearer $SIFTVANE_MCP_TOKEN"`],
+    ['Claude Code (stdio)', `claude mcp add --env SIFTVANE_API_URL=${apiOrigin} --env SIFTVANE_MCP_TOKEN="$SIFTVANE_MCP_TOKEN" --transport stdio siftvane-mail -- pnpm --silent siftvane-mcp`],
+    ['Codex', `[mcp_servers.siftvane-mail]\nurl = "${endpoint}"\nbearer_token_env_var = "SIFTVANE_MCP_TOKEN"`],
+    ['Codex (stdio)', `[mcp_servers.siftvane-mail]\ncommand = "pnpm"\nargs = ["--silent", "siftvane-mcp"]\nenv_vars = ["SIFTVANE_MCP_TOKEN"]\nstartup_timeout_sec = 30\n\n[mcp_servers.siftvane-mail.env]\nSIFTVANE_API_URL = "${apiOrigin}"`],
     ['Cline MCP settings', settings('streamableHttp')],
     ['Cursor MCP settings', settings()],
   ];
   return <div>
-    <p>Export your scoped <code>CLAM_MCP_TOKEN</code> before running either client. Use one transport per client. For stdio, start from the Clam repo with <code>pnpm</code> on your PATH.</p>
+    <p>Export your scoped <code>SIFTVANE_MCP_TOKEN</code> before running either client. Use one transport per client. For stdio, start from the Siftvane repo with <code>pnpm</code> on your PATH.</p>
     {commands.map(([name, value]) => <details key={name} className="inbox-item">
       <summary>{name}</summary>
       <pre>{value}</pre>
@@ -93,7 +93,7 @@ export default function SettingsPage() {
                   setToken(null);
                   setNewTokenFor('');
                   await refresh();
-                  if (!result.remote_revoked) setError('Clam removed local access. Google did not confirm remote revocation.');
+                  if (!result.remote_revoked) setError('Siftvane removed local access. Google did not confirm remote revocation.');
                 });
               }}>Disconnect &amp; Revoke Token</button>
               <button className="inbox-button" type="button" disabled={busy || account.status !== 'active'}

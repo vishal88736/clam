@@ -1,4 +1,4 @@
-import { scanOutboundSecrets, scanPromptInjection } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection } from '@siftvane/shared';
 
 /**
  * Taint firewall for values copied from untrusted email, PDF, or photo text into Docs and Sheets.

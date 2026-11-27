@@ -2,9 +2,9 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { inboxPolicySchema } from '@clam/shared';
+import { inboxPolicySchema } from '@siftvane/shared';
 import { z, ZodError } from 'zod';
-import type { ClamConfig } from '../config.js';
+import type { SiftvaneConfig } from '../config.js';
 import { mcpScopes, sandboxMcpOwner, type GoogleAccounts } from '../auth/google.js';
 import type { KillSwitchService } from '../killswitch/service.js';
 import type { Mode, TraceStep } from './contracts.js';
@@ -18,17 +18,17 @@ import type { PlatformEvent, PlatformService } from '../platform/service.js';
 const equal = (left: string, right: string) =>
   timingSafeEqual(createHash('sha256').update(left).digest(), createHash('sha256').update(right).digest());
 
-export function registerInboxRoutes(app: FastifyInstance, inbox: InboxEngine, config: ClamConfig,
+export function registerInboxRoutes(app: FastifyInstance, inbox: InboxEngine, config: SiftvaneConfig,
   kill: KillSwitchService, accounts: GoogleAccounts, lockfile?: string, platform?: PlatformService) {
   app.register(async (router) => {
     const hasOperatorToken = (request: FastifyRequest) => {
-      const provided = request.headers['x-clam-operator-token'];
+      const provided = request.headers['x-siftvane-operator-token'] ?? request.headers['x-clam-operator-token'];
       return Boolean(config.operatorToken && typeof provided === 'string' && equal(provided, config.operatorToken));
     };
     const selectedMode = (request: FastifyRequest): Mode => {
       if (!config.inboxLive) return 'sandbox';
       const session = accounts.session(request.headers.cookie);
-      const explicit = request.headers['x-clam-inbox-id'];
+      const explicit = request.headers['x-siftvane-inbox-id'] ?? request.headers['x-clam-inbox-id'];
       if (explicit && typeof explicit === 'string' && hasOperatorToken(request)) {
         if (explicit === 'sandbox') return 'sandbox';
         if (!z.string().uuid().safeParse(explicit).success || !accounts.connection(explicit)) throw new Error('INBOX_NOT_AVAILABLE');
@@ -202,7 +202,7 @@ export function registerInboxRoutes(app: FastifyInstance, inbox: InboxEngine, co
 
     router.get('/api/inbox/calendar', async (request) => inbox.calendar(selectedMode(request)));
     router.get('/api/inbox/calendar.ics', async (request, reply) => reply
-      .type('text/calendar; charset=utf-8').header('Content-Disposition', 'attachment; filename="clam-calendar.ics"')
+      .type('text/calendar; charset=utf-8').header('Content-Disposition', 'attachment; filename="siftvane-calendar.ics"')
       .send(await inbox.ics(selectedMode(request))));
     router.get('/api/inbox/bills', async (request) => ({ bills: inbox.briefing(undefined, selectedMode(request))!.digest.upcoming_bills_summary }));
     router.get('/api/inbox/bills.csv', async (request, reply) => {
@@ -213,7 +213,7 @@ export function registerInboxRoutes(app: FastifyInstance, inbox: InboxEngine, co
         return '"' + text.replace(/"/g, '""') + '"';
       };
       const columns = ['vendor', 'invoice', 'amount', 'currency', 'due', 'type', 'priceHike', 'duplicateOrSpoofed'];
-      return reply.type('text/csv; charset=utf-8').header('Content-Disposition', 'attachment; filename="clam-bills.csv"')
+      return reply.type('text/csv; charset=utf-8').header('Content-Disposition', 'attachment; filename="siftvane-bills.csv"')
         .send([columns.join(','), ...records.map((record) => columns.map((column) => csv(record?.[column])).join(','))].join('\r\n') + '\r\n');
     });
 

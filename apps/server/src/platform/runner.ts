@@ -1,18 +1,18 @@
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import { scanOutboundSecrets, scanPromptInjection } from '@clam/shared';
-import type { InboxCalendarEvent } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection } from '@siftvane/shared';
+import type { InboxCalendarEvent } from '@siftvane/shared';
 import { safeAttachmentBytes, stageWorkspaceAttachment } from '../inbox/attachmentWorkspace.js';
 import { readAttachments } from '../inbox/attachments.js';
 import type { McpCaller, Mode, SafeAction } from '../inbox/contracts.js';
-import type { InboxEngine, MissionContext } from '../inbox/engine.js';
+import type { InboxEngine, MissionContext, MissionOutcome } from '../inbox/engine.js';
 import { address, domain, stripHtml } from '../inbox/reader.js';
 import { canonicalJson, sha256 } from '../inbox/trace.js';
 import { sandboxClock, type ReaderMessage } from '../sandbox/seed.js';
 import { extractPhotoDetails, type PhotoDetails } from '../workspace/photos.js';
 import { sanitizeCell } from '../workspace/sanitize.js';
 import { compileIntent, interactivePlan, planFromChoice, planFromProgram, type CompiledIntent, type WorkflowPlan } from './planner.js';
-import { llmPlan } from './llmPlanner.js';
+import { llmPlan, type PlannerCall } from './llmPlanner.js';
 import { ProgramExecutor } from './programExecutor.js';
 import type { AgentRecord, PlatformService, ScheduleMode, Service, SourceCli } from './service.js';
 import { namespace, verdictLabel, WorkspaceOps } from './workspaceOps.js';
@@ -109,6 +109,7 @@ export class MissionRunner {
     if (this.ticking || this.closed) return;
     this.ticking = true;
     try {
+      this.platform.recoverAgentRuns();
       if (this.engine.halted()) return;
       for (const agent of this.platform.waitingAgents()) {
         if (agent.state.phase === 'awaiting_photo_selection') await this.checkPicker(agent);
@@ -125,11 +126,12 @@ export class MissionRunner {
   }
 
   /** LLM planner when the agent runs in llm mode; any planner failure falls back to the deterministic compiler. */
-  async plan(instruction: string, services: string[] | undefined, inboxId: string): Promise<{ compiled: CompiledIntent; fallback: string | null; repairs?: string[] }> {
+  async plan(instruction: string, services: string[] | undefined, inboxId: string, calls: PlannerCall[] = []):
+    Promise<{ compiled: CompiledIntent; fallback: string | null; repairs?: string[] }> {
     const options = { services, mode: inboxId === 'sandbox' ? 'sandbox' as const : 'live' as const };
     if (this.engine.agent.mode === 'llm') {
       try {
-        const planned = await llmPlan(this.engine.agent, instruction, options.mode);
+        const planned = await llmPlan(this.engine.agent, instruction, options.mode, undefined, (call) => calls.push(call));
         if (planned.kind === 'program') {
           return { compiled: planFromProgram({ program: planned.program, name: planned.name, scheduleMode: planned.scheduleMode, reasoning: planned.reasoning },
             instruction, 'llm-planner'), fallback: null, repairs: planned.issues };
@@ -150,7 +152,8 @@ export class MissionRunner {
     authorize?: (compiled: CompiledIntent, services: Service[]) => void;
   }) {
     this.engine.guard();
-    const { compiled, fallback, repairs } = await this.plan(input.instruction, input.services, input.inboxId);
+    const calls: PlannerCall[] = [];
+    const { compiled, fallback, repairs } = await this.plan(input.instruction, input.services, input.inboxId, calls);
     this.engine.guard();
     const services = [...new Set([...compiled.services, ...(input.services ?? []).filter((value): value is Service =>
       ['gmail', 'calendar', 'drive', 'docs', 'sheets', 'photos'].includes(value))])];
@@ -160,6 +163,7 @@ export class MissionRunner {
       userId: input.userId, inboxId: input.inboxId, name: input.agentName?.trim() || compiled.name, goal: input.instruction,
       sourceCli: input.sourceCli, services, plan: compiled.plan, scheduleMode,
       intervalSeconds: input.intervalSeconds ?? (scheduleMode === 'continuous' ? 300 : scheduleMode === 'daily' ? 86_400 : scheduleMode === 'weekly' ? 604_800 : null),
+      state: calls.length ? { planning_calls: calls } : undefined,
     });
     this.platform.log({ userId: input.userId, agentId: agent.id, runId: null, service: 'system', action: 'compile_plan',
       input: input.instruction, output: `${compiled.plan.planner}: ${compiled.plan.template} · ${compiled.plan.steps.length} steps · ${services.join(', ')}` +
@@ -209,6 +213,26 @@ export class MissionRunner {
     });
   }
 
+  stopAgent(agent: AgentRecord, cancel: boolean) {
+    const updated = this.platform.updateAgentIfStatus(agent.id, agent.status, () => ({
+      status: cancel ? 'archived' : 'paused', next_run_at: null,
+    }));
+    if (!updated) throw new Error('AGENT_STATUS_CHANGED');
+    if (updated.state.running_run_id) {
+      this.engine.stopMission(updated.state.running_run_id, cancel ? 'AGENT_RUN_CANCELLED' : 'AGENT_RUN_PAUSED');
+    }
+    if (cancel) {
+      const mode = modeFor(updated.inbox_id);
+      const activeRunApprovals = updated.state.running_run_id ? this.engine.store.approvals(mode, updated.state.running_run_id)
+        .map((approval) => approval.approval_id) : [];
+      for (const id of new Set([...updated.state.pending_approvals, ...activeRunApprovals])) {
+        const approval = this.engine.store.approval(id);
+        if (approval?.status === 'PENDING') this.engine.store.updateApproval({ ...approval, status: 'REJECTED' });
+      }
+    }
+    return updated;
+  }
+
   private checkApprovals(agent: AgentRecord) {
     const statuses = agent.state.pending_approvals.map((id) => {
       const approval = this.engine.store.approval(id);
@@ -227,12 +251,13 @@ export class MissionRunner {
     if (agent.state.phase === 'awaiting_rfq_approval') {
       if (approved) {
         log('rfq_batch_approved', 'Operator approved the RFQ batch; resuming to collect vendor quotes.', true);
-        this.platform.updateAgent(agent.id, { status: 'active', next_run_at: new Date().toISOString(),
-          state: { ...agent.state, phase: 'awaiting_quotes', pending_approvals: [], phase_started_at: new Date().toISOString() } });
+        this.platform.updateAgentIfStatus(agent.id, 'input_required', (current) => ({ status: 'active', next_run_at: new Date().toISOString(),
+          state: { ...current.state, phase: 'awaiting_quotes', pending_approvals: [], phase_started_at: new Date().toISOString() } }));
       } else {
         log('rfq_batch_declined', statuses.includes('EXPIRED') ? 'The RFQ approval expired; no vendor was contacted.'
           : 'Operator declined the RFQ batch; no vendor was contacted.', true);
-        this.platform.updateAgent(agent.id, { status: 'completed', next_run_at: null, state: { ...agent.state, phase: 'done', pending_approvals: [] } });
+        this.platform.updateAgentIfStatus(agent.id, 'input_required', (current) =>
+          ({ status: 'completed', next_run_at: null, state: { ...current.state, phase: 'rfq_declined', pending_approvals: [] } }));
       }
       return;
     }
@@ -241,12 +266,20 @@ export class MissionRunner {
       log(approved ? 'booking_confirmation_sent' : 'booking_declined', approved
         ? `Operator approved; purchase confirmation sent and verified (${sent.length} message).`
         : statuses.includes('EXPIRED') ? 'The booking approval expired; nothing was committed.' : 'Operator declined the booking; nothing was committed.', true);
-      this.platform.updateAgent(agent.id, { status: 'completed', next_run_at: null, state: { ...agent.state, phase: 'done', pending_approvals: [] } });
+      this.platform.updateAgentIfStatus(agent.id, 'input_required', (current) => ({
+        status: approved && !sent.length ? 'paused' : 'completed', next_run_at: null, state: {
+          ...current.state, phase: approved ? 'done' : 'booking_declined', pending_approvals: [],
+          last_error: approved && !sent.length ? 'BOOKING_SEND_UNVERIFIED' : null,
+        },
+      }));
       return;
     }
     log('review_resolved', `${statuses.filter((status) => status !== 'EXPIRED').length} flagged item(s) resolved by the operator` +
       (statuses.includes('EXPIRED') ? `, ${statuses.filter((status) => status === 'EXPIRED').length} expired` : '') + '.', true);
-    this.platform.updateAgent(agent.id, { ...this.afterRun(agent), state: { ...agent.state, phase: 'start', pending_approvals: [] } });
+    this.platform.updateAgentIfStatus(agent.id, 'input_required', (current) => ({
+      ...(current.state.last_error ? { status: 'paused', next_run_at: null } : this.afterRun(current)),
+      state: { ...current.state, phase: 'start', pending_approvals: [] },
+    }));
   }
 
   /** Resumes a photo agent once the user has picked receipts in Google Photos (polled at most every 5 s). */
@@ -257,8 +290,8 @@ export class MissionRunner {
     if (!await adapter.photoPickerReady?.().catch(() => false)) return;
     this.platform.log({ userId: agent.user_id, agentId: agent.id, runId: null, service: 'photos', action: 'photo_selection_received',
       input: 'Google Photos Picker', output: 'The operator selected photos; resuming the agent.', verdict: 'GATE_TIER_2', ruleId: 'OPERATOR_PHOTO_SELECTION', verified: true });
-    this.platform.updateAgent(agent.id, { status: 'active', next_run_at: new Date().toISOString(),
-      state: { ...agent.state, phase: 'start', picker_uri: null } });
+    this.platform.updateAgentIfStatus(agent.id, 'input_required', (current) => ({ status: 'active', next_run_at: new Date().toISOString(),
+      state: { ...current.state, phase: 'start', picker_uri: null } }));
   }
 
   private verifiedSends(approvalIds: string[]) {
@@ -278,49 +311,78 @@ export class MissionRunner {
   }
 
   async runAgent(id: string) {
-    const agent = this.platform.agent(id);
-    if (!agent || agent.status !== 'active') return null;
-    const mode = modeFor(agent.inbox_id);
-    // Claim the agent before starting so a second tick cannot launch it twice.
-    this.platform.updateAgent(id, { next_run_at: null, last_run_at: new Date().toISOString(), run_count: agent.run_count + 1 });
+    const candidate = this.platform.agent(id);
+    if (!candidate || candidate.status !== 'active' || !candidate.next_run_at || candidate.next_run_at > new Date().toISOString()) return null;
+    const mode = modeFor(candidate.inbox_id);
+    let claimed = false;
     let pending: string[] = [];
-    let phase = agent.state.phase;
+    let phase = candidate.state.phase;
     let notes: string[] = [];
     let retryInMs: number | undefined;
-    const handle = this.engine.mission('agent:' + agent.id, mode, async (context) => {
+    const failures = new Set<string>();
+    const track = async (action: Promise<MissionOutcome>) => {
+      const outcome = await action;
+      if (outcome.approvalId) pending.push(outcome.approvalId);
+      if (!outcome.verified && outcome.decision !== 'APPROVAL_REQUIRED') {
+        failures.add(outcome.decision === 'BLOCKED' ? outcome.ruleId : outcome.outcome || 'ACTION_UNVERIFIED');
+      }
+      return outcome;
+    };
+    const checkControl = () => {
+      if (!claimed) return;
+      const current = this.platform.agent(id);
+      if (!current || current.status === 'archived') throw new Error('AGENT_RUN_CANCELLED');
+      if (current.status !== 'active') throw new Error('AGENT_RUN_PAUSED');
+    };
+    const handle = this.engine.mission('agent:' + id, mode, async (context) => {
+      // The engine holds the shared lease before the agent's due state is changed.
+      const agent = this.platform.claimDueAgent(id, context.runId);
+      if (!agent) return;
+      claimed = true;
+      phase = agent.state.phase;
+      for (const call of agent.state.planning_calls ?? []) {
+        context.recordModel({ event: 'AGENT_MODEL_CALL', phase: call.phase, status: call.status }, call.usage);
+      }
       context.record('PLAN', { agent_id: agent.id, agent_name: agent.name, template: agent.workflow_plan.template, phase,
         planner: agent.workflow_plan.planner, steps: agent.workflow_plan.steps.map((step) => step.id) });
-      const ops = new WorkspaceOps(context, this.engine.workspace(mode), this.platform,
+      const tracked: MissionContext = { ...context, execute: (action) => track(context.execute(action)),
+        queueBatch: (actions, reason) => track(context.queueBatch(actions, reason)) };
+      const ops = new WorkspaceOps(tracked, this.engine.workspace(mode), this.platform,
         { userId: agent.user_id, agentId: agent.id, inboxId: agent.inbox_id }, this.engine.stagingRoot());
-      const result = await this.execute(agent, context, ops);
-      pending = result.pending;
+      const result = await this.execute(agent, tracked, ops);
+      pending = [...new Set([...pending, ...result.pending])];
       phase = result.phase;
       notes = result.notes;
       retryInMs = (result as { retryInMs?: number }).retryInMs;
-    });
+      if (failures.size) {
+        notes = [...notes, ...failures];
+        context.record('CHECK', { outcome: 'REQUESTED_ACTION_UNVERIFIED', errors: [...failures] });
+        throw new Error(failures.values().next().value);
+      }
+    }, undefined, checkControl);
     const run = await handle.done;
-    const latest = this.platform.agent(id)!;
-    if (run.status === 'HALTED' || this.engine.halted()) {
-      if (!['halted'].includes(latest.status)) this.platform.updateAgent(id, { status: 'halted', next_run_at: null,
-        state: { ...latest.state, last_error: run.error, last_run_id: run.id } });
-      return run;
+    if (!claimed) return null;
+    const failure = run.error ?? failures.values().next().value ?? null;
+    if (failure) {
+      this.platform.log({ userId: candidate.user_id, agentId: id, runId: run.id, service: 'system',
+        action: 'mission_failed', input: phase, output: failure,
+        verdict: 'BLOCKED', ruleId: failure, verified: false });
     }
-    if (run.status !== 'COMPLETED') {
-      this.platform.log({ userId: agent.user_id, agentId: agent.id, runId: run.id, service: 'system', action: 'mission_failed',
-        input: phase, output: run.error ?? 'Mission failed', verdict: 'BLOCKED', ruleId: run.error ?? 'MISSION_FAILED', verified: false });
-      this.platform.updateAgent(id, { status: 'paused', next_run_at: null, state: { ...latest.state, last_error: run.error, last_run_id: run.id } });
-      return run;
-    }
-    const state = { ...latest.state, phase, pending_approvals: pending, last_error: null, last_run_id: run.id, notes,
-      ...(phase !== latest.state.phase ? { phase_started_at: new Date().toISOString() } : {}) };
-    if (phase === 'awaiting_photo_selection') {
-      this.platform.updateAgent(id, { status: 'input_required', next_run_at: null, state: { ...state, picker_uri: notes.find((note) => note.startsWith('https://')) ?? null } });
-    } else if (pending.length) this.platform.updateAgent(id, { status: 'input_required', next_run_at: null, state });
-    else if (phase === 'awaiting_quotes') {
-      this.platform.updateAgent(id, { status: 'active', state,
-        next_run_at: new Date(Date.now() + (retryInMs ?? (agent.inbox_id === 'sandbox' ? 0 : (agent.interval_seconds ?? 300) * 1000))).toISOString() });
-    } else if (phase === 'done') this.platform.updateAgent(id, { status: 'completed', next_run_at: null, state });
-    else this.platform.updateAgent(id, { ...this.afterRun(agent), state });
+    const activeApprovals = [...new Set(pending)].filter((approvalId) => this.engine.store.approval(approvalId));
+    this.platform.finishAgentRun(id, run.id, (agent) => {
+      const state = { ...agent.state, phase, pending_approvals: activeApprovals, last_error: failure, notes: [...new Set([...notes, ...failures])],
+        ...(phase !== agent.state.phase ? { phase_started_at: new Date().toISOString() } : {}) };
+      if (run.status === 'HALTED' || this.engine.halted()) return { status: 'halted', next_run_at: null, state };
+      if (activeApprovals.length) return { status: 'input_required', next_run_at: null,
+        state: { ...state, phase: phase === 'start' ? 'awaiting_review' : phase } };
+      if (run.status !== 'COMPLETED' || failure) return { status: 'paused', next_run_at: null, state };
+      if (phase === 'awaiting_photo_selection') return { status: 'input_required', next_run_at: null,
+        state: { ...state, picker_uri: notes.find((note) => note.startsWith('https://')) ?? null } };
+      if (phase === 'awaiting_quotes') return { status: 'active', state,
+        next_run_at: new Date(Date.now() + (retryInMs ?? (agent.inbox_id === 'sandbox' ? 0 : (agent.interval_seconds ?? 300) * 1000))).toISOString() };
+      if (phase === 'done' || phase === 'no_usable_quotes') return { status: 'completed', next_run_at: null, state };
+      return { ...this.afterRun(agent), state };
+    });
     return run;
   }
 
@@ -368,7 +430,7 @@ export class MissionRunner {
       const session = await adapter.startPhotoPicker();
       const step = context.record('POLICY', { action: 'search_recent_photos', rule_id: 'PHOTOS_PICKER_SELECTION_REQUIRED', decision: 'APPROVAL_REQUIRED', tier: 2 });
       this.platform.log({ userId: agent.user_id, agentId: agent.id, runId: context.runId, service: 'photos', action: 'request_photo_selection',
-        input: 'Google Photos Picker session ' + session.session_id, output: 'Open the picker link and choose the receipts Clam may read: ' + session.picker_uri,
+        input: 'Google Photos Picker session ' + session.session_id, output: 'Open the picker link and choose the receipts Siftvane may read: ' + session.picker_uri,
         verdict: 'GATE_TIER_2', ruleId: 'PHOTOS_PICKER_SELECTION_REQUIRED', verified: true, traceStepHash: step.step_hash });
       return { pickerUri: session.picker_uri };
     }
@@ -394,7 +456,7 @@ export class MissionRunner {
   /* ---------------------------------- Recurring bills & daily invoices ---------------------------------- */
   private async invoiceLedger(agent: AgentRecord, context: MissionContext, ops: WorkspaceOps) {
     const plan = agent.workflow_plan;
-    const messages = await this.engine.readMessages(context.mode);
+    const messages = await this.engine.readMessages(context.mode, undefined, context.signal);
     const invoices: Invoice[] = [];
     let quarantined = 0;
     for (const message of messages) {
@@ -434,7 +496,7 @@ export class MissionRunner {
     // The ledger never blocks on photos: without a picker selection it proceeds with email invoices only.
     const photos = Array.isArray(photoResult) ? photoResult : [];
     const month = this.today(context.mode).slice(0, 7);
-    const folderPath = [...plan.params.folder_path ?? ['Clam', 'Invoices'], month];
+    const folderPath = [...plan.params.folder_path ?? ['Siftvane', 'Invoices'], month];
     const folder = await ops.ensureFolderPath(folderPath);
 
     const links = new Map<string, string>();
@@ -463,7 +525,7 @@ export class MissionRunner {
       }
     }
 
-    const sheetTitle = plan.params.sheet_title ?? 'Clam Invoice Ledger';
+    const sheetTitle = plan.params.sheet_title ?? 'Siftvane Invoice Ledger';
     const parent = ops.folderKey(folderPath.slice(0, -1));
     await ops.ensureSpreadsheet(sheetTitle, parent, [
       { name: 'Daily Invoices', headers: ['Date', 'Vendor', 'Invoice #', 'Amount', 'Due Date', 'Status', 'Drive Link'] },
@@ -481,7 +543,7 @@ export class MissionRunner {
 
     const total = clean.reduce((sum, entry) => sum + entry.amount, 0);
     const sheetUrl = this.platform.registry.get(agent.inbox_id, ops.sheetKey(sheetTitle))?.url;
-    await ops.upsertDoc(plan.params.doc_title ?? 'Clam Invoice Summary', parent, `Daily invoice digest - ${this.today(context.mode)}`, [
+    await ops.upsertDoc(plan.params.doc_title ?? 'Siftvane Invoice Summary', parent, `Daily invoice digest - ${this.today(context.mode)}`, [
       `Invoices logged: ${clean.length} (total ${total.toFixed(2)} USD); ${appended.appended} new ledger rows, ${appended.skipped} duplicates skipped.`,
       ...clean.map((entry) => `• ${entry.vendor} · ${entry.invoice} · ${entry.amount.toFixed(2)} ${entry.currency} · due ${entry.due || 'n/a'}${entry.recurring ? ' · recurring ' + entry.recurring : ''}`),
       ...(photos.length ? [`Receipt photos: ${photos.length}`, ...photos.map((item) => `• ${item.fields.merchant ?? 'Receipt'} · ${item.fields.amount ?? '?'} ${item.fields.currency ?? ''}`)] : []),
@@ -534,8 +596,6 @@ export class MissionRunner {
           : outcome.decision === 'BLOCKED' ? `Blocked by ${outcome.ruleId}` : 'Sent to allowlisted vendors and verified',
         verdict: verdictLabel(outcome), ruleId: outcome.ruleId, verified: outcome.decision !== 'BLOCKED', traceStepHash: outcome.policyStep.step_hash });
       if (outcome.decision === 'BLOCKED') throw new Error(outcome.ruleId);
-      const state = this.platform.agent(agent.id)!.state;
-      this.platform.updateAgent(agent.id, { state: { ...state, sent_vendors: vendors } });
       return outcome.approvalId ? { pending: [outcome.approvalId], phase: 'awaiting_rfq_approval', notes: [] } : { pending: [], phase: 'awaiting_quotes', notes: [] };
     }
 
@@ -544,12 +604,12 @@ export class MissionRunner {
     const sent = vendors.filter((_vendor, index) => this.engine.store.sqlite.prepare(
       "SELECT 1 FROM inbox_actions WHERE kind='send' AND target=? AND status='VERIFIED'").get(actions[index].target));
     if (context.mode === 'sandbox' && sent.length) {
-      // $0 sandbox mail delivery: vendors reply only to RFQs that really left Clam.
+      // $0 sandbox mail delivery: vendors reply only to RFQs that really left Siftvane.
       const delivered = this.engine.store.sqlite.prepare(`UPDATE inbox_sandbox_messages SET scope='workspace'
         WHERE scope='vendor_pending' AND lower(json_extract(body,'$.from')) IN (${sent.map(() => '?').join(',')})`).run(...sent).changes;
       if (Number(delivered)) this.logRead(agent, context, 'gmail', 'sandbox_vendor_replies', `${sent.length} RFQs verified as sent`, `${delivered} vendor replies delivered to the sandbox inbox`);
     }
-    const messages = await this.engine.readMessages(context.mode);
+    const messages = await this.engine.readMessages(context.mode, undefined, context.signal);
     const quotes: Quote[] = [];
     for (const vendor of vendors) {
       context.checkout();
@@ -590,10 +650,15 @@ export class MissionRunner {
     const started = Date.parse(agent.state.phase_started_at ?? agent.updated_at);
     const missing = sent.filter((vendor) => !priced.some((quote) => quote.email === vendor));
     const remaining = started + windowMs - Date.now();
-    if (!priced.length || (missing.length && remaining > 0)) {
+    if (missing.length && remaining > 0) {
       const note = `Waiting for ${missing.length} of ${sent.length} vendor replies` + (remaining > 0 ? ` until ${new Date(started + windowMs).toISOString()}` : '');
       return { pending: [], phase: 'awaiting_quotes', notes: [note],
-        retryInMs: Math.max(1000, Math.min((agent.interval_seconds ?? 300) * 1000, remaining > 0 ? remaining : (agent.interval_seconds ?? 300) * 1000)) };
+        retryInMs: Math.max(1000, Math.min((agent.interval_seconds ?? 300) * 1000, remaining)) };
+    }
+    if (!priced.length) {
+      const note = 'The quote window closed without a usable price.';
+      this.logRead(agent, context, 'gmail', 'quote_window_closed', `${sent.length} verified requests`, note);
+      return { pending: [], phase: 'no_usable_quotes', notes: [note] };
     }
 
     const sheetTitle = agent.workflow_plan.params.sheet_title ?? `Vendor Quotes - ${item}`;
@@ -632,13 +697,18 @@ export class MissionRunner {
     const result = await this.photoRows(agent, context, ops);
     if (!Array.isArray(result)) return { pending: [], phase: 'awaiting_photo_selection', notes: [result.pickerUri] };
     const details = result;
-    const sheetTitle = agent.workflow_plan.params.sheet_title ?? 'Clam Receipts';
+    const sheetTitle = agent.workflow_plan.params.sheet_title ?? 'Siftvane Receipts';
     await ops.ensureSpreadsheet(sheetTitle, null, [{ name: 'Receipts', headers: ['Date', 'Merchant', 'Reference', 'Amount', 'Currency', 'Pay By', 'Source Photo'] }]);
     await ops.appendRows(sheetTitle, 'Receipts', details.map((item) => [item.fields.date ?? '', item.fields.merchant ?? 'Unknown', item.fields.reference ?? '',
       item.fields.amount ?? '', item.fields.currency ?? '', item.fields.due ?? '', item.media_item_id]), 'Source Photo');
     if (agent.workflow_plan.params.calendar_reminders) {
       for (const item of details.filter((entry) => entry.fields.due)) {
-        const id = 'clam-reminder-' + sha256(item.media_item_id).slice(0, 16);
+        const suffix = sha256(item.media_item_id).slice(0, 16);
+        const id = 'siftvane-reminder-' + suffix;
+        if (await context.read('calendar', id) || await context.read('calendar', 'clam-reminder-' + suffix)) {
+          this.logRead(agent, context, 'calendar', 'add_payment_reminder', item.filename, 'Reminder already scheduled');
+          continue;
+        }
         const title = String(sanitizeCell(`Pay ${item.fields.merchant ?? 'bill'}${item.fields.reference ? ' ' + item.fields.reference : ''} (${item.fields.amount ?? '?'} ${item.fields.currency ?? ''})`).value).slice(0, 140);
         const event: InboxCalendarEvent = { id, title, start: `${item.fields.due}T09:00:00.000Z`, end: `${item.fields.due}T09:15:00.000Z`,
           kind: 'reminder', guests: [], flexible: false };
@@ -655,7 +725,7 @@ export class MissionRunner {
   /* ---------------------------------- Any other request: safe digest ---------------------------------- */
   private async inboxDigest(agent: AgentRecord, context: MissionContext, ops: WorkspaceOps) {
     const { keywords = [], doc_title, sheet_title, folder_path } = agent.workflow_plan.params;
-    const messages = (await this.engine.readMessages(context.mode)).filter((message) => !message.contextOnly && !message.sent);
+    const messages = (await this.engine.readMessages(context.mode, undefined, context.signal)).filter((message) => !message.contextOnly && !message.sent);
     const safe = messages.filter((message) => !this.hostile(message));
     const matching = keywords.length ? safe.filter((message) => keywords.some((word) => (message.subject + ' ' + message.text).toLowerCase().includes(word))) : [];
     const selected = (matching.length ? matching : safe).slice(0, 25);
@@ -667,7 +737,7 @@ export class MissionRunner {
       await ops.appendRows(sheet_title, 'Messages', selected.map((message) => [message.receivedAt.slice(0, 10), address(message.from),
         this.engine.redact(context.mode, message.subject), message.id]), 'Message ID');
     }
-    await ops.upsertDoc(doc_title ?? 'Clam Digest', folder, `Digest - ${this.today(context.mode)}`, [
+    await ops.upsertDoc(doc_title ?? 'Siftvane Digest', folder, `Digest - ${this.today(context.mode)}`, [
       `Request: ${agent.goal_prompt.slice(0, 300)}`, `Messages reviewed: ${messages.length}; included: ${selected.length}.`,
       ...selected.map((message) => `• ${message.receivedAt.slice(0, 10)} · ${address(message.from)} · ${this.engine.redact(context.mode, message.subject)}`),
     ].join('\n'), 'replace_section');

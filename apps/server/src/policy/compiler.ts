@@ -9,7 +9,7 @@ import {
   type PolicyIR,
   type SemanticScope,
   type SensitiveCategory,
-} from '@clam/shared';
+} from '@siftvane/shared';
 
 interface ScopeTemplate {
   id: string;
@@ -450,7 +450,7 @@ async function compileWithLlm(
   overriddenSensitiveCategories: SensitiveCategory[],
   llm: LlmCompilerRuntimeConfig
 ): Promise<PolicyIR | null> {
-  const prompt = `You are a security policy compiler for Clam, an email MCP firewall.
+  const prompt = `You are a security policy compiler for Siftvane, an email MCP firewall.
 Convert the following plain-English rules into valid PolicyIR JSON (version: 1).
 Rules: "${rawRules}"
 Overridden sensitive categories confirmed by user: ${JSON.stringify(overriddenSensitiveCategories)}

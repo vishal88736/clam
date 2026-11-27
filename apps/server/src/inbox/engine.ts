@@ -3,12 +3,12 @@ import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { inboxCalendarSchema, inboxPolicySchema, inboxScheduleSchema, type HandoffInput, type InboxPolicy, type InboxStage } from '@clam/shared';
+import { inboxCalendarSchema, inboxPolicySchema, inboxScheduleSchema, type HandoffInput, type InboxPolicy, type InboxStage } from '@siftvane/shared';
 import { HandoffService, type HandoffResult } from '../handoffs/service.js';
 import { isPodCaseThread, podCase } from '../handoffs/sample.js';
 import type { ReaderMessage } from '../sandbox/seed.js';
 import { sandboxClock } from '../sandbox/seed.js';
-import type { ActionKind, Attention, Change, Claim, Decision, InboxTarget, McpCaller, Mode, RunRecord, SafeAction, Snapshot, Tier, TraceStep } from './contracts.js';
+import type { ActionKind, Attention, Change, Claim, Decision, InboxTarget, MailSearch, McpCaller, Mode, RunRecord, SafeAction, Snapshot, Tier, TraceStep } from './contracts.js';
 import { addUsage, emptyUsage, resolveAgentConfig, type AgentConfig, type ModelUsage } from './agentConfig.js';
 import { buildPlan, playbooks } from './playbooks/index.js';
 import { evaluateAction, evaluateSafeAction, safeAction } from './policy.js';
@@ -35,7 +35,7 @@ interface EngineOptions {
   onRun?: (runId: string, controller: AbortController) => () => void;
   live?: {
     target: (mode: Mode, guard: () => void, store: InboxStore) => InboxTarget;
-    reader: (mode: Mode) => Promise<ReaderMessage[]>;
+    reader: (mode: Mode, search?: MailSearch, signal?: AbortSignal) => Promise<ReaderMessage[]>;
     ready: (mode: Mode) => boolean;
     modes: () => Mode[];
     mutationScope: (mode: Mode, kind: ActionKind) => void;
@@ -54,6 +54,7 @@ type Session = {
   head: string;
   ordinal: number;
   controller: AbortController;
+  checkControl?: () => void;
   last?: TraceStep;
   violations?: number;
 };
@@ -76,6 +77,7 @@ export interface MissionContext {
   readonly policy: InboxPolicy;
   readonly signal: AbortSignal;
   record(stage: 'PLAN' | 'CHECK' | 'POLICY', detail: Record<string, unknown>): TraceStep;
+  recordModel(detail: Record<string, unknown>, usage: ModelUsage): TraceStep;
   execute(action: SafeAction): Promise<MissionOutcome>;
   read(kind: ActionKind, target: string): Promise<Snapshot>;
   queueBatch(actions: SafeAction[], reason: string): Promise<MissionOutcome>;
@@ -98,7 +100,7 @@ export class InboxEngine extends EventEmitter {
 
   constructor(private readonly config: EngineOptions) {
     super();
-    this.agent = config.agent ?? resolveAgentConfig({ CLAM_AGENT_MODE: 'offline-smoke' });
+    this.agent = config.agent ?? resolveAgentConfig({ SIFTVANE_AGENT_MODE: 'offline-smoke' });
     this.store = new InboxStore(config.databasePath);
     this.handoffs = new HandoffService(this.store, config.handoffKey);
     const sandboxBase = config.sandboxTarget?.(this.store, this.guard) ?? new SandboxTarget(this.store, this.guard, 'sandbox', this.handoffs);
@@ -123,14 +125,15 @@ export class InboxEngine extends EventEmitter {
   }
 
   /** Mail visible to agent missions: the sandbox inbox plus Workspace fixtures, or the live Gmail reader. */
-  async readMessages(mode: Mode): Promise<ReaderMessage[]> {
+  async readMessages(mode: Mode, search?: MailSearch, signal?: AbortSignal): Promise<ReaderMessage[]> {
     this.guard();
+    signal?.throwIfAborted();
     if (mode === 'sandbox') {
       return this.store.sqlite.prepare("SELECT body FROM inbox_sandbox_messages WHERE scope IN ('inbox','workspace') ORDER BY rowid")
         .all().map((row) => JSON.parse(String(row.body)) as ReaderMessage);
     }
     if (!this.config.live?.ready(mode)) throw new Error('GOOGLE_REAUTH_REQUIRED');
-    return this.config.live.reader(mode);
+    return this.config.live.reader(mode, search, signal);
   }
 
   redact(mode: Mode, value: string) {
@@ -214,6 +217,16 @@ export class InboxEngine extends EventEmitter {
   private checkout(session: Session) {
     this.guard();
     session.controller.signal.throwIfAborted();
+    session.checkControl?.();
+  }
+
+  private recordModel(session: Session, detail: Record<string, unknown>, usage: ModelUsage) {
+    const { run } = session;
+    run.model_usage = addUsage(run.model_usage!, usage);
+    run.model_usage.model = usage.model;
+    run.tokens = (run.model_usage.prompt_tokens ?? 0) + (run.model_usage.completion_tokens ?? 0);
+    run.usd = run.model_usage.estimated_usd ?? 0;
+    return this.emitStep(session, 'PLAN', detail, usage);
   }
 
   private async charge(session: Session) {
@@ -239,7 +252,7 @@ export class InboxEngine extends EventEmitter {
     }
   }
 
-  private launch(trigger: string, mode: Mode, work: (session: Session) => Promise<void>, caller?: McpCaller) {
+  private launch(trigger: string, mode: Mode, work: (session: Session) => Promise<void>, caller?: McpCaller, checkControl?: () => void) {
     this.guard();
     if (this.closing || this.active.size) throw new Error('RUN_ALREADY_ACTIVE');
     if (!this.store.acquireLease(this.leaseOwner)) throw new Error('RUN_ALREADY_ACTIVE');
@@ -259,9 +272,10 @@ export class InboxEngine extends EventEmitter {
     const controller = new AbortController();
     const heartbeat = setInterval(() => {
       if (!this.store.acquireLease(this.leaseOwner)) controller.abort(new Error('RUN_LEASE_LOST'));
+      try { checkControl?.(); } catch (error) { controller.abort(error); }
     }, 3000);
     heartbeat.unref();
-    const session = { run, policy, controller, ordinal: 0, head: genesisHash };
+    const session = { run, policy, controller, ordinal: 0, head: genesisHash, checkControl };
     const unregister = this.config.onRun?.(run.id, controller);
     const done = Promise.resolve().then(async () => {
       try {
@@ -270,7 +284,8 @@ export class InboxEngine extends EventEmitter {
         run.status = 'COMPLETED';
       } catch (error) {
         run.error = errorCode(error);
-        run.status = this.halted() || controller.signal.aborted ? 'HALTED' : 'FAILED';
+        const operatorStopped = run.error === 'AGENT_RUN_PAUSED' || run.error === 'AGENT_RUN_CANCELLED';
+        run.status = this.halted() || (controller.signal.aborted && !operatorStopped) ? 'HALTED' : 'FAILED';
         run.killSwitchTripped ||= run.status === 'HALTED';
       }
       run.completedAt = new Date().toISOString();
@@ -305,6 +320,10 @@ export class InboxEngine extends EventEmitter {
     return { run, done };
   }
 
+  stopMission(runId: string, reason: 'AGENT_RUN_PAUSED' | 'AGENT_RUN_CANCELLED') {
+    this.active.get(runId)?.session.controller.abort(new Error(reason));
+  }
+
   start(trigger = 'manual', scope: 'inbox' | 'trap' = 'inbox', mode = this.activeMode()) {
     return this.launch(trigger, mode, (session) => this.execute(session, scope));
   }
@@ -312,17 +331,10 @@ export class InboxEngine extends EventEmitter {
   private async readPlan(mode: Mode, scope: 'inbox' | 'trap', policy: InboxPolicy, session?: Session) {
     this.guard();
     const now = mode === 'sandbox' ? new Date(sandboxClock) : new Date();
-    const reader = mode === 'sandbox' ? sandboxReader(this.store.filename) : liveReader(() => this.config.live!.reader(mode));
+    const reader = mode === 'sandbox' ? sandboxReader(this.store.filename) : liveReader(() => this.config.live!.reader(mode, undefined, session?.controller.signal));
     const read = await reader.read(now, scope, policy, session ? {
       agent: this.agent, signal: session.controller.signal,
-      onUsage: (usage, error) => {
-        const run = session.run;
-        run.model_usage = addUsage(run.model_usage!, usage);
-        run.model_usage.model = usage.model;
-        run.tokens = (run.model_usage.prompt_tokens ?? 0) + (run.model_usage.completion_tokens ?? 0);
-        run.usd = run.model_usage.estimated_usd ?? 0;
-        this.emitStep(session, 'PLAN', { event: 'MODEL_ANALYSIS', status: error ?? 'VALIDATED' }, usage);
-      },
+      onUsage: (usage, error) => this.recordModel(session, { event: 'MODEL_ANALYSIS', status: error ?? 'VALIDATED' }, usage),
     } : undefined);
     this.guard();
     const target = this.target(mode);
@@ -430,7 +442,7 @@ export class InboxEngine extends EventEmitter {
         action_id: entry.id, outcome: verified ? 'RECONCILED' : 'MANUAL_RECONCILIATION_REQUIRED',
       });
       if (verified) {
-        this.store.updateAction({ ...entry, status: 'VERIFIED', traceId: check.id });
+        this.store.updateAction({ ...entry, status: 'VERIFIED', traceId: check.id, creationPending: false });
         if (entry.kind === 'handoff') this.handoffs.saveTrace(entry.target, check.id);
         this.store.addChange(entry.runId, toChange(entry));
       }
@@ -473,12 +485,13 @@ export class InboxEngine extends EventEmitter {
    * Runs an agent mission under the same lease, kill switch, budgets, hash-chained trace, Tier 0/1/2 gate,
    * claim ledger, and read-back verification as inbox runs. Each `execute` call is one policy-checked action.
    */
-  mission(trigger: string, mode: Mode, work: (context: MissionContext) => Promise<void>, caller?: McpCaller) {
+  mission(trigger: string, mode: Mode, work: (context: MissionContext) => Promise<void>, caller?: McpCaller, checkControl?: () => void) {
     return this.launch(trigger, mode, async (session) => {
       await this.charge(session);
       const context: MissionContext = {
         runId: session.run.id, mode, policy: session.policy, signal: session.controller.signal,
         record: (stage, detail) => this.emitStep(session, stage, detail),
+        recordModel: (detail, usage) => this.recordModel(session, detail, usage),
         checkout: () => this.checkout(session),
         charge: () => this.charge(session),
         execute: (action) => this.missionAction(session, action),
@@ -486,7 +499,8 @@ export class InboxEngine extends EventEmitter {
         queueBatch: (actions, reason) => this.missionBatch(session, actions, reason),
       };
       await work(context);
-    }, caller);
+      this.checkout(session);
+    }, caller, checkControl);
   }
 
   private async missionAction(session: Session, action: SafeAction): Promise<MissionOutcome> {
@@ -525,7 +539,7 @@ export class InboxEngine extends EventEmitter {
       return { ...verdict, policyStep, approvalId, verified: false };
     }
     await this.apply(session, action, verdict.tier, verdict.ruleId);
-    const checkStep = session.last?.stage === 'CHECK' ? session.last : undefined;
+    const checkStep = session.last?.stage === 'CHECK' && session.last !== policyStep ? session.last : undefined;
     const outcome = String(checkStep?.detail.outcome ?? '');
     return { ...verdict, policyStep, checkStep, outcome,
       verified: ['VERIFIED', 'ALREADY_CURRENT', 'DEDUPLICATED', 'RECONCILED'].includes(outcome) };
@@ -546,8 +560,12 @@ export class InboxEngine extends EventEmitter {
     }
     if (actions.length <= session.policy.outboundBudget && verdicts.every((verdict) => verdict.decision === 'AUTONOMOUS')) {
       let last: MissionOutcome | undefined;
-      for (const action of actions) last = await this.missionAction(session, action);
-      return last!;
+      for (const action of actions) {
+        last = await this.missionAction(session, action);
+        if (!last.verified) break;
+      }
+      return last ?? { decision: 'AUTONOMOUS', tier: 0, ruleId: 'NO_ACTIONS', reason: 'No actions to execute',
+        policyStep: this.emitStep(session, 'POLICY', { outcome: 'NO_ACTIONS' }), verified: true };
     }
     const ruleId = 'AGENT_OUTBOUND_BATCH_APPROVAL';
     const version = sha256(canonicalJson(actions.map((action) => actionId(action, run.mode))));
@@ -751,6 +769,7 @@ export class InboxEngine extends EventEmitter {
         this.checkout(session);
         if (matches(current, existing.after)) {
           existing.status = 'VERIFIED';
+          existing.creationPending = false;
           existing.traceId = this.emitStep(session, 'CHECK', { action_id: id, outcome: 'RECONCILED', actual: current }).id;
           this.store.updateAction(existing);
         } else {
@@ -792,15 +811,21 @@ export class InboxEngine extends EventEmitter {
     });
     try {
       await this.charge(session);
-      entry.providerId = await target.dispatch(action, tier, before, key, session.controller.signal);
-      this.checkout(session);
+      entry.providerId = await target.dispatch(action, tier, before, key, session.controller.signal, (providerId) => {
+        // Preserve the identity as soon as creation is acknowledged, before moving or populating the file.
+        entry.providerId = providerId;
+        entry.creationPending = true;
+        this.store.updateAction(entry);
+      });
       entry.status = 'APPLIED';
       this.store.updateAction(entry);
+      this.checkout(session);
       await this.charge(session);
       const result = await target.read(action, entry.providerId);
       this.checkout(session);
       if (!matches(result, expected)) throw new Error('POST_CONDITION_FAILED');
       entry.status = 'VERIFIED';
+      entry.creationPending = false;
       entry.traceId = this.emitStep(session, 'CHECK', { action_id: entry.id, outcome: 'VERIFIED', actual: result, thread_id: action.threadId,
         action: action.kind, playbook_ids: [action.playbook, ...action.relatedPlaybooks ?? []] }).id;
       this.store.updateAction(entry);
@@ -886,7 +911,7 @@ export class InboxEngine extends EventEmitter {
     const original = this.store.run(runId);
     if (!original || original.status === 'RUNNING') throw new Error('RUN_NOT_AVAILABLE');
     const entries = this.store.actions(runId).filter((action) =>
-      (action.status === 'VERIFIED' || action.status === 'ROLLBACK_PENDING') &&
+      this.isRollbackCandidate(action) &&
       (!actionIds || actionIds.includes(action.id))).reverse();
     if (!entries.length) throw new Error('NO_ROLLBACK_ACTIONS');
     return this.launch('rollback:' + runId, original.mode, async (session) => {
@@ -901,11 +926,11 @@ export class InboxEngine extends EventEmitter {
           continue;
         }
         this.emitStep(session, 'POLICY', { action_id: claim.id, rule_id: 'OPERATOR_APPROVED_ROLLBACK' });
-        const current = await target.read(claim, claim.providerId);
         try {
+          const current = await target.read(claim, claim.providerId);
           this.checkout(session);
           if (!matches(current, claim.before)) {
-            if (!matches(current, claim.after)) throw new Error('TARGET_CHANGED_SINCE_RUN');
+            if (!matches(current, claim.after) && !this.matchesUnfinishedCreation(claim, current)) throw new Error('TARGET_CHANGED_SINCE_RUN');
             this.emitStep(session, 'ACT', { action_id: claim.id, restore: claim.before });
             await target.restore(claim, session.controller.signal);
             this.checkout(session);
@@ -928,13 +953,42 @@ export class InboxEngine extends EventEmitter {
   }
 
   hasRollback(runId: string) {
-    return this.store.actions(runId).some((entry) => !['send','handoff'].includes(entry.kind) && ['VERIFIED', 'ROLLBACK_PENDING'].includes(entry.status));
+    return this.store.actions(runId).some((entry) => !['send', 'handoff'].includes(entry.kind) && this.isRollbackCandidate(entry));
+  }
+
+  private isRollbackCandidate(claim: Claim) {
+    if (claim.status === 'VERIFIED' || claim.status === 'ROLLBACK_PENDING') return true;
+    if (this.hasUnfinishedCreation(claim)) return true;
+    if (claim.kind !== 'workspace' || claim.before === null || !['CLAIMED', 'APPLIED', 'REVIEW_REQUIRED'].includes(claim.status)) return false;
+    const artifact = this.registry.get(claim.mode === 'sandbox' ? claim.mode : claim.mode.slice(5), claim.target);
+    return Boolean(artifact?.external_id && !artifact.removed_at && artifact.user_id === claim.plan.workspaceOwner?.userId &&
+      (!claim.providerId || claim.providerId === artifact.external_id));
+  }
+
+  private hasUnfinishedCreation(claim: Claim) {
+    if (claim.kind !== 'workspace' || claim.before !== null || !claim.providerId || !claim.creationPending ||
+        !['CLAIMED', 'APPLIED', 'REVIEW_REQUIRED', 'ROLLBACK_PENDING'].includes(claim.status)) return false;
+    if (claim.after?.type !== 'google_doc' && claim.after?.type !== 'google_sheet') return false;
+    const artifact = this.registry.get(claim.mode === 'sandbox' ? claim.mode : claim.mode.slice(5), claim.target);
+    return artifact?.external_id === claim.providerId && artifact.last_updated_by_run_id === claim.runId && !artifact.removed_at;
+  }
+
+  private matchesUnfinishedCreation(claim: Claim, current: Snapshot) {
+    const expected = claim.after;
+    if (!this.hasUnfinishedCreation(claim) || !current || !expected ||
+        current.type !== expected.type || current.title !== expected.title ||
+        (current.folder !== null && current.folder !== expected.folder)) return false;
+    if (current.type === 'google_doc') return Array.isArray(current.sections) && current.sections.length === 0;
+    if (!Array.isArray(current.tabs) || !Array.isArray(expected.tabs)) return false;
+    const names = expected.tabs.map((tab) => tab.name);
+    return current.tabs.length === names.length && current.tabs.every((tab, index) =>
+      tab.name === names[index] && tab.headers.length === 0 && tab.rows.length === 0);
   }
 
   private async writeReceipt(run: RunRecord) {
     const trace = this.store.trace(run.id);
     const markdown = [
-      `# Clam run ${run.id}`, '',
+      `# Siftvane run ${run.id}`, '',
       `- Trigger: ${run.trigger}`, `- Status: ${run.status}`,
       `- Agent mode: ${run.agent_mode ?? 'offline-smoke'}`,
       `- Model: ${run.model_usage?.provider ?? 'local'}/${run.model_usage?.model ?? 'deterministic-parser'}`,
@@ -1101,10 +1155,10 @@ export class InboxEngine extends EventEmitter {
     const data = await this.calendar(mode);
     const escape = (text: string) => text.replace(/\\/g, '\\\\').replace(/[\r\n]+/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
     const date = (value: string) => new Date(value).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Clam//Inbox Briefing//EN',
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Siftvane//Inbox Briefing//EN',
       ...data.events.flatMap((row) => {
         const event = inboxCalendarSchema.parse(row);
-        return ['BEGIN:VEVENT', `UID:${escape(event.id)}@clam.local`, `DTSTAMP:${date(new Date().toISOString())}`,
+        return ['BEGIN:VEVENT', `UID:${escape(event.id)}@siftvane.local`, `DTSTAMP:${date(new Date().toISOString())}`,
           `DTSTART:${date(event.start)}`, `DTEND:${date(event.end)}`, `SUMMARY:${escape(event.title)}`, 'END:VEVENT'];
       }), 'END:VCALENDAR', ''].join('\r\n');
   }

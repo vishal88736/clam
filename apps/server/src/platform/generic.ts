@@ -4,7 +4,7 @@ import type { mcpScopes } from '../auth/google.js';
 /**
  * General-purpose workflow language. Any request is compiled into a short program of typed operations over the
  * user's mail, Drive, Docs, Sheets, Calendar, and Photos. Steps pass rows to later steps through `from`.
- * Operations are executed by Clam's own handlers under the policy engine — a planner can compose them freely but
+ * Operations are executed by Siftvane's own handlers under the policy engine — a planner can compose them freely but
  * can never call an unlisted tool, write code, or invent an outbound recipient.
  */
 const id = z.string().regex(/^[a-z][a-z0-9_]{0,23}$/);
@@ -16,7 +16,8 @@ const template = z.string().max(1500);
 
 export const genericStepSchema = z.discriminatedUnion('op', [
   z.object({ id, op: z.literal('mail.search'), keywords: z.array(z.string().trim().min(2).max(40)).max(6).default([]),
-    from_contains: z.string().trim().max(80).optional(), newer_than_days: z.number().int().min(1).max(365).optional(),
+    from_contains: z.string().trim().min(1).max(80).optional(), subject_contains: z.string().trim().min(1).max(80).optional(),
+    newer_than_days: z.number().int().min(1).max(365).optional(),
     include_attachments: z.boolean().default(false), limit: z.number().int().min(1).max(50).default(25) }).strict(),
   z.object({ id, op: z.literal('photos.extract'), category: z.enum(['RECEIPTS', 'DOCUMENTS', 'SCREENSHOTS']).default('RECEIPTS'),
     limit: z.number().int().min(1).max(20).default(10) }).strict(),
@@ -33,7 +34,7 @@ export const genericStepSchema = z.discriminatedUnion('op', [
     folder: folder.optional(), mode: z.enum(['append', 'replace_section']).default('replace_section') }).strict(),
   z.object({ id, op: z.literal('calendar.reminders'), from, date_field: z.string().trim().min(1).max(40), title: text(120),
     time_utc: z.string().regex(/^\d{2}:\d{2}$/).default('09:00') }).strict(),
-  z.object({ id, op: z.literal('mail.label'), from, label: z.string().regex(/^CLAM_[A-Z][A-Z0-9_]{1,30}$/) }).strict(),
+  z.object({ id, op: z.literal('mail.label'), from, label: z.string().regex(/^(?:SIFTVANE|CLAM)_[A-Z][A-Z0-9_]{1,30}$/) }).strict(),
   z.object({ id, op: z.literal('mail.draft_replies'), from, subject: text(150), body: template }).strict(),
   z.object({ id, op: z.literal('mail.send'), to: z.array(z.string().email().max(254)).min(1).max(5), subject: text(150), body: template,
     from: from.optional() }).strict(),
@@ -87,14 +88,14 @@ export function describeStep(step: GenericStep): string {
 }
 
 export const opCatalogForPrompt = [
-  'mail.search {keywords[], from_contains?, newer_than_days?, include_attachments?, limit?} -> rows with date, from, subject, message_id and every "Label: value" field',
+  'mail.search {keywords[], from_contains?, subject_contains?, newer_than_days?, include_attachments?, limit?} -> rows with date, from, subject, message_id and every "Label: value" field',
   'photos.extract {category: RECEIPTS|DOCUMENTS|SCREENSHOTS, limit?} -> rows with merchant, date, amount, currency, due, reference',
   'filter {from, field, contains? | exists?}',
   'summarize {from, heading?} -> a bullet summary usable as {{summary}} in later content',
   'drive.folder {path[]}', 'drive.save_attachments {from, folder[]}', 'drive.save_text {folder[], name(.md|.txt|.csv), content, from?}',
   'sheets.append {from, title, tab?, columns[]} (column names are matched to row fields, e.g. "Amount", "Due Date", "From")',
   'docs.write {title, heading, content? | from?, folder?, mode?}',
-  'calendar.reminders {from, date_field, title, time_utc?}', 'mail.label {from, label: CLAM_UPPER_SNAKE}',
+  'calendar.reminders {from, date_field, title, time_utc?}', 'mail.label {from, label: SIFTVANE_UPPER_SNAKE}',
   'mail.draft_replies {from, subject, body} (drafts a reply to each row sender; always needs approval)',
   'mail.send {to[] (only addresses the user wrote), subject, body, from?}',
   'Templates may use {{field}} for row fields, {{count}}, {{date}}, {{rows}} (bulleted list of from), {{summary}} (latest summarize step).',
@@ -126,18 +127,20 @@ export function composeProgram(instruction: string, requested: Set<string>): { p
   // Light stemming so "meetings" also matches "Meeting request".
   const stem = (word: string) => word.length > 4 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
   const keywords = (quoted.length ? quoted : [...new Set(words.filter((word) => !stop.has(word) && !fieldWords[word] && !/^\d/.test(word)).map(stem))]).slice(0, 3);
-  const sender = /\bfrom\s+([\w.@+-]+\.[a-z]{2,}|@?[\w-]{3,})\b/.exec(text)?.[1]?.replace(/^@/, '');
-  const days = /\b(?:last|past)\s+(\d{1,3})\s+days?\b/.exec(text)?.[1] ?? (/\b(?:this|past|last)\s+week\b/.test(text) ? '7' : /\btoday\b/.test(text) ? '1' : undefined);
-  const title = 'Clam - ' + (keywords.length ? keywords.map((word) => word.replace(/^\w/, (char) => char.toUpperCase())).join(' ') : 'Inbox');
+  const sender = requestedMailSender(instruction) ??
+    /\bfrom\s+(@?[\w-]{3,})\b/.exec(text)?.[1]?.replace(/^@/, '');
+  const days = requestedMailDays(text);
+  const subject = requestedMailSubject(instruction);
+  const title = 'Siftvane - ' + (keywords.length ? keywords.map((word) => word.replace(/^\w/, (char) => char.toUpperCase())).join(' ') : 'Inbox');
   const photos = requested.has('photos') || /\b(?:photo|photos|picture|pictures|screenshot|screenshots|image|images)\b/.test(text);
   const program: GenericStep[] = [];
   const source = photos ? 'photos' : 'mail';
   if (photos) program.push(genericStepSchema.parse({ id: 'photos', op: 'photos.extract', category: /screenshot/.test(text) ? 'SCREENSHOTS' : /document/.test(text) ? 'DOCUMENTS' : 'RECEIPTS' }));
-  else program.push(genericStepSchema.parse({ id: 'mail', op: 'mail.search', keywords: sender && keywords[0] === sender ? [] : keywords.filter((word) => word !== sender),
-    from_contains: sender, newer_than_days: days ? Number(days) : undefined, include_attachments: /\b(?:attachment|attachments|pdf|pdfs|files?)\b/.test(text) }));
+  else program.push(genericStepSchema.parse({ id: 'mail', op: 'mail.search', keywords: subject ? [] : keywords.filter((word) => word !== sender),
+    from_contains: sender, subject_contains: subject, newer_than_days: days, include_attachments: /\b(?:attachment|attachments|pdf|pdfs|files?)\b/.test(text) }));
   const fields = [...new Set(words.map((word) => fieldWords[word]).filter(Boolean))];
   const wantsFolder = requested.has('drive') || /\b(?:drive|folder|save|attachments?|pdfs?)\b/.test(text);
-  const folder = ['Clam', title.replace(/^Clam - /, '')];
+  const folder = ['Siftvane', title.replace(/^Siftvane - /, '')];
   if (wantsFolder && !photos && /\b(?:attachment|attachments|pdf|pdfs|files?|save)\b/.test(text)) {
     program.push(genericStepSchema.parse({ id: 'files', op: 'drive.save_attachments', from: source, folder }));
   } else if (wantsFolder) program.push(genericStepSchema.parse({ id: 'folder', op: 'drive.folder', path: folder }));
@@ -148,7 +151,7 @@ export function composeProgram(instruction: string, requested: Set<string>): { p
   }
   if (/\b(?:label|tag|mark|flag|categori[sz]e)\b/.test(text) && !photos) {
     program.push(genericStepSchema.parse({ id: 'label', op: 'mail.label', from: source,
-      label: ('CLAM_' + (keywords[0] ?? 'AGENT').toUpperCase().replace(/[^A-Z0-9]+/g, '_')).slice(0, 36) }));
+      label: ('SIFTVANE_' + (keywords[0] ?? 'AGENT').toUpperCase().replace(/[^A-Z0-9]+/g, '_')).slice(0, 40) }));
   }
   if (requested.has('calendar') || /\b(?:remind|reminder|reminders|calendar|schedule)\b/.test(text)) {
     const dateField = /\bdeadline/.test(text) ? 'deadline' : /\bdue\b/.test(text) || photos ? 'due' : 'date';
@@ -164,14 +167,14 @@ export function composeProgram(instruction: string, requested: Set<string>): { p
   const wantsDoc = requested.has('docs') || /\b(?:doc|document|summary|summarize|summarise|report|digest|notes|overview|write up|brief)\b/.test(text);
   const hasSink = program.length > 1;
   if (wantsDoc || recipients.length || !hasSink) {
-    program.push(genericStepSchema.parse({ id: 'summary', op: 'summarize', from: source, heading: title.replace(/^Clam - /, '') }));
+    program.push(genericStepSchema.parse({ id: 'summary', op: 'summarize', from: source, heading: title.replace(/^Siftvane - /, '') }));
   }
   if (wantsDoc || !hasSink) {
     program.push(genericStepSchema.parse({ id: 'doc', op: 'docs.write', title, heading: 'Summary - {{date}}', content: '{{summary}}',
       folder: wantsFolder ? folder : undefined }));
   }
   if (recipients.length) {
-    program.push(genericStepSchema.parse({ id: 'send', op: 'mail.send', to: recipients.slice(0, 5), subject: title.replace(/^Clam - /, 'Update: '),
+    program.push(genericStepSchema.parse({ id: 'send', op: 'mail.send', to: recipients.slice(0, 5), subject: title.replace(/^Siftvane - /, 'Update: '),
       body: 'Hello,\n\nHere is the summary you asked for ({{count}} items):\n\n{{summary}}\n\nBest regards' }));
   }
   return { program: genericProgramSchema.parse(program), title };
@@ -184,7 +187,7 @@ const modeAliases: Record<string, 'append' | 'replace_section'> = {
 const opAliases: Record<string, GenericStep['op']> = Object.fromEntries((Object.keys(opService) as GenericStep['op'][])
   .flatMap((op) => [[op, op], [op.replace('.', '_'), op], [op.replace('.', ''), op]]));
 const allowedKeys: Record<GenericStep['op'], string[]> = {
-  'mail.search': ['keywords', 'from_contains', 'newer_than_days', 'include_attachments', 'limit'], 'photos.extract': ['category', 'limit'],
+  'mail.search': ['keywords', 'from_contains', 'subject_contains', 'newer_than_days', 'include_attachments', 'limit'], 'photos.extract': ['category', 'limit'],
   filter: ['from', 'field', 'contains', 'exists'], summarize: ['from', 'heading'], 'drive.folder': ['path'], 'drive.save_attachments': ['from', 'folder'],
   'drive.save_text': ['folder', 'name', 'content', 'from'], 'sheets.append': ['from', 'title', 'tab', 'columns', 'folder'],
   'docs.write': ['title', 'heading', 'content', 'from', 'folder', 'mode'], 'calendar.reminders': ['from', 'date_field', 'title', 'time_utc'],
@@ -194,6 +197,24 @@ const clamp = (value: unknown, min: number, max: number) => {
   const number = typeof value === 'string' ? Number(value) : value;
   return typeof number === 'number' && Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : undefined;
 };
+
+function requestedMailDays(text: string) {
+  const range = /\b(?:last|past)\s+(\d{1,3})\s+(days?|weeks?|months?)\b/.exec(text);
+  if (range) return clamp(Number(range[1]) * (range[2].startsWith('week') ? 7 : range[2].startsWith('month') ? 30 : 1), 1, 365);
+  if (/\b(?:this|past|last)\s+week\b/.test(text)) return 7;
+  if (/\b(?:this|past|last)\s+month\b/.test(text)) return 30;
+  return /\btoday\b/.test(text) ? 1 : undefined;
+}
+
+function requestedMailSubject(instruction: string) {
+  return /\bsubject\s+(?:(?:contains?|includes?|is)\s+)?"([^"]{1,80})"/i.exec(instruction)?.[1]?.trim() || undefined;
+}
+
+function requestedMailSender(instruction: string) {
+  const matches = [...instruction.matchAll(/\b(?:from|sent by)\s+(?:"([^"]{1,80})"|(@?[\w.+-]+(?:@[\w.-]+)?\.[a-z]{2,})\b)/gi)];
+  if (matches.length !== 1) return undefined;
+  return (matches[0][1] ?? matches[0][2]).trim().toLowerCase().replace(/^@/, '') || undefined;
+}
 const asFolder = (value: unknown) => {
   const parts = Array.isArray(value) ? value.map(String) : typeof value === 'string' ? value.split(/\s*[/>›]\s*/) : [];
   const clean = parts.map((part) => part.replace(/[\\\0\r\n]/g, '').trim().slice(0, 60)).filter(Boolean).slice(0, 4);
@@ -224,7 +245,8 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
     for (const name of allowedKeys[op]) if (source[name] !== undefined && source[name] !== null && typeof source[name] !== 'boolean' ||
       (name === 'include_attachments' || name === 'exists') && typeof source[name] === 'boolean') step[name] = source[name];
     let id = String(source.id ?? `${op.split('.').pop()}_${index + 1}`).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^[^a-z]+/, '').slice(0, 24) || `step_${index + 1}`;
-    while (ids.has(id)) id = (id.slice(0, 20) + '_' + index).slice(0, 24);
+    const baseId = id;
+    for (let suffix = 2; ids.has(id); suffix++) id = baseId.slice(0, 20) + '_' + suffix;
     step.id = id;
     if (typeof step.from === 'string') step.from = String(step.from).toLowerCase().replace(/[^a-z0-9_]+/g, '_');
     if (op === 'mail.search') {
@@ -233,8 +255,17 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
       step.limit = clamp(source.limit, 1, 50) ?? 25;
       // A sender filter is grounded only when the user wrote "from X" (not when X is merely a recipient).
       const sender = typeof source.from_contains === 'string' ? source.from_contains.toLowerCase().trim().replace(/^@/, '') : '';
-      if (!sender || !new RegExp('\\b(?:from|by|sent by)\\s+@?' + sender.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(text)) delete step.from_contains;
-      if (!mentionsTime) delete step.newer_than_days;
+      const explicitSender = requestedMailSender(instruction);
+      if (explicitSender) step.from_contains = explicitSender;
+      else if (!sender || !new RegExp('\\b(?:from|by|sent by)\\s+@?' + sender.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(text)) delete step.from_contains;
+      const subject = requestedMailSubject(instruction);
+      if (subject) {
+        step.subject_contains = subject;
+        step.keywords = [];
+      } else delete step.subject_contains;
+      const days = requestedMailDays(text);
+      if (days !== undefined) step.newer_than_days = days;
+      else if (!mentionsTime) delete step.newer_than_days;
       else if (step.newer_than_days !== undefined) step.newer_than_days = clamp(step.newer_than_days, 1, 365);
     }
     if (op === 'photos.extract') {
@@ -254,10 +285,10 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
     }
     if (op === 'filter' && typeof step.field === 'string') step.field = step.field.toLowerCase().replace(/[^a-z0-9]+/g, '_');
     if (op === 'mail.label') {
-      const label = String(source.label ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
-      const fallback = 'CLAM_' + (String((steps.find((item) => item.op === 'mail.search') as { keywords?: string[] } | undefined)?.keywords?.[0] ?? 'AGENT'))
+      const label = String(source.label ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').replace(/^CLAM_/, 'SIFTVANE_');
+      const fallback = 'SIFTVANE_' + (String((steps.find((item) => item.op === 'mail.search') as { keywords?: string[] } | undefined)?.keywords?.[0] ?? 'AGENT'))
         .toUpperCase().replace(/[^A-Z0-9]+/g, '_');
-      step.label = (!label || label === 'CLAM_UPPER_SNAKE' ? fallback : label.startsWith('CLAM_') ? label : 'CLAM_' + label).slice(0, 36);
+      step.label = (!label || label === 'SIFTVANE_UPPER_SNAKE' ? fallback : label.startsWith('SIFTVANE_') ? label : 'SIFTVANE_' + label).slice(0, 40);
     }
     if (op === 'mail.send') {
       step.to = (Array.isArray(source.to) ? source.to : [source.to]).map((value) => String(value ?? '').toLowerCase().trim()).filter((value) => typed.has(value));

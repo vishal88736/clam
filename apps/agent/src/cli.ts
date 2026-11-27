@@ -1,10 +1,12 @@
+import { siftvaneEnvironment } from '@siftvane/shared';
 import { runAutonomousInboxAgent } from './runner.js';
 
 async function main() {
-  const mcpUrl = process.env.CLAM_MCP_URL || 'http://localhost:4000/mcp';
-  const bearerToken = process.env.CLAM_AGENT_TOKEN || '';
+  const env = siftvaneEnvironment(process.env);
+  const mcpUrl = env.SIFTVANE_MCP_URL || 'http://localhost:4000/mcp';
+  const bearerToken = env.SIFTVANE_AGENT_TOKEN || '';
   if (!bearerToken) {
-    console.error('Missing CLAM_AGENT_TOKEN environment variable. Use `pnpm agent:run` for zero-setup demo.');
+    console.error('Missing SIFTVANE_AGENT_TOKEN environment variable. Use `pnpm agent:run` for zero-setup demo.');
     process.exit(1);
   }
 

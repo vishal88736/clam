@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { inboxStages } from '@clam/shared';
+import { inboxStages } from '@siftvane/shared';
 import type { RunTrace, TraceStep } from './contracts.js';
 
 export const genesisHash = '0'.repeat(64);

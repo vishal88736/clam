@@ -121,7 +121,7 @@ export function deterministicChoice(instruction: string, options: CompileOptions
 }
 
 /**
- * Turns a planner choice into a validated DAG of Clam actions. Every step is executed by a typed handler under the
+ * Turns a planner choice into a validated DAG of Siftvane actions. Every step is executed by a typed handler under the
  * policy engine; no planner can produce arbitrary tool calls or code. Outbound recipients must appear verbatim in the
  * user's own instruction (an LLM cannot invent or inject a vendor address).
  */
@@ -153,11 +153,11 @@ export function planFromChoice(choice: PlannerChoice, instruction: string, optio
     const services: WorkflowPlan['services'] = ['gmail', 'drive', 'sheets', 'docs', ...(photos ? ['photos' as const] : [])];
     const plan: WorkflowPlan = {
       version: 1, planner, template: 'invoice_ledger', matched_playbooks: ['bills_trials_spoof_guard', 'invoice_ledger'],
-      services, params: { include_photos: photos, folder_path: ['Clam', 'Invoices'], sheet_title: 'Clam Invoice Ledger', doc_title: 'Clam Invoice Summary' },
+      services, params: { include_photos: photos, folder_path: ['Siftvane', 'Invoices'], sheet_title: 'Siftvane Invoice Ledger', doc_title: 'Siftvane Invoice Summary' },
       steps: [
         step('scan_mail', 'gmail', 'scan_invoices', 'Scan email for daily invoices and recurring bills'),
         ...(photos ? [step('scan_photos', 'photos', 'search_receipt_photos', 'Search receipt photos and extract details', ['scan_mail'])] : []),
-        step('folders', 'drive', 'ensure_folder_path', 'Ensure Drive folder Clam / Invoices / YYYY-MM', ['scan_mail']),
+        step('folders', 'drive', 'ensure_folder_path', 'Ensure Drive folder Siftvane / Invoices / YYYY-MM', ['scan_mail']),
         step('save_pdfs', 'drive', 'save_attachments', 'Save screened PDF invoices into the dated folder', ['folders']),
         step('ledger', 'sheets', 'append_invoice_rows', 'Append deduplicated rows to the invoice ledger', ['save_pdfs']),
         step('summary', 'docs', 'update_summary_doc', 'Update the daily summary in a Google Doc', ['ledger']),
@@ -172,7 +172,7 @@ export function planFromChoice(choice: PlannerChoice, instruction: string, optio
     const services: WorkflowPlan['services'] = ['photos', 'sheets', ...(reminders ? ['calendar' as const] : [])];
     const plan: WorkflowPlan = {
       version: 1, planner, template: 'photo_receipts', matched_playbooks: ['photo_receipt_extraction'],
-      services, params: { calendar_reminders: reminders, sheet_title: 'Clam Receipts' },
+      services, params: { calendar_reminders: reminders, sheet_title: 'Siftvane Receipts' },
       steps: [
         step('search', 'photos', 'search_receipt_photos', 'Search recent receipt and ticket photos (read-only)'),
         step('extract', 'photos', 'extract_photo_details', 'Extract merchant, date, amount, and due date in the quarantined parser', ['search']),
@@ -187,12 +187,12 @@ export function planFromChoice(choice: PlannerChoice, instruction: string, optio
   const services: WorkflowPlan['services'] = ['gmail', 'docs', ...(choice.wants_sheet ? ['sheets' as const] : []), ...(choice.wants_folder ? ['drive' as const] : [])];
   const plan: WorkflowPlan = {
     version: 1, planner, template: 'inbox_digest', matched_playbooks: ['inbox_digest'],
-    services, params: { keywords: (choice.keywords ?? []).map((word) => word.toLowerCase()), doc_title: `Clam Digest - ${titleCase(short)}`.slice(0, 120),
-      sheet_title: choice.wants_sheet ? `Clam Tracker - ${titleCase(short)}`.slice(0, 120) : undefined,
-      folder_path: choice.wants_folder ? ['Clam', 'Digests'] : undefined },
+    services, params: { keywords: (choice.keywords ?? []).map((word) => word.toLowerCase()), doc_title: `Siftvane Digest - ${titleCase(short)}`.slice(0, 120),
+      sheet_title: choice.wants_sheet ? `Siftvane Tracker - ${titleCase(short)}`.slice(0, 120) : undefined,
+      folder_path: choice.wants_folder ? ['Siftvane', 'Digests'] : undefined },
     steps: [
       step('scan_mail', 'gmail', 'scan_inbox', 'Read recent mail through the untrusted-data boundary'),
-      ...(choice.wants_folder ? [step('folder', 'drive', 'ensure_folder_path', 'Ensure Drive folder Clam / Digests', ['scan_mail'])] : []),
+      ...(choice.wants_folder ? [step('folder', 'drive', 'ensure_folder_path', 'Ensure Drive folder Siftvane / Digests', ['scan_mail'])] : []),
       ...(choice.wants_sheet ? [step('tracker', 'sheets', 'append_tracker_rows', 'Append matching messages to a tracker sheet', ['scan_mail'])] : []),
       step('digest', 'docs', 'write_digest', 'Write a sanitized digest section', ['scan_mail']),
     ],

@@ -4,6 +4,8 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 import type { GoogleAccounts, GoogleCapability } from '../apps/server/src/auth/google.js';
 import { InboxStore } from '../apps/server/src/inbox/store.js';
+import { InboxEngine } from '../apps/server/src/inbox/engine.js';
+import { SandboxTarget } from '../apps/server/src/inbox/targets.js';
 import { canonicalJson } from '../apps/server/src/inbox/trace.js';
 import { describeContent, LiveGoogleWorkspaceAdapter } from '../apps/server/src/workspace/adapters.js';
 import { WorkspaceRegistry } from '../apps/server/src/workspace/registry.js';
@@ -19,6 +21,7 @@ function fakeGoogle() {
   const sheets = new Map<string, Map<string, unknown[][]>>();
   const docs = new Map<string, Paragraph[]>();
   const calls: Array<{ capability: GoogleCapability; method: string; url: string }> = [];
+  let rejectValues = false;
   let next = 0;
   const id = () => 'g' + (++next).toString().padStart(4, '0');
   const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
@@ -89,13 +92,23 @@ function fakeGoogle() {
         expect(url.searchParams.get('valueRenderOption')).toBe('UNFORMATTED_VALUE');
         return json({ valueRanges: url.searchParams.getAll('ranges').map((range) => ({ values: book.get(/^'(.+)'!/.exec(range)![1].replace(/''/g, "'")) })) });
       }
-      const range = decodeURIComponent(url.pathname.split('/values/')[1]);
-      const tab = /^'(.+)'!/.exec(range)![1].replace(/''/g, "'");
-      if (range.endsWith(':clear')) { book.set(tab, []); return json({}); }
-      // Values are stored exactly as sent; the adapter must never ask Sheets to parse formulas.
-      expect(url.searchParams.get('valueInputOption')).toBe('RAW');
-      book.set(tab, body.values);
-      return json({});
+      if (segments[3] === 'values:batchUpdate' && method === 'POST') {
+        if (rejectValues) { rejectValues = false; return json({ error: { code: 503 } }, 503); }
+        expect(body.valueInputOption).toBe('RAW');
+        for (const update of body.data) {
+          const [, sheet, start] = /^'(.+)'!A(\d+)$/.exec(update.range)!;
+          const table = book.get(sheet.replace(/''/g, "'"))!;
+          update.values.forEach((values: unknown[], offset: number) => {
+            const index = Number(start) - 1 + offset;
+            while (table.length <= index) table.push([]);
+            for (const [column, value] of values.entries()) if (value !== null) table[index][column] = value;
+            while (table[index].at(-1) === '') table[index].pop();
+          });
+          while (table.at(-1)?.length === 0) table.pop();
+        }
+        return json({});
+      }
+      throw new Error('Unexpected Sheets operation: ' + url.pathname);
     }
     if (url.hostname === 'docs.googleapis.com') {
       if (segments.length === 2 && method === 'POST') {
@@ -128,11 +141,11 @@ function fakeGoogle() {
     }
     throw new Error('Unexpected Google endpoint ' + raw);
   };
-  return { api, files, calls };
+  return { api, files, calls, failNextCellWrite: () => { rejectValues = true; } };
 }
 
 it('round-trips Drive folders/files, Sheets (RAW), and Docs through the live Google adapter with exact read-back snapshots', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'clam-live-adapter-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-live-adapter-'));
   const store = new InboxStore(':memory:');
   try {
     const google = fakeGoogle();
@@ -150,33 +163,38 @@ it('round-trips Drive folders/files, Sheets (RAW), and Docs through the live Goo
       return receipt;
     };
 
-    const clam = await write('u/folder:Clam', { type: 'drive_folder', name: 'Clam', parent: null });
-    expect(clam.url).toBe('https://drive.google.com/drive/folders/' + clam.externalId);
-    await write('u/folder:Clam/Invoices', { type: 'drive_folder', name: 'Invoices', parent: 'u/folder:Clam' });
+    const siftvane = await write('u/folder:Siftvane', { type: 'drive_folder', name: 'Siftvane', parent: null });
+    expect(siftvane.url).toBe('https://drive.google.com/drive/folders/' + siftvane.externalId);
+    await write('u/folder:Siftvane/Invoices', { type: 'drive_folder', name: 'Invoices', parent: 'u/folder:Siftvane' });
     // Idempotent: a lost registry entry is recovered by name + parent instead of creating a duplicate folder.
-    store.sqlite.prepare("DELETE FROM workspace_artifacts WHERE logical_key='u/folder:Clam/Invoices'").run();
-    expect(await adapter.read('u/folder:Clam/Invoices')).toEqual({ type: 'drive_folder', name: 'Invoices', parent: 'u/folder:Clam' });
-    await write('u/folder:Clam/Invoices', { type: 'drive_folder', name: 'Invoices', parent: 'u/folder:Clam' });
+    store.sqlite.prepare("DELETE FROM workspace_artifacts WHERE logical_key='u/folder:Siftvane/Invoices'").run();
+    expect(await adapter.read('u/folder:Siftvane/Invoices')).toEqual({ type: 'drive_folder', name: 'Invoices', parent: 'u/folder:Siftvane' });
+    await write('u/folder:Siftvane/Invoices', { type: 'drive_folder', name: 'Invoices', parent: 'u/folder:Siftvane' });
     expect([...google.files.values()].filter((file) => file.name === 'Invoices')).toHaveLength(1);
 
     const text = 'Vendor,Amount\nFigma,45\n';
     const content = describeContent(Buffer.from(text));
-    await write('u/file:Clam/Invoices/report.csv', { type: 'drive_file', name: 'report.csv', folder: 'u/folder:Clam/Invoices', mime: 'text/csv', ...content,
+    await write('u/file:Siftvane/Invoices/report.csv', { type: 'drive_file', name: 'report.csv', folder: 'u/folder:Siftvane/Invoices', mime: 'text/csv', ...content,
       source: { inline_text: text }, content_scan: { secret: false, injection: false, extracted: true } });
 
-    const sheet: WorkspaceState = { type: 'google_sheet', title: 'Ledger', folder: 'u/folder:Clam/Invoices', tabs: [
+    const sheet: WorkspaceState = { type: 'google_sheet', title: 'Ledger', folder: 'u/folder:Siftvane/Invoices', tabs: [
       { name: 'Daily Invoices', headers: ['Invoice #', 'Amount', 'Notes'], rows: [['FIG-3391', 45, "'=IMPORTXML (\"x\")"]] }] };
     const created = await write('u/sheet:Ledger', sheet);
     expect(created.url).toBe(`https://docs.google.com/spreadsheets/d/${created.externalId}/edit`);
     await write('u/sheet:Ledger', { ...sheet, tabs: [{ ...sheet.tabs[0], rows: [...sheet.tabs[0].rows, ['PC-1207', 318.4, '']] },
       { name: "Vendor's Bills", headers: ['Vendor'], rows: [['Notion']] }] });
+    const beforeFailure = await adapter.read('u/sheet:Ledger');
+    google.failNextCellWrite();
+    await expect(adapter.write('u/sheet:Ledger', beforeFailure, sheet, signal)).rejects.toThrow('GOOGLE_WORKSPACE_503');
+    expect(await adapter.read('u/sheet:Ledger')).toEqual(beforeFailure);
+    expect(google.calls.some((call) => call.url.endsWith(':clear'))).toBe(false);
 
-    const doc: WorkspaceState = { type: 'google_doc', title: 'Summary', folder: 'u/folder:Clam/Invoices',
+    const doc: WorkspaceState = { type: 'google_doc', title: 'Summary', folder: 'u/folder:Siftvane/Invoices',
       sections: [{ heading: 'Daily digest', text: 'Invoices logged: 2\n• Figma · 45.00' }, { heading: 'Flags', text: '' }] };
     await write('u/doc:Summary', doc);
     await write('u/doc:Summary', { ...doc, sections: [{ heading: 'Daily digest', text: 'Invoices logged: 3' }, ...doc.sections.slice(1)] });
 
-    // Rollback removes only artifacts Clam created, by the id recorded in its own registry.
+    // Rollback removes only artifacts Siftvane created, by the id recorded in its own registry.
     await adapter.remove('u/doc:Summary', signal);
     expect(await adapter.read('u/doc:Summary')).toBeNull();
 
@@ -185,6 +203,39 @@ it('round-trips Drive folders/files, Sheets (RAW), and Docs through the live Goo
     expect(google.calls.some((call) => call.method === 'DELETE' && !call.url.endsWith('/' + registry.get('inbox-1', 'u/doc:Summary')!.external_id))).toBe(false);
   } finally {
     store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('recovers a verified provider ID when a new Sheet fails before its first cells are written', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-live-recovery-'));
+  const mode = 'live:workspace-test';
+  const google = fakeGoogle();
+  const accounts = { api: google.api } as unknown as GoogleAccounts;
+  const engine = new InboxEngine({ databasePath: ':memory:', tracesDir: dir, stagingDir: dir, live: {
+    ready: () => true, modes: () => [mode], reader: async () => [], mutationScope: () => undefined,
+    redact: (_mode, value) => value, target: (selected, guard, store) => new SandboxTarget(store, guard, selected),
+    workspace: (_selected, guard, registry) => new LiveGoogleWorkspaceAdapter(accounts, 'workspace-test', registry, guard, dir),
+  } });
+  try {
+    const key = 'owner/sheet:Receipt';
+    google.failNextCellWrite();
+    const run = await engine.mission('workspace-recovery-test', mode, async (context) => {
+      await context.execute({ kind: 'workspace', target: key, sourceId: 'fixture', playbook: 'workspace_test',
+        version: 'one', confidence: 1, requestedTier: 0, expectedBefore: null,
+        after: { type: 'google_sheet', title: 'Receipt', folder: null, tabs: [{ name: 'Rows', headers: ['Order'], rows: [] }] },
+        workspaceOwner: { userId: 'owner', agentId: null, runId: context.runId },
+      });
+    }).done;
+    expect(run).toMatchObject({ status: 'FAILED', error: 'GOOGLE_WORKSPACE_503' });
+    const [claim] = engine.store.actions(run.id);
+    expect(claim).toMatchObject({ status: 'REVIEW_REQUIRED', creationPending: true, providerId: 'g0001' });
+    expect(engine.hasRollback(run.id)).toBe(true);
+    expect((await engine.rollback(run.id).done).status).toBe('COMPLETED');
+    expect(await engine.workspace(mode).read(key)).toBeNull();
+    expect(google.files.size).toBe(0);
+  } finally {
+    await engine.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

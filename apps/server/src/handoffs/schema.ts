@@ -1,7 +1,7 @@
 export const podInboxSeed = [
-  { id: 'sandbox', email: 'sandbox@clam.local', role: 'Primary inbox' },
-  { id: 'triage', email: 'triage@clam.local', role: 'Triage agent' },
-  { id: 'executor', email: 'executor@clam.local', role: 'Executor agent' },
+  { id: 'sandbox', email: 'sandbox@siftvane.local', role: 'Primary inbox' },
+  { id: 'triage', email: 'triage@siftvane.local', role: 'Triage agent' },
+  { id: 'executor', email: 'executor@siftvane.local', role: 'Executor agent' },
 ] as const;
 
 export const handoffSchema = `
@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS pod_inboxes (
   id TEXT PRIMARY KEY, pod_id TEXT NOT NULL REFERENCES agent_pods(id), email TEXT NOT NULL UNIQUE, role TEXT NOT NULL
 );
 INSERT OR IGNORE INTO pod_inboxes VALUES ${podInboxSeed.map((entry) => "('" + entry.id + "','sandbox-pod','" + entry.email + "','" + entry.role + "')").join(',')};
+UPDATE pod_inboxes AS legacy SET email=id || '@siftvane.local'
+  WHERE pod_id='sandbox-pod' AND email=id || '@clam.local'
+  AND NOT EXISTS (SELECT 1 FROM pod_inboxes AS current WHERE current.email=legacy.id || '@siftvane.local');
 CREATE TABLE IF NOT EXISTS pod_mcp_tokens (
   token_hash TEXT PRIMARY KEY, token_id TEXT NOT NULL UNIQUE, inbox_id TEXT NOT NULL REFERENCES pod_inboxes(id),
   scopes TEXT NOT NULL, expires_at INTEGER NOT NULL

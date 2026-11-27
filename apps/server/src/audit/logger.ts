@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
-import type { AuditDecision, AuditLogEntry } from '@clam/shared';
-import type { ClamDatabase } from '../db/index.js';
+import type { AuditDecision, AuditLogEntry } from '@siftvane/shared';
+import type { SiftvaneDatabase } from '../db/index.js';
 import { auditLogs } from '../db/schema.js';
 import { hashOpaqueId } from '../mail/vault.js';
 
@@ -67,7 +67,7 @@ export interface AuditQueryFilters {
 
 export class AuditLogger {
   constructor(
-    private readonly db: ClamDatabase,
+    private readonly db: SiftvaneDatabase,
     private readonly hub: RealtimeEventHub
   ) {}
 

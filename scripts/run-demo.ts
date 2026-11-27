@@ -1,8 +1,7 @@
-import path from 'node:path';
-import type { AgentRunSummary } from '@clam/shared';
-import { createClamApp } from '../apps/server/src/app.js';
+import type { AgentRunSummary } from '@siftvane/shared';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 
-const DEFAULT_BASE_URL = process.env.CLAM_PUBLIC_URL?.replace(/\/$/, '') || 'http://localhost:4000';
+const DEFAULT_BASE_URL = process.env.SIFTVANE_PUBLIC_URL?.replace(/\/$/, '') || 'http://localhost:4000';
 
 async function tryRemoteRun(): Promise<AgentRunSummary | null> {
   try {
@@ -36,8 +35,7 @@ async function main() {
 
   if (!summary) {
     mode = 'standalone-ephemeral';
-    const runtime = await createClamApp({
-      databasePath: path.resolve(process.cwd(), 'data/clam.db'),
+    const runtime = await createSiftvaneApp({
     });
     try {
       await runtime.app.listen({ port: 0, host: '127.0.0.1' });
@@ -49,7 +47,7 @@ async function main() {
     }
   }
 
-  console.log(`\n=== Clam Autonomous Inbox Agent Run (${mode}) ===`);
+  console.log(`\n=== Siftvane Autonomous Inbox Agent Run (${mode}) ===`);
   console.log(`Run ID:                 ${summary.run_id}`);
   console.log(`Agent:                  ${summary.agent_name} (${summary.agent_id})`);
   console.log(`Status:                 ${summary.status.toUpperCase()}`);
@@ -71,6 +69,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[clam-agent-run] Error:', err);
+  console.error('[siftvane-agent-run] Error:', err);
   process.exit(1);
 });

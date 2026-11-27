@@ -20,7 +20,7 @@ export interface ArtifactRow {
   removed_at: string | null;
 }
 
-/** Maps Clam's logical workspace keys to provider ids, and tracks every artifact Clam created. */
+/** Maps Siftvane's logical workspace keys to provider ids, and tracks every artifact Siftvane created. */
 export class WorkspaceRegistry {
   constructor(private readonly db: DatabaseSync) {}
 

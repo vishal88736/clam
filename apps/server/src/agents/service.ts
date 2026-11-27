@@ -1,13 +1,14 @@
 import crypto from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import { mcpTokenKind } from '@siftvane/shared';
 import type {
   AgentRecord,
   AgentTokenInfo,
   PolicyIR,
   SensitiveCategory,
-} from '@clam/shared';
+} from '@siftvane/shared';
 import type { RealtimeEventHub } from '../audit/logger.js';
-import type { ClamDatabase } from '../db/index.js';
+import type { SiftvaneDatabase } from '../db/index.js';
 import { agents, agentTokens } from '../db/schema.js';
 import { generateAgentToken, hashToken } from '../mail/vault.js';
 import { compilePolicy, type LlmCompilerRuntimeConfig } from '../policy/compiler.js';
@@ -51,7 +52,7 @@ const PRESEED_AGENTS: {
 
 export class AgentService {
   constructor(
-    private readonly db: ClamDatabase,
+    private readonly db: SiftvaneDatabase,
     private readonly getCompilerConfig: () => Promise<LlmCompilerRuntimeConfig> | LlmCompilerRuntimeConfig,
     private readonly hub: RealtimeEventHub
   ) {}
@@ -292,7 +293,7 @@ export class AgentService {
   }
 
   async authenticateBearerToken(rawToken: string): Promise<AgentRecord | null> {
-    if (!rawToken.startsWith('clm_ag_')) return null;
+    if (mcpTokenKind(rawToken) !== 'ag') return null;
     const hashed = hashToken(rawToken);
     const tokenRow = await this.db
       .select()

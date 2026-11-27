@@ -42,9 +42,9 @@ export interface PhotoItem {
 export interface WorkspaceAdapter {
   readonly live: boolean;
   read(key: string): Promise<Snapshot>;
-  write(key: string, before: Snapshot, after: WorkspaceState, signal: AbortSignal): Promise<WriteReceipt>;
+  write(key: string, before: Snapshot, after: WorkspaceState, signal: AbortSignal, onCreated?: (receipt: WriteReceipt) => void): Promise<WriteReceipt>;
   remove(key: string, signal: AbortSignal): Promise<void>;
-  /** Current bytes of a Drive file Clam manages (null when unavailable or larger than maxBytes). */
+  /** Current bytes of a Drive file Siftvane manages (null when unavailable or larger than maxBytes). */
   fileContent(key: string, maxBytes: number): Promise<{ mime: string; data: Buffer } | null>;
   searchPhotos(filter: { category?: string; dateFrom?: string; dateTo?: string; limit: number }): Promise<PhotoItem[]>;
   photoBytes(id: string, maxBytes: number): Promise<{ item: PhotoItem; data: Buffer }>;

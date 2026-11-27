@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { scanOutboundSecrets, scanPromptInjection } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection } from '@siftvane/shared';
 import type { WorkspaceAdapter } from './types.js';
 
 const maxPhotoBytes = 2_000_000;
@@ -24,7 +24,7 @@ export interface PhotoDetails {
  * Bounded OCR in a separate process: no shell, stdin bytes only, 6 s wall clock, 16 KB of output. Returns null when
  * Tesseract is not installed so the parser falls back to metadata instead of failing the mission.
  */
-export function ocrImage(bytes: Buffer, binary = process.env.CLAM_TESSERACT_BIN || 'tesseract'): Promise<string | null> {
+export function ocrImage(bytes: Buffer, binary = process.env.SIFTVANE_TESSERACT_BIN || 'tesseract'): Promise<string | null> {
   return new Promise((resolve) => {
     let child;
     try {

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { resolveDatabasePath } from '../apps/server/src/config.js';
 
 const FORBIDDEN_STRINGS = [
   '849201',
@@ -28,7 +29,7 @@ function checkText(label: string, content: string): number {
 
 function main() {
   let failures = 0;
-  const dbPath = path.resolve(process.cwd(), 'data/clam.db');
+  const dbPath = resolveDatabasePath();
 
   if (fs.existsSync(dbPath)) {
     const sqlite = new DatabaseSync(dbPath, { readOnly: true });
@@ -57,7 +58,7 @@ function main() {
       sqlite.close();
     }
   } else {
-    console.log('[INFO] No data/clam.db found on disk yet.');
+    console.log('[INFO] No configured database found on disk yet.');
   }
 
   const tracesDir = path.resolve(process.cwd(), 'traces');

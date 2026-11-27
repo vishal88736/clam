@@ -3,9 +3,9 @@ import type {
   CircuitBreakerConfig,
   KillSwitchState,
   KillSwitchTriggerMode,
-} from '@clam/shared';
+} from '@siftvane/shared';
 import type { AuditLogger, RealtimeEventHub } from '../audit/logger.js';
-import type { ClamDatabase } from '../db/index.js';
+import type { SiftvaneDatabase } from '../db/index.js';
 import { killSwitchState } from '../db/schema.js';
 
 const GLOBAL_ROW_ID = 'global';
@@ -36,7 +36,7 @@ export class KillSwitchService {
   private readonly callTimestamps = new Map<string, number[]>();
 
   constructor(
-    private readonly db: ClamDatabase,
+    private readonly db: SiftvaneDatabase,
     private readonly auditLogger: AuditLogger,
     private readonly hub: RealtimeEventHub,
     defaultBreakerConfig?: Partial<CircuitBreakerConfig>

@@ -29,11 +29,16 @@ export const connectionStatus = (inbox: ConnectedInbox) => inbox.status !== 'act
 
 const errors: Record<string, string> = {
   SCOPE_UPGRADE_REQUIRED: 'Upgrade access for this inbox in Connections.',
+  GOOGLE_API_DISABLED: 'Enable the requested API in the Google Cloud project for this OAuth client.',
+  GOOGLE_ACCESS_DENIED: 'Google denied this operation. Check access to the requested resource.',
+  GOOGLE_PHOTOS_SETUP_REQUIRED: 'Complete Google Photos setup on the connected Google account.',
   GOOGLE_REAUTH_REQUIRED: 'Reconnect the Google account in Connections.',
   INBOX_NOT_AVAILABLE: 'That inbox is unavailable. Choose another inbox.',
   OPERATOR_SESSION_REQUIRED: 'Sign in with Google to continue.',
   GOOGLE_AUTH_NOT_CONFIGURED: 'Google Sign-In is disabled in this installation.',
 };
+
+export const googleErrorMessage = (code: string) => Object.hasOwn(errors, code) ? errors[code] : undefined;
 
 export async function authRequest<T>(endpoint: string, body?: unknown): Promise<T> {
   const result = await fetch('/api/auth/' + endpoint, {
@@ -41,7 +46,7 @@ export async function authRequest<T>(endpoint: string, body?: unknown): Promise<
     ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const data = await result.json();
-  if (!result.ok) throw new Error(errors[data.error] ?? 'The account request failed.');
+  if (!result.ok) throw new Error(googleErrorMessage(data.error) ?? 'The account request failed.');
   return data as T;
 }
 
@@ -90,7 +95,7 @@ export function GoogleAccountBar({ session }: { session: OperatorSession | null 
     </div>
     <label className="inbox-account-picker">Active inbox
       <select value={session.active_inbox_id} disabled={busy} onChange={(event) => void change('inbox', { inbox_id: event.target.value })}>
-        <option value="sandbox">Sandbox (@clam.local)</option>
+        <option value="sandbox">Sandbox (@siftvane.local)</option>
         {session.inboxes.map((item) => <option value={item.id} key={item.id}>{item.email}</option>)}
       </select>
     </label>

@@ -7,7 +7,7 @@ import type {
   LlmProvider,
   SafeEmailDetail,
   SafeEmailSummary,
-} from '@clam/shared';
+} from '@siftvane/shared';
 import { extractStructuredDigest, type HostQuestion } from './extractor.js';
 import { renderItineraryMarkdown, renderTripIcs } from './renderers.js';
 
@@ -237,7 +237,7 @@ export async function runAutonomousInboxAgent(
   };
 
   const client = new Client({
-    name: 'clam-autonomous-inbox-agent',
+    name: 'siftvane-autonomous-inbox-agent',
     version: '1.0.0',
   });
 
@@ -255,7 +255,7 @@ export async function runAutonomousInboxAgent(
     requestInit: {
       headers: {
         Authorization: `Bearer ${options.bearerToken}`,
-        'X-Clam-Run-Id': runId,
+        'X-Siftvane-Run-Id': runId,
       },
     },
   });
@@ -269,7 +269,7 @@ export async function runAutonomousInboxAgent(
     pushStep(
       'mcp.connect',
       'ok',
-      `Connected to Clam MCP firewall (${toolNames.length} tools exposed over Streamable HTTP).`,
+      `Connected to Siftvane MCP firewall (${toolNames.length} tools exposed over Streamable HTTP).`,
       performance.now() - tConn,
       'tools/list'
     );
@@ -299,7 +299,7 @@ export async function runAutonomousInboxAgent(
     pushStep(
       'mcp.list_emails',
       'ok',
-      `Received ${summaries.length} permitted emails; sensitive & injected messages silently stripped by Clam.`,
+      `Received ${summaries.length} permitted emails; sensitive & injected messages silently stripped by Siftvane.`,
       performance.now() - tList,
       'list_emails'
     );

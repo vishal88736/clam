@@ -1,4 +1,4 @@
-import { scanOutboundSecrets, scanPromptInjection, type InboxPolicy } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection, type InboxPolicy } from '@siftvane/shared';
 import type { PolicyVerdict, ProposedAction, SafeAction, Tier } from './contracts.js';
 import { address } from './reader.js';
 import { evaluateWorkspaceAction } from '../workspace/policy.js';
@@ -31,7 +31,9 @@ export function evaluateSafeAction(action: SafeAction, policy: InboxPolicy, tain
     if (policy.blocklist.some((item) => item.toLowerCase() === target)) {
       return verdict('BLOCKED', 2, 'RECIPIENT_BLOCKLISTED', 'This recipient is blocked by the active policy.');
     }
-    if (target.endsWith('@clam.local')) return verdict('BLOCKED', 2, 'HANDOFF_TOOL_REQUIRED', 'Internal agent messages must use the signed handoff tool.');
+    if (target.endsWith('@siftvane.local') || target.endsWith('@clam.local')) {
+      return verdict('BLOCKED', 2, 'HANDOFF_TOOL_REQUIRED', 'Internal agent messages must use the signed handoff tool.');
+    }
     if (!target || address(target) !== target || ((tainted.includes(target) || action.bodyOnlyRecipient) && !trusted.has(target))) {
       return verdict('BLOCKED', 2, 'TAINT_RECIPIENT', 'Recipient lacks trusted provenance.');
     }
@@ -65,7 +67,7 @@ export function evaluateSafeAction(action: SafeAction, policy: InboxPolicy, tain
   return verdict('AUTONOMOUS', tier, tier === 1 ? 'ALLOWLISTED_BOUNDED_ACTION' : 'REVERSIBLE_ACTION', 'Action meets the active policy.');
 }
 
-const footer = 'This email was sent automatically by Clam on behalf of the account owner.';
+const footer = 'This email was sent automatically by Siftvane on behalf of the account owner.';
 export function outboundPayload(action: SafeAction, _tier: Tier) {
   const to = action.effectiveContact ?? '';
   const subject = String(action.after?.subject ?? '').trim();

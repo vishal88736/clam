@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { InboxPolicy, InboxSchedule } from '@clam/shared';
-import { ClamMascot } from './ClamMascot';
+import type { InboxPolicy, InboxSchedule } from '@siftvane/shared';
+import { SiftvaneMark } from './SiftvaneMark';
 import { useTheme } from './ThemeContext';
 import { GoogleAccountBar, useGoogleSession } from './GoogleSession';
 import { ThreadExecutionStack } from './ThreadExecutionStack';
@@ -583,7 +583,7 @@ export function InboxWorkspace() {
 
   return <div className="inbox-layout">
     <aside className="inbox-sidebar">
-      <Link href="/" className="inbox-brand"><ClamMascot variant="glyph" size={32} /><span>Clam</span></Link>
+      <Link href="/" className="inbox-brand"><SiftvaneMark /><span>Siftvane</span></Link>
       <nav aria-label="Inbox navigation">
         {views.map(({ id, label: itemLabel, icon: Icon }) => <a key={id} href={'#' + id} aria-current={view === id ? 'page' : undefined}>
           <Icon size={17} aria-hidden="true" /><span>{itemLabel}</span>
@@ -591,14 +591,14 @@ export function InboxWorkspace() {
         </a>)}
       </nav>
       <div className="inbox-sidebar-bottom">
-        <Link href="/about"><CircleHelp size={16} /> About Clam</Link>
+        <Link href="/about"><CircleHelp size={16} /> About Siftvane</Link>
         <Link href="/settings"><ShieldCheck size={16} /> Connections</Link>
       </div>
     </aside>
     <main className="inbox-main">
       <header className="inbox-header">
         <div className="inbox-title"><h1>{title}</h1>
-          <p>{view === 'briefing' ? 'What changed, what needs you, and what Clam handled.' :
+          <p>{view === 'briefing' ? 'What changed, what needs you, and what Siftvane handled.' :
             view === 'agents' ? 'Every agent your CLI or this console created, with live logs and Workspace artifacts.' :
             view === 'approvals' ? 'Review actions that require your permission.' :
             view === 'calendar' ? 'Review verified changes and upcoming calendar events.' :

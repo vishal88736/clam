@@ -1,4 +1,4 @@
-import type { EphemeralEmail, InboxCalendarEvent } from '@clam/shared';
+import type { EphemeralEmail, InboxCalendarEvent } from '@siftvane/shared';
 import type { ReaderAttachment } from '../inbox/attachments.js';
 
 export interface MailboxAdapter {

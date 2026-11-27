@@ -1,4 +1,4 @@
-import type { EphemeralEmail } from '@clam/shared';
+import type { EphemeralEmail } from '@siftvane/shared';
 
 export interface CreateDraftInput {
   to: string;

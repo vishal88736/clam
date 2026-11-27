@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { scanPromptInjection } from '@clam/shared';
-import { createClamApp } from '../apps/server/src/app.js';
+import { scanPromptInjection } from '@siftvane/shared';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 
 describe('Prompt-Injection Shield, Autonomous Agent Run & Trap Pack Verification', () => {
   it('detects indirect prompt injections, hidden HTML directives, and CEO wire coercion in RAM', () => {
@@ -29,12 +29,12 @@ describe('Prompt-Injection Shield, Autonomous Agent Run & Trap Pack Verification
   });
 
   it('runs standalone Autonomous Inbox Agent zero-touch over real MCP, resolves flight conflict, creates artifacts & safe draft without leaks', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clam-agent-e2e-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'siftvane-agent-e2e-'));
     const artifactsDir = path.join(tmpDir, 'artifacts');
     const tracesDir = path.join(tmpDir, 'traces');
 
-    const runtime = await createClamApp({
-      databasePath: path.join(tmpDir, 'clam.db'),
+    const runtime = await createSiftvaneApp({
+      databasePath: path.join(tmpDir, 'siftvane.db'),
       config: { artifactsDir, tracesDir },
     });
     await runtime.app.listen({ port: 0, host: '127.0.0.1' });
@@ -100,11 +100,11 @@ describe('Prompt-Injection Shield, Autonomous Agent Run & Trap Pack Verification
   });
 
   it('executes full Trap Pack adversarial suite (6 cases) with 0 exfiltrations and mission survival', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clam-trappack-test-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'siftvane-trappack-test-'));
     const artifactsDir = path.join(tmpDir, 'artifacts');
     const tracesDir = path.join(tmpDir, 'traces');
 
-    const runtime = await createClamApp({
+    const runtime = await createSiftvaneApp({
       databasePath: ':memory:',
       config: { artifactsDir, tracesDir },
     });

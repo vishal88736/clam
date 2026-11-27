@@ -1,10 +1,10 @@
-import type { InboxCalendarEvent } from '@clam/shared';
+import type { InboxCalendarEvent } from '@siftvane/shared';
 import { GoogleCalendar, GoogleCalendarLiveAdapter } from '../calendar/google.js';
 import type { ReaderMessage } from '../sandbox/seed.js';
 import type { GoogleAccounts } from '../auth/google.js';
 import { GmailLiveAdapter } from '../mail/gmail.js';
 import { address } from './reader.js';
-import type { ActionKind, Claim, InboxTarget, Mode, SafeAction, Snapshot, Tier } from './contracts.js';
+import type { ActionKind, Claim, InboxTarget, MailSearch, Mode, SafeAction, Snapshot, Tier } from './contracts.js';
 import { outboundPayload } from './policy.js';
 import type { InboxStore } from './store.js';
 import { canonicalJson, sha256 } from './trace.js';
@@ -82,7 +82,8 @@ export class SandboxTarget implements InboxTarget {
 
 type GmailList = { messages?: { id: string }[] };
 type GmailLabels = { labels?: { id: string; name: string; type: string }[] };
-const messageId = (id: string) => `<clam-${id}@agent.clam.local>`;
+const messageId = (id: string) => `<siftvane-${id}@agent.siftvane.local>`;
+const legacyMessageId = (id: string) => `<clam-${id}@agent.clam.local>`;
 
 function parseWireMime(encodedMime: string, status: 'SENT' | 'DRAFT'): Snapshot {
   const raw = Buffer.from(encodedMime, 'base64url').toString('utf8').replace(/\r\n/g, '\n');
@@ -156,19 +157,20 @@ export class LiveTarget implements InboxTarget {
     return response.status === 204 ? undefined as T : await response.json() as T;
   }
 
-  async readerMessages(): Promise<ReaderMessage[]> {
+  async readerMessages(search?: MailSearch, signal?: AbortSignal): Promise<ReaderMessage[]> {
     this.guard();
     if (!(this.gmail instanceof GmailLiveAdapter)) throw new Error('LIVE_ADAPTER_UNAVAILABLE');
     const [messages, labels] = await Promise.all([
-      this.gmail.listForInbox('newer_than:14d -in:spam -in:trash'),
-      this.request<GmailLabels>('/labels'),
+      search ? this.gmail.listForProgram(search, signal) : this.gmail.listForInbox('newer_than:14d -in:spam -in:trash', signal),
+      search ? Promise.resolve(null) : this.request<GmailLabels>('/labels', { signal }),
     ]);
-    const names = new Map(labels.labels?.map((label) => [label.id, label.name]));
+    const names = new Map(labels?.labels?.map((label) => [label.id, label.name]));
     return messages.map((email) => ({
       id: email.id, threadId: email.threadId, from: email.from, subject: email.subject,
       replyTo: email.replyTo, internetId: email.internetId, references: email.references, contextOnly: email.contextOnly, verifiedSender: email.verifiedSender || undefined,
       receivedAt: new Date(email.date).toISOString(), text: email.body, html: email.html,
       attachmentNames: email.attachmentNames, attachments: email.attachmentParts, labels: email.labels.map((id) => names.get(id) ?? id).sort(), sent: email.labels.includes('SENT'),
+      loadAttachments: 'loadAttachments' in email ? email.loadAttachments as ReaderMessage['loadAttachments'] : undefined,
       threatSignals: email.threat_signals,
       redactText: this.connection ? (value: string) => this.connection!.accounts.redact(this.connection!.inboxId, value) : undefined,
     }));
@@ -188,7 +190,8 @@ export class LiveTarget implements InboxTarget {
       const message = await this.request<{ raw: string }>(`/messages/${encodeURIComponent(providerId.slice(6))}?format=raw`);
       return parseWireMime(message.raw, 'SENT');
     }
-    const list = await this.request<GmailList>('/messages?' + new URLSearchParams({ q: `in:sent rfc822msgid:${messageId(providerId)}` }));
+    const ids = [messageId(providerId), legacyMessageId(providerId)];
+    const list = await this.request<GmailList>('/messages?' + new URLSearchParams({ q: `in:sent {${ids.map((id) => 'rfc822msgid:' + id).join(' ')}}` }));
     if (!list.messages?.length) return null;
     if (list.messages.length !== 1) throw new Error('DUPLICATE_PROVIDER_RECEIPTS');
     const message = await this.request<{ raw: string }>(`/messages/${encodeURIComponent(list.messages[0].id)}?format=raw`);
@@ -230,7 +233,7 @@ export class LiveTarget implements InboxTarget {
     for (const name of next.filter((label) => !previous.includes(label))) {
       let id = names.get(name);
       if (!id) {
-        if (!/^CLAM_[A-Z_]+$|^MUTED$/.test(name)) throw new Error('UNSUPPORTED_LABEL');
+        if (!/^(?:(?:SIFTVANE|CLAM)_[A-Z][A-Z0-9_]*|MUTED)$/.test(name)) throw new Error('UNSUPPORTED_LABEL');
         id = (await this.request<{ id: string }>('/labels', { method: 'POST', body: JSON.stringify({ name }), signal })).id;
       }
       addLabelIds.push(id);
@@ -260,7 +263,7 @@ export class LiveTarget implements InboxTarget {
       const replyTo = original && (
         address(original.from) === payload.to || (original.labels.includes('SENT') && original.to.some((recipient) => address(recipient) === payload.to))
       ) && original.internetId && messageRef(original.internetId) && cleanSubject(original.subject) === cleanSubject(payload.subject) ? original : null;
-      const boundary = 'clam-' + sha256(id).slice(0, 32);
+      const boundary = 'siftvane-' + sha256(id).slice(0, 32);
       const mime = [
         'To: ' + payload.to, 'Subject: ' + mimeSubject(payload.subject),
         'Message-ID: ' + messageId(id), 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="' + boundary + '"',

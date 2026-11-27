@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { scanOutboundSecrets, scanPromptInjection } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection } from '@siftvane/shared';
 import { readAttachments } from '../inbox/attachments.js';
 import type { SafeAction, Snapshot } from '../inbox/contracts.js';
 import type { MissionContext, MissionOutcome } from '../inbox/engine.js';

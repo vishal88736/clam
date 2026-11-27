@@ -1,4 +1,4 @@
-import type { InboxCalendarEvent } from '@clam/shared';
+import type { InboxCalendarEvent } from '@siftvane/shared';
 import type { Snapshot } from '../inbox/contracts.js';
 import type { GoogleAccounts } from '../auth/google.js';
 import type { CalendarAdapter } from '../mail/inboxAdapter.js';
@@ -18,15 +18,17 @@ function fromGoogle(event: GoogleEvent): InboxCalendarEvent | null {
   if (event.status === 'cancelled' || !event.start?.dateTime || !event.end?.dateTime) return null;
   const tags = event.extendedProperties?.private ?? {};
   const kinds = ['flight', 'focus', 'meeting', 'reminder', 'buffer'] as const;
+  const dossier = tags.siftvaneDossier ?? tags.clamDossier;
   return {
     id: event.id, etag: event.etag, title: event.summary ?? 'Calendar event',
     start: new Date(event.start.dateTime).toISOString(), end: new Date(event.end.dateTime).toISOString(),
     guests: (event.attendees ?? []).filter((guest) => guest.email && !guest.self)
       .map((guest) => guest.email!.toLowerCase()).sort(),
-    kind: kinds.find((kind) => kind === tags.clamKind) ?? 'meeting',
-    flexible: tags.clamFlexible === 'true',
-    bookingRef: tags.clamBooking || undefined, domain: tags.clamDomain || undefined,
-    dossier: tags.clamDossier ? tags.clamDossier.split('\n') : undefined,
+    kind: kinds.find((kind) => kind === (tags.siftvaneKind ?? tags.clamKind)) ?? 'meeting',
+    flexible: (tags.siftvaneFlexible ?? tags.clamFlexible) === 'true',
+    bookingRef: (tags.siftvaneBooking ?? tags.clamBooking) || undefined,
+    domain: (tags.siftvaneDomain ?? tags.clamDomain) || undefined,
+    dossier: dossier ? dossier.split('\n') : undefined,
   };
 }
 
@@ -92,8 +94,8 @@ export class GoogleCalendar implements CalendarAdapter {
       ...(!current || JSON.stringify(current.guests) !== JSON.stringify(target.guests)
         ? { attendees: target.guests.map((email) => ({ email })) } : {}),
       extendedProperties: { private: {
-        clamKind: target.kind, clamFlexible: String(target.flexible),
-        clamBooking: target.bookingRef ?? '', clamDomain: target.domain ?? '', clamDossier: target.dossier?.join('\n') ?? '',
+        siftvaneKind: target.kind, siftvaneFlexible: String(target.flexible),
+        siftvaneBooking: target.bookingRef ?? '', siftvaneDomain: target.domain ?? '', siftvaneDossier: target.dossier?.join('\n') ?? '',
       } },
     } : null;
     const response = await this.request(suffix, {

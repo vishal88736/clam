@@ -1,4 +1,4 @@
-import { scanOutboundSecrets, scanPromptInjection } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection } from '@siftvane/shared';
 import { readAttachments } from '../inbox/attachments.js';
 import type { InboxEngine } from '../inbox/engine.js';
 import type { McpCaller } from '../inbox/contracts.js';

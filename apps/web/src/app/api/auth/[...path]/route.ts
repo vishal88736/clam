@@ -17,7 +17,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const endpoint = (await context.params).path.join('/');
   const matcher = allowed[request.method as keyof typeof allowed];
   if (!matcher?.test(endpoint)) return Response.json({ error: 'UNKNOWN_AUTH_ENDPOINT' }, { status: 404 });
-  const base = process.env.CLAM_INBOX_API_ORIGIN || 'http://127.0.0.1:4000';
+  const base = process.env.SIFTVANE_INBOX_API_ORIGIN || process.env.CLAM_INBOX_API_ORIGIN || 'http://127.0.0.1:4000';
   const headers = new Headers();
   for (const name of ['Cookie', 'Content-Type']) {
     const value = request.headers.get(name);

@@ -1,4 +1,4 @@
-import { scanPromptInjection, type EphemeralEmail } from '@clam/shared';
+import { scanPromptInjection, type EphemeralEmail } from '@siftvane/shared';
 import type { InboxStore } from '../inbox/store.js';
 import { address, domain, stripHtml } from '../inbox/reader.js';
 import { externalHandoffThreats } from '../handoffs/externalHeaders.js';

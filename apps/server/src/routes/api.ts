@@ -8,12 +8,12 @@ import {
   type LlmProvider,
   type McpToolName,
   type SensitiveCategory,
-} from '@clam/shared';
+} from '@siftvane/shared';
 import type { AutonomousRunnerService } from '../agents/runnerService.js';
 import type { AgentService } from '../agents/service.js';
 import type { ApprovalService } from '../approvals/service.js';
 import type { AuditLogger, RealtimeEventHub } from '../audit/logger.js';
-import type { ClamConfig } from '../config.js';
+import type { SiftvaneConfig } from '../config.js';
 import type { KillSwitchService } from '../killswitch/service.js';
 import type { MailService } from '../mail/service.js';
 import { buildMcpConfigSnippets } from '../mcp/server.js';
@@ -32,7 +32,7 @@ export interface StoredLlmSettings {
 }
 
 export interface ApiDeps {
-  config: ClamConfig;
+  config: SiftvaneConfig;
   agentService: AgentService;
   policyEngine: PolicyEngine;
   mailService: MailService;
@@ -47,7 +47,7 @@ export interface ApiDeps {
 export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
   app.get('/api/health', async () => ({
     ok: true,
-    service: 'clam-firewall',
+    service: 'siftvane-firewall',
     zero_retention: true,
     mail_mode: deps.mailService.getMode(),
     timestamp: new Date().toISOString(),
@@ -449,7 +449,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): void {
     });
     reply
       .header('Content-Type', 'application/x-ndjson; charset=utf-8')
-      .header('Content-Disposition', 'attachment; filename="clam-trace.jsonl"');
+      .header('Content-Disposition', 'attachment; filename="siftvane-trace.jsonl"');
     return jsonl ? jsonl + '\n' : '';
   });
 

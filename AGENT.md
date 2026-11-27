@@ -1,6 +1,6 @@
 # Agentware Track 1 · Inbox & Calendar
 
-Clam runs inbox playbooks, verifies each mutation against its target, and exposes the policy decision and action receipt.
+Siftvane runs inbox playbooks, verifies each mutation against its target, and exposes the policy decision and action receipt.
 
 ```mermaid
 flowchart LR
@@ -54,12 +54,12 @@ The registry in `apps/server/src/inbox/playbooks/index.ts` declares trigger, aut
 | Tainted destinations and forbidden content | — | Blocked independently of approval |
 | Restore earlier state | — | Explicit operator rollback, guarded by current state and halt status |
 
-Live Calendar uses a managed event’s private properties `clamKind`, `clamFlexible`, `clamBooking`, and `clamDomain` to recognize flights and flexible blocks. Writes use read-back verification. Dataset facts and billing conflicts come from the inbox and prior ledger state. Inbox live mail mutation goes through the policy-gated executor.
+Live Calendar uses a managed event’s private properties `siftvaneKind`, `siftvaneFlexible`, `siftvaneBooking`, and `siftvaneDomain` to recognize flights and flexible blocks. Writes use read-back verification. Dataset facts and billing conflicts come from the inbox and prior ledger state. Inbox live mail mutation goes through the policy-gated executor.
 
 ## Model configuration
 
-`CLAM_AGENT_MODE=llm` uses Gemini, OpenAI, Anthropic, Groq, or Ollama. With a key or Ollama endpoint configured, LLM mode is selected by default. The recommended model is `gemini-3.1-flash-lite`. The executor never grants the model write tools, recipient selection, credentials, or control of the final policy disposition.
+`SIFTVANE_AGENT_MODE=llm` uses Gemini, OpenAI, Anthropic, Groq, or Ollama. With a key or Ollama endpoint configured, LLM mode is selected by default. The recommended model is `gemini-3.1-flash-lite`. The executor never grants the model write tools, recipient selection, credentials, or control of the final policy disposition.
 
-`CLAM_AGENT_MODE=offline-smoke` selects deterministic inference explicitly. The Compose sandbox uses this setting. Each model-call PLAN event carries provider, model, prompt tokens, completion tokens, latency, and estimated USD. The REPORT event and the JSON envelope carry the aggregate. Invalid schema, missing IDs, or a transport failure stops the run without a silent fallback.
+`SIFTVANE_AGENT_MODE=offline-smoke` selects deterministic inference explicitly. The Compose sandbox uses this setting. Each model-call PLAN event carries provider, model, prompt tokens, completion tokens, latency, and estimated USD. The REPORT event and the JSON envelope carry the aggregate. Invalid schema, missing IDs, or a transport failure stops the run without a silent fallback.
 
 Use `pnpm test:adversarial` for the built-in regression suite and `pnpm run-official-trap-pack PATH` for a separately supplied pack. The latter defaults to an isolated offline-smoke run and retains case traces, including degraded or failed cases.

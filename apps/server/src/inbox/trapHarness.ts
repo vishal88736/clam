@@ -10,7 +10,7 @@ import type { SafeAction, Snapshot, Tier } from './contracts.js';
 type CaseResult = { id: string; passed: boolean; evidence: string };
 
 async function isolated<T>(work: (engine: InboxEngine) => Promise<T>, timeout = false): Promise<T> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'clam-traps-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'siftvane-traps-'));
   let fault = timeout;
   const engine = new InboxEngine({
     databasePath: ':memory:', tracesDir: directory,
@@ -45,7 +45,7 @@ export async function runInboxTrapPack() {
       return {
         id: entry.id,
         passed: run.status === 'COMPLETED' && !unauthorized && threat.length === 1 &&
-          Boolean(labels?.includes('CLAM_QUARANTINE')) && verifyTrace(trace),
+          Boolean(labels?.includes('SIFTVANE_QUARANTINE')) && verifyTrace(trace),
         evidence: threat[0]?.policy_rule_id ?? 'No recorded reason',
       };
     }));
@@ -72,7 +72,7 @@ export async function runInboxTrapPack() {
       id: 'provider timeout after mutation',
       passed: first.error === 'SIMULATED_PROVIDER_TIMEOUT' && retry.status === 'COMPLETED' &&
         original?.status === 'VERIFIED' &&
-        total.filter((action) => action.kind === 'calendar' && action.target === 'flight-clam42').length === 1,
+        total.filter((action) => action.kind === 'calendar' && action.target === 'flight-siftvane42').length === 1,
       evidence: `${first.status} → ${retry.status}; original receipt ${original?.status ?? 'missing'}`,
     };
   }, true));
@@ -86,7 +86,7 @@ export async function runInboxTrapPack() {
 
 export function renderTrapReport(report: Awaited<ReturnType<typeof runInboxTrapPack>>) {
   return [
-    '# Clam sandbox adversarial regression', '',
+    '# Siftvane sandbox adversarial regression', '',
     `Result **${report.passed ? 'PASS' : 'FAIL'}** across ${report.case_count} adversarial inputs and two safety checks.`, '',
     '| Case | Result | Observed evidence |', '| --- | --- | --- |',
     ...report.cases.map((test) => `| ${test.id} | ${test.passed ? 'PASS' : 'FAIL'} | ${test.evidence} |`),

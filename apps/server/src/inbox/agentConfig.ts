@@ -1,3 +1,5 @@
+import { siftvaneEnvironment } from '@siftvane/shared';
+
 export const agentProviders = ['gemini', 'openai', 'anthropic', 'groq', 'ollama'] as const;
 export type AgentProvider = typeof agentProviders[number];
 export type AgentMode = 'llm' | 'offline-smoke';
@@ -34,12 +36,13 @@ const rate = (value?: string, fallback: number | null = null) =>
   value?.trim() && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : fallback;
 
 export function resolveAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
-  const requestedMode = env.CLAM_AGENT_MODE?.trim();
+  env = siftvaneEnvironment({ ...env });
+  const requestedMode = env.SIFTVANE_AGENT_MODE?.trim();
   if (requestedMode && requestedMode !== 'llm' && requestedMode !== 'offline-smoke') {
-    throw new Error('Invalid CLAM_AGENT_MODE. Use llm or offline-smoke.');
+    throw new Error('Invalid SIFTVANE_AGENT_MODE. Use llm or offline-smoke.');
   }
 
-  const name = env.CLAM_LLM_PROVIDER?.trim().toLowerCase();
+  const name = env.SIFTVANE_LLM_PROVIDER?.trim().toLowerCase();
   const selected = agentProviders.find((provider) => provider === name);
   const automatic = agentProviders.find((provider) => provider === 'ollama'
     ? Boolean(env.OLLAMA_BASE_URL?.trim())
@@ -50,22 +53,22 @@ export function resolveAgentConfig(env: NodeJS.ProcessEnv = process.env): AgentC
     return { mode, provider: 'local', model: 'deterministic-parser', timeoutMs: 0, rates: { input: 0, output: 0 } };
   }
   if (!provider || (name && name !== 'local_heuristic' && !selected)) {
-    throw new Error('Set a supported CLAM_LLM_PROVIDER and its key or Ollama endpoint.');
+    throw new Error('Set a supported SIFTVANE_LLM_PROVIDER and its key or Ollama endpoint.');
   }
   const key = provider === 'ollama' ? undefined : env[keyNames[provider]]?.trim();
   if (provider !== 'ollama' && !key) throw new Error('Missing ' + keyNames[provider] + ' for LLM mode.');
-  const model = env.CLAM_LLM_MODEL?.trim() || defaults[provider];
-  if (!model) throw new Error('Set CLAM_LLM_MODEL for the selected provider.');
+  const model = env.SIFTVANE_LLM_MODEL?.trim() || defaults[provider];
+  if (!model) throw new Error('Set SIFTVANE_LLM_MODEL for the selected provider.');
   const pricing = provider === 'gemini' && model.replace(/^models\//, '') === defaults.gemini
     ? { input: 0.25, output: 1.5 } : { input: null, output: null };
-  const timeout = Number(env.CLAM_AGENT_TIMEOUT_MS || (provider === 'ollama' ? 180_000 : 45_000));
+  const timeout = Number(env.SIFTVANE_AGENT_TIMEOUT_MS || (provider === 'ollama' ? 180_000 : 45_000));
   return {
     mode, provider, model, key,
     endpoint: provider === 'ollama' ? env.OLLAMA_BASE_URL?.trim() || 'http://127.0.0.1:11434' : undefined,
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? Math.min(300_000, timeout) : 45_000,
     rates: provider === 'ollama' ? { input: 0, output: 0 } : {
-      input: rate(env.CLAM_MODEL_INPUT_USD_PER_M, pricing.input),
-      output: rate(env.CLAM_MODEL_OUTPUT_USD_PER_M, pricing.output),
+      input: rate(env.SIFTVANE_MODEL_INPUT_USD_PER_M, pricing.input),
+      output: rate(env.SIFTVANE_MODEL_OUTPUT_USD_PER_M, pricing.output),
     },
   };
 }

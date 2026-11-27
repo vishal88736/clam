@@ -5,6 +5,7 @@ import {
   Pause, Play, ScrollText, Shuffle, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { googleErrorMessage } from './GoogleSession';
 
 export type AgentStatus = 'active' | 'input_required' | 'paused' | 'completed' | 'halted' | 'archived';
 export type Agent = {
@@ -279,8 +280,8 @@ export function AgentsView({ data, revision, onTrace, onError }: {
             {agent.state.phase === 'awaiting_photo_selection' && agent.state.picker_uri?.startsWith('https://') &&
               <a className="inbox-button" data-tone="primary" href={agent.state.picker_uri} target="_blank" rel="noopener noreferrer">
                 <ImageIcon size={14} /> Select receipts in Google Photos</a>}
-            {agent.state.phase === 'awaiting_quotes' && agent.state.notes?.[0] && <p>{agent.state.notes[0]}</p>}
-            {agent.state.last_error && <p className="inbox-error">{agent.state.last_error}</p>}
+            {['awaiting_quotes', 'no_usable_quotes'].includes(agent.state.phase) && agent.state.notes?.[0] && <p>{agent.state.notes[0]}</p>}
+            {agent.state.last_error && <p className="inbox-error">{googleErrorMessage(agent.state.last_error) ?? agent.state.last_error}</p>}
             <details><summary>Plan · {agent.workflow_plan.planner === 'llm-planner' ? 'LLM-composed' : 'offline'} · {agent.workflow_plan.template} · {agent.workflow_plan.steps.length} steps</summary>
               {agent.workflow_plan.params?.reasoning && <p className="agent-reasoning">{agent.workflow_plan.params.reasoning}</p>}
               <ol className="agent-plan">{agent.workflow_plan.steps.map((step) => <li key={step.id}>
@@ -308,7 +309,7 @@ export function AgentsView({ data, revision, onTrace, onError }: {
           <div className="agent-artifact-icon">{serviceIcon(artifact.service, 20)}</div>
           <div>
             <strong>{artifact.title}</strong>
-            <span>{artifactLabel[artifact.service]} · {artifact.agent_id ? names.get(artifact.agent_id) ?? 'Agent' : 'Clam'} · {time(artifact.updated_at)}</span>
+            <span>{artifactLabel[artifact.service]} · {artifact.agent_id ? names.get(artifact.agent_id) ?? 'Agent' : 'Siftvane'} · {time(artifact.updated_at)}</span>
             {artifact.summary && <p>{artifact.summary}</p>}
           </div>
           {artifact.url ? <a className="inbox-button" href={artifact.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Open</a>

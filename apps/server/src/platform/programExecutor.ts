@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import { scanOutboundSecrets, scanPromptInjection, type InboxCalendarEvent } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection, verificationNotice, type InboxCalendarEvent } from '@siftvane/shared';
 import { safeAttachmentBytes, stageWorkspaceAttachment } from '../inbox/attachmentWorkspace.js';
 import { readAttachments } from '../inbox/attachments.js';
 import type { SafeAction } from '../inbox/contracts.js';
@@ -58,7 +58,7 @@ export class ProgramExecutor {
     const step = outcome ? undefined : this.context.record('CHECK', { action, outcome: 'VERIFIED', rule_id: ruleId });
     this.platform.log({ userId: this.agent.user_id, agentId: this.agent.id, runId: this.context.runId, service, action, input, output,
       verdict: outcome ? verdictLabel(outcome) : 'ALLOW_TIER_0', ruleId: outcome?.ruleId ?? ruleId,
-      verified: outcome ? outcome.verified || outcome.decision === 'APPROVAL_REQUIRED' : true,
+      verified: outcome ? outcome.verified : true,
       traceStepHash: (outcome?.checkStep ?? outcome?.policyStep ?? step)?.step_hash });
   }
 
@@ -109,14 +109,17 @@ export class ProgramExecutor {
         const kinds = Object.fromEntries(executed.map((entry) => [entry.id, entry.op === 'mail.search' ? 'mail' : entry.op === 'photos.extract' ? 'photo' : 'other'])) as
           Record<string, 'mail' | 'photo' | 'other'>;
         for (const entry of executed) if ('from' in entry && entry.from && kinds[entry.id] === 'other') kinds[entry.id] = kinds[entry.from] ?? 'other';
-        decision = await llmReview(this.engine.agent, this.agent.goal_prompt, executed, this.observations(), undefined, kinds);
+        decision = await llmReview(this.engine.agent, this.agent.goal_prompt, executed, this.observations(), undefined, kinds,
+          (call) => this.context.recordModel({ event: 'AGENT_MODEL_CALL', phase: call.phase, status: call.status, round }, call.usage), this.context.signal);
       } catch (error) {
+        this.context.checkout();
         this.log('system', 'llm_review', `round ${round}`, 'Review unavailable: ' + (error instanceof Error ? error.message : 'error'), undefined, 'REVIEW_SKIPPED');
         return;
       }
-      this.log('system', 'llm_review', `round ${round}`, decision.reasoning + (decision.steps.length ? ` → ${decision.steps.length} more step(s)` : ' → done') +
-        (decision.issues.length ? ` (rejected: ${decision.issues.join(' | ')})` : ''), undefined, 'LLM_REVIEW');
-      if (decision.done) return;
+      if (decision.done) {
+        this.logReview(round, decision.reasoning, [], decision.issues);
+        return;
+      }
       const typed = new Set(emailsIn(this.agent.goal_prompt));
       const ids = new Set(executed.map((entry) => entry.id));
       const added: GenericStep[] = [];
@@ -140,20 +143,37 @@ export class ProgramExecutor {
         ids.add(parsed.data.id);
         added.push(parsed.data);
       }
+      if (!added.length) {
+        this.logReview(round, decision.reasoning, [], decision.issues);
+        return;
+      }
+      this.context.checkout();
+      if (!this.saveExtendedPlan(added)) {
+        this.logReview(round, decision.reasoning, [], [...decision.issues, 'The combined plan failed validation or exceeded the step limit.']);
+        return;
+      }
+      this.logReview(round, decision.reasoning, added, decision.issues);
       for (const entry of added) await this.step(entry);
       executed.push(...added);
-      if (added.length) this.extendPlan(added);
     }
   }
 
-  private extendPlan(added: GenericStep[]) {
+  private logReview(round: number, reasoning: string, added: GenericStep[], issues: string[]) {
+    const status = added.length ? ` → ${added.length} more step(s)` : issues.length ? ' → follow-up rejected' : ' → done';
+    this.log('system', 'llm_review', `round ${round}`, reasoning + status +
+      (issues.length ? ` (rejected: ${issues.join(' | ')})` : ''), undefined, 'LLM_REVIEW');
+  }
+
+  private saveExtendedPlan(added: GenericStep[]) {
     const current = this.platform.agent(this.agent.id)!;
-    const plan = { ...current.workflow_plan, params: { ...current.workflow_plan.params, program: [...current.workflow_plan.params.program ?? [], ...added] },
+    const usedServices = added.map((entry) => opService[entry.op]).filter((service) => service !== 'system');
+    const plan = { ...current.workflow_plan, services: [...new Set([...current.workflow_plan.services, ...usedServices])],
+      params: { ...current.workflow_plan.params, program: [...current.workflow_plan.params.program ?? [], ...added] },
       steps: [...current.workflow_plan.steps, ...added.map((entry) => ({ id: entry.id, service: opService[entry.op], action: entry.op.replace('.', '_'),
         label: describeStep(entry).slice(0, 160), depends_on: 'from' in entry && entry.from ? [entry.from] : [],
         tier_hint: (entry.op === 'mail.draft_replies' || entry.op === 'mail.send' ? 2 : 0) as 0 | 2 }))] };
     const valid = workflowPlanSchema.safeParse(plan);
-    if (valid.success) this.platform.updatePlan(this.agent.id, valid.data);
+    return valid.success && Boolean(this.platform.updatePlan(this.agent.id, valid.data, this.context.runId));
   }
 
   private observations() {
@@ -182,21 +202,27 @@ export class ProgramExecutor {
     switch (step.op) {
       case 'mail.search': {
         const now = Date.parse(this.context.mode === 'sandbox' ? sandboxClock : new Date().toISOString());
-        const messages = (await this.engine.readMessages(this.context.mode)).filter((message) => !message.contextOnly && !message.sent);
+        const messages = (await this.engine.readMessages(this.context.mode, step, this.context.signal)).filter((message) => !message.contextOnly && !message.sent);
         let quarantined = 0;
         const matched: Row[] = [];
         for (const message of messages.sort((left, right) => Date.parse(right.receivedAt) - Date.parse(left.receivedAt))) {
           const haystack = (message.from + '\n' + message.subject + '\n' + message.text).toLowerCase();
-          if (step.keywords.length && !step.keywords.some((word) => haystack.includes(word.toLowerCase()))) continue;
+          if (this.context.mode === 'sandbox' && step.keywords.length && !step.keywords.some((word) => haystack.includes(word.toLowerCase()))) continue;
           if (step.from_contains && !message.from.toLowerCase().includes(step.from_contains.toLowerCase())) continue;
+          if (step.subject_contains && !message.subject.toLowerCase().includes(step.subject_contains.toLowerCase())) continue;
           if (step.newer_than_days && Date.parse(message.receivedAt) < now - step.newer_than_days * 86_400_000) continue;
-          if (this.hostile(message)) { quarantined++; continue; }
+          if (this.hostile(message) || verificationNotice.test(message.subject + '\n' + message.text) ||
+              scanOutboundSecrets(message.text)) { quarantined++; continue; }
           let text = stripHtml(message.text);
-          if (step.include_attachments && message.attachments?.length) {
+          if (step.include_attachments) {
             try {
-              const extracted = await readAttachments(message.attachments.filter((part) => ['application/pdf', 'text/plain', 'text/csv'].includes(part.mime)));
-              if (!scanPromptInjection(extracted).detected && !scanOutboundSecrets(extracted)) text += '\n' + extracted;
-            } catch { notes.push('attachment unreadable: ' + message.id); }
+              const parts = message.attachments ?? await message.loadAttachments?.() ?? [];
+              const extracted = await readAttachments(parts.filter((part) => ['application/pdf', 'text/plain', 'text/csv'].includes(part.mime)));
+              if (!scanPromptInjection(extracted).detected && !scanOutboundSecrets(extracted) && !verificationNotice.test(extracted)) text += '\n' + extracted;
+            } catch {
+              this.context.checkout();
+              notes.push('attachment unreadable');
+            }
           }
           const fields: Record<string, Value> = {};
           for (const match of text.matchAll(/^\s*([A-Za-z][A-Za-z #/-]{1,30}?)\s*:\s*(.{1,200})$/gm)) {
@@ -208,7 +234,7 @@ export class ProgramExecutor {
             if (amount) fields[name] = Number(amount);
           }
           Object.assign(fields, { date: message.receivedAt.slice(0, 10), from: address(message.from), subject: this.engine.redact(this.context.mode, message.subject),
-            message_id: message.id, thread_id: message.threadId, attachments: (message.attachments ?? []).length });
+            message_id: message.id, thread_id: message.threadId, attachments: message.attachmentNames?.length ?? message.attachments?.length ?? 0 });
           matched.push({ fields, message });
           if (matched.length >= step.limit) break;
         }
@@ -224,7 +250,7 @@ export class ProgramExecutor {
         } catch (error) {
           if (!(error instanceof Error && error.message === 'PHOTOS_PICKER_SELECTION_REQUIRED' && adapter.startPhotoPicker)) throw error;
           const session = await adapter.startPhotoPicker();
-          this.log('photos', 'request_photo_selection', 'Google Photos Picker', 'Open the picker link and choose the photos Clam may read: ' + session.picker_uri,
+          this.log('photos', 'request_photo_selection', 'Google Photos Picker', 'Open the picker link and choose the photos Siftvane may read: ' + session.picker_uri,
             undefined, 'PHOTOS_PICKER_SELECTION_REQUIRED');
           throw new PickerRequired(session.picker_uri);
         }
@@ -268,7 +294,8 @@ export class ProgramExecutor {
         await this.ops.ensureFolderPath(step.folder);
         let saved = 0;
         for (const row of source.rows) {
-          for (const part of (row.message?.attachments ?? []).slice(0, 3)) {
+          const parts = row.message?.attachments ?? await row.message?.loadAttachments?.() ?? [];
+          for (const part of parts.slice(0, 3)) {
             this.context.checkout();
             try {
               safeAttachmentBytes(part);
@@ -305,7 +332,8 @@ export class ProgramExecutor {
         const hasSource = source.rows.some((row) => row.fields.message_id ?? row.fields.media_item_id);
         const sourceColumn = step.columns.find((column) => ['source_id', 'message_id', 'media_item_id'].includes(key(column)));
         const columns = hasSource && !sourceColumn ? [...step.columns, 'Source ID'] : step.columns;
-        await this.ops.ensureSpreadsheet(step.title, folder, [{ name: step.tab, headers: columns }]);
+        const sheet = await this.ops.ensureSpreadsheet(step.title, folder, [{ name: step.tab, headers: columns }]);
+        if (!sheet.verified) break;
         const outcome = await this.ops.appendRows(step.title, step.tab, source.rows.map((row) => columns.map((column) => lookup(row, column))),
           hasSource ? sourceColumn ?? 'Source ID' : undefined);
         result = { rows: source.rows, notes: [`appended ${outcome.appended}`] };
@@ -326,8 +354,9 @@ export class ProgramExecutor {
           const date = /^(\d{4}-\d{2}-\d{2})/.exec(raw)?.[1];
           if (!date) continue;
           const title = String(sanitizeCell(this.render(step.title, row) || 'Reminder').value).slice(0, 140);
-          const id = 'clam-reminder-' + sha256(this.agent.id + ':' + (row.fields.message_id ?? row.fields.media_item_id ?? title) + ':' + date).slice(0, 16);
-          if (await this.context.read('calendar', id)) {
+          const suffix = sha256(this.agent.id + ':' + (row.fields.message_id ?? row.fields.media_item_id ?? title) + ':' + date).slice(0, 16);
+          const id = 'siftvane-reminder-' + suffix;
+          if (await this.context.read('calendar', id) || await this.context.read('calendar', 'clam-reminder-' + suffix)) {
             this.log('calendar', 'add_reminder', `${title} on ${date}`, 'Reminder already scheduled', undefined, 'ALREADY_CURRENT');
             added++;
             continue;
@@ -340,7 +369,9 @@ export class ProgramExecutor {
           if (outcome.verified) added++;
           this.log('calendar', 'add_reminder', `${title} on ${date}`, outcome.verified ? 'Reminder verified' : outcome.outcome || outcome.decision, outcome);
         }
-        if (!added) this.log('calendar', 'add_reminders', describeStep(step), `No rows had a ${step.date_field} date`);
+        if (!added && !source.rows.some((row) => /^\d{4}-\d{2}-\d{2}/.test(String(lookup(row, step.date_field))))) {
+          this.log('calendar', 'add_reminders', describeStep(step), `No rows had a ${step.date_field} date`);
+        }
         break;
       }
       case 'mail.label': {
@@ -384,7 +415,8 @@ export class ProgramExecutor {
         const subject = sanitizeText(this.render(step.subject, undefined, source), 150).value.replace(/[\r\n]+/g, ' ').slice(0, 150);
         const body = sanitizeText(this.render(step.body, undefined, source), 1800).value;
         for (const to of step.to) {
-          const version = sha256(canonicalJson({ subject, body, to, run: this.context.runId }));
+          const run = this.agent.schedule_mode === 'one_shot' ? this.agent.id : this.context.runId;
+          const version = sha256(canonicalJson({ subject, body, to, run }));
           const outcome = await this.context.execute({ kind: 'send', playbook: 'agent_send', target: 'send-' + version.slice(0, 24),
             sourceId: 'agent:' + this.agent.id, effectiveContact: to, version, after: { subject, text: body }, requestedTier: 1, confidence: 1 });
           if (outcome.approvalId) this.pending.push(outcome.approvalId);

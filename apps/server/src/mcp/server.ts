@@ -6,13 +6,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
+import { mcpTokenKind } from '@siftvane/shared';
 import type {
   AgentRecord,
   EphemeralEmail,
   McpToolName,
   SafeEmailDetail,
   SafeEmailSummary,
-} from '@clam/shared';
+} from '@siftvane/shared';
 import type { AgentService } from '../agents/service.js';
 import type { ApprovalService } from '../approvals/service.js';
 import type { AuditLogger } from '../audit/logger.js';
@@ -86,7 +87,7 @@ export function createAgentMcpServer(
   getRunId: () => string | null = () => null
 ): McpServer {
   const server = new McpServer({
-    name: 'clam-email-firewall',
+    name: 'siftvane-email-firewall',
     version: '1.0.0',
   });
 
@@ -162,7 +163,7 @@ export function createAgentMcpServer(
       });
       return jsonContent(
         {
-          error: 'CLAM_POLICY_DENIED',
+          error: 'SIFTVANE_POLICY_DENIED',
           decision: 'DENY',
           reasoning_code: gateTrace.reasoning_code,
           rule_citation: gateTrace.rule_citation,
@@ -242,7 +243,7 @@ export function createAgentMcpServer(
     'list_emails',
     {
       description:
-        'List emails permitted by your Clam policy. Unauthorized, sensitive, or prompt-injected emails are silently stripped.',
+        'List emails permitted by your Siftvane policy. Unauthorized, sensitive, or prompt-injected emails are silently stripped.',
       inputSchema: {
         query: z.string().optional().describe('Optional search filter'),
         maxResults: z.number().int().min(1).max(50).optional().describe('Max emails to return'),
@@ -255,7 +256,7 @@ export function createAgentMcpServer(
     'search_emails',
     {
       description:
-        'Search emails permitted by your Clam policy. Unauthorized, sensitive, or prompt-injected emails are silently stripped.',
+        'Search emails permitted by your Siftvane policy. Unauthorized, sensitive, or prompt-injected emails are silently stripped.',
       inputSchema: {
         query: z.string().min(1).describe('Search query'),
         maxResults: z.number().int().min(1).max(50).optional(),
@@ -311,7 +312,7 @@ export function createAgentMcpServer(
         });
         return jsonContent(
           {
-            error: 'CLAM_POLICY_DENIED',
+            error: 'SIFTVANE_POLICY_DENIED',
             decision: 'DENY',
             reasoning_code: stageACheck.reasoning_code,
             rule_citation: stageACheck.rule_citation,
@@ -337,7 +338,7 @@ export function createAgentMcpServer(
         });
         return jsonContent(
           {
-            error: 'CLAM_POLICY_DENIED',
+            error: 'SIFTVANE_POLICY_DENIED',
             decision: 'DENY',
             reasoning_code: 'MESSAGE_NOT_ACCESSIBLE',
           },
@@ -383,7 +384,7 @@ export function createAgentMcpServer(
       if (trace.decision !== 'ALLOW') {
         return jsonContent(
           {
-            error: 'CLAM_POLICY_DENIED',
+            error: 'SIFTVANE_POLICY_DENIED',
             decision: 'DENY',
             reasoning_code: trace.reasoning_code,
             rule_citation: trace.rule_citation,
@@ -428,7 +429,7 @@ export function createAgentMcpServer(
       if (!contextEmail && params.tool !== 'delete_email') {
         return jsonContent(
           {
-            error: 'CLAM_POLICY_DENIED',
+            error: 'SIFTVANE_POLICY_DENIED',
             decision: 'DENY',
             reasoning_code: 'TARGET_MESSAGE_NOT_ACCESSIBLE',
           },
@@ -479,7 +480,7 @@ export function createAgentMcpServer(
 
       return jsonContent(
         {
-          error: 'CLAM_POLICY_DENIED',
+          error: 'SIFTVANE_POLICY_DENIED',
           decision: 'DENY',
           stage: trace.stage,
           reasoning_code: trace.reasoning_code,
@@ -587,10 +588,10 @@ export function createAgentMcpServer(
     } else if (params.tool === 'delete_email') {
       return jsonContent(
         {
-          error: 'CLAM_POLICY_DENIED',
+          error: 'SIFTVANE_POLICY_DENIED',
           decision: 'DENY',
           reasoning_code: 'DELETE_DISABLED_AT_GATEWAY',
-          rule_citation: 'Permanent email deletion is disabled at the Clam MCP gateway.',
+          rule_citation: 'Permanent email deletion is disabled at the Siftvane MCP gateway.',
         },
         true
       );
@@ -631,7 +632,7 @@ export function createAgentMcpServer(
   server.registerTool(
     'create_draft',
     {
-      description: 'Create an email draft subject to Clam policy rules and HITL review gates.',
+      description: 'Create an email draft subject to Siftvane policy rules and HITL review gates.',
       inputSchema: {
         to: z.string().min(1),
         subject: z.string().min(1),
@@ -700,7 +701,7 @@ export function createAgentMcpServer(
     'save_itinerary_artifact',
     {
       description:
-        'Write a scoped itinerary or digest deliverable (.md, .json, .ics) into Clam artifacts workspace after outbound secret checks.',
+        'Write a scoped itinerary or digest deliverable (.md, .json, .ics) into Siftvane artifacts workspace after outbound secret checks.',
       inputSchema: {
         filename: z.string().min(1),
         content: z.string().min(1),
@@ -731,7 +732,7 @@ export function createAgentMcpServer(
         });
         return jsonContent(
           {
-            error: 'CLAM_POLICY_DENIED',
+            error: 'SIFTVANE_POLICY_DENIED',
             decision: 'DENY',
             reasoning_code: 'INVALID_ARTIFACT_FILENAME',
           },
@@ -772,7 +773,7 @@ export function createAgentMcpServer(
         });
         return jsonContent(
           {
-            error: 'CLAM_POLICY_DENIED',
+            error: 'SIFTVANE_POLICY_DENIED',
             decision: 'DENY',
             reasoning_code: trace.reasoning_code,
             rule_citation: trace.rule_citation,
@@ -857,7 +858,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
         jsonrpc: '2.0',
         error: {
           code: -32001,
-          message: 'Unauthorized: send the Clam token in Authorization or x-api-key.',
+          message: 'Unauthorized: send the Siftvane token in Authorization or x-api-key.',
         },
         id: null,
       });
@@ -870,7 +871,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
         jsonrpc: '2.0',
         error: {
           code: -32001,
-          message: 'Unauthorized: invalid or revoked Clam agent token.',
+          message: 'Unauthorized: invalid or revoked Siftvane agent token.',
         },
         id: null,
       });
@@ -886,7 +887,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
   ): Promise<boolean> {
     if (!deps.killSwitchService.isHalted(agent.id)) return false;
     const ks = deps.killSwitchService.getState();
-    const runIdHeader = request.headers['x-clam-run-id'];
+    const runIdHeader = request.headers['x-siftvane-run-id'] ?? request.headers['x-clam-run-id'];
     const runId = typeof runIdHeader === 'string' && runIdHeader.trim() ? runIdHeader.trim() : null;
 
     await deps.auditLogger.record({
@@ -929,7 +930,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
   }
 
   function extractRunId(request: FastifyRequest): string | null {
-    const hdr = request.headers['x-clam-run-id'];
+    const hdr = request.headers['x-siftvane-run-id'] ?? request.headers['x-clam-run-id'];
     return typeof hdr === 'string' && hdr.trim() ? hdr.trim() : null;
   }
 
@@ -938,9 +939,10 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     const token = mcpCredential(request);
     let owner: string;
     let makeServer: (getRunId: () => string | null) => McpServer;
-    if (token && /^clm_(?:inbox|pod)_[\w-]+$/.test(token)) {
-      const podGrant = token.startsWith('clm_pod_') ? deps.inbox.handoffs.authenticate(token) : undefined;
-      const grant = token.startsWith('clm_inbox_') ? deps.accounts.authenticateMcp(token) : undefined;
+    const kind = token ? mcpTokenKind(token) : undefined;
+    if (token && (kind === 'pod' || kind === 'inbox')) {
+      const podGrant = kind === 'pod' ? deps.inbox.handoffs.authenticate(token) : undefined;
+      const grant = kind === 'inbox' ? deps.accounts.authenticateMcp(token) : undefined;
       if (!grant && !podGrant) return reply.code(401).send({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Invalid inbox token.' } });
       owner = podGrant ? 'pod:' + podGrant.tokenId : 'inbox:' + grant!.tokenId;
       makeServer = () => podGrant ? createPodMcpServer(deps.inbox, podGrant, deps.stagingDir) : createInboxMcpServer({ ...deps, grant: grant! });
@@ -973,7 +975,7 @@ export function registerMcpRoutes(app: FastifyInstance, deps: McpDeps): void {
     const bodyObj = request.body as { method?: string } | undefined;
     const isInitialize = request.method === 'POST' && bodyObj?.method === 'initialize';
 
-    if (isInitialize && !request.headers['x-clam-stateless']) {
+    if (isInitialize && !(request.headers['x-siftvane-stateless'] ?? request.headers['x-clam-stateless'])) {
       let generatedId = '';
       let activeRunId: string | null = reqRunId;
       const setRunId = (id: string | null) => {
@@ -1098,7 +1100,7 @@ export function buildMcpConfigSnippets(params: {
 }) {
   const mcpUrl = `${params.publicUrl.replace(/\/$/, '')}/mcp`;
   const sseUrl = `${params.publicUrl.replace(/\/$/, '')}/mcp/sse`;
-  const token = params.tokenPlaceholder || 'clm_ag_<YOUR_AGENT_TOKEN>';
+  const token = params.tokenPlaceholder || 'siftvane_ag_<YOUR_AGENT_TOKEN>';
   const safeSlug = params.agent.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -1110,7 +1112,7 @@ export function buildMcpConfigSnippets(params: {
       content: JSON.stringify(
         {
           mcpServers: {
-            [`clam-${safeSlug}`]: {
+            [`siftvane-${safeSlug}`]: {
               command: 'npx',
               args: [
                 '-y',
@@ -1131,7 +1133,7 @@ export function buildMcpConfigSnippets(params: {
       content: JSON.stringify(
         {
           mcpServers: {
-            [`clam-${safeSlug}`]: {
+            [`siftvane-${safeSlug}`]: {
               type: 'http',
               url: mcpUrl,
               headers: {
@@ -1149,7 +1151,7 @@ export function buildMcpConfigSnippets(params: {
       content: JSON.stringify(
         {
           mcpServers: {
-            [`clam-${safeSlug}`]: {
+            [`siftvane-${safeSlug}`]: {
               httpUrl: mcpUrl,
               headers: {
                 Authorization: `Bearer ${token}`,

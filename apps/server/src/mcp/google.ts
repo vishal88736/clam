@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { inboxCalendarSchema, inboxPolicySchema, scanOutboundSecrets, scanPromptInjection, verificationNotice, type EphemeralEmail } from '@clam/shared';
+import { inboxCalendarSchema, inboxPolicySchema, scanOutboundSecrets, scanPromptInjection, verificationNotice, type EphemeralEmail } from '@siftvane/shared';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { GoogleAccounts, McpGrant } from '../auth/google.js';
@@ -49,7 +49,7 @@ export function createInboxMcpServer(args: {
     list: async () => inboxCalendarSchema.array().parse((await inbox.calendar('sandbox')).events),
     get: async (id) => inboxCalendarSchema.nullable().parse(inbox.store.entity('sandbox', 'calendar', id)),
   } : new GoogleCalendarLiveAdapter(accounts, grant.inboxId, calendarId, inbox.guard);
-  const server = new McpServer({ name: 'clam-inbox', version: '2.2.0' });
+  const server = new McpServer({ name: 'siftvane-inbox', version: '2.2.0' });
   const caller = (tool: string) => {
     const attribution = mcpCaller(server, grant, tool);
     if (mode !== 'sandbox' && accounts.redact(grant.inboxId, attribution.client) !== attribution.client) {
@@ -69,9 +69,11 @@ export function createInboxMcpServer(args: {
         const value = failure instanceof Error ? failure.message : '';
         const error = /^[A-Z][A-Z0-9_]{2,70}$/.test(value) ? value : 'INBOX_OPERATION_FAILED';
         if (error !== 'INBOX_HALTED' && !inbox.halted()) await inbox.recordMcpRead(mode, caller(tool), {}, error).catch(() => undefined);
-        const action = error === 'SCOPE_UPGRADE_REQUIRED' ? 'Upgrade this inbox to Read + Actions in Clam Connections.' :
+        const action = error === 'SCOPE_UPGRADE_REQUIRED' ? 'Upgrade this inbox to Read + Actions in Siftvane Connections.' :
+          error === 'GOOGLE_API_DISABLED' ? 'Enable the requested API in the Google Cloud project for this OAuth client.' :
+          error === 'GOOGLE_PHOTOS_SETUP_REQUIRED' ? 'Complete Google Photos setup on the connected Google account.' :
           error === 'PHOTOS_PICKER_SELECTION_REQUIRED' ? 'Call photos_start_picker, open picker_uri, choose the receipts, then retry.' :
-          error === 'GOOGLE_REAUTH_REQUIRED' ? 'Reconnect this inbox in Clam Connections.' : undefined;
+          error === 'GOOGLE_REAUTH_REQUIRED' ? 'Reconnect this inbox in Siftvane Connections.' : undefined;
         return structured({ error, action }, true);
       }
     })();
@@ -120,7 +122,7 @@ export function createInboxMcpServer(args: {
   if (mode === 'sandbox') {
     server.tool('list_inboxes', 'List this sandbox mailbox and the local agent Pod inboxes.', {}, () =>
       workflow('list_inboxes', 'inbox:manage', async () => ({ inboxes: inbox.handoffs.members() }), {}));
-    server.tool('provision_inbox', 'Create a synthetic @clam.local inbox in the local agent Pod.', {
+    server.tool('provision_inbox', 'Create a synthetic @siftvane.local inbox in the local agent Pod.', {
       inbox_id: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/),
     }, ({ inbox_id }) => workflow('provision_inbox', 'inbox:manage', () =>
       inbox.recordScopedEvent(mode, 'mcp.provision_inbox', (record) => {

@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 import { resolveAgentConfig } from '../apps/server/src/inbox/agentConfig.js';
 import { SandboxTarget, LiveTarget } from '../apps/server/src/inbox/targets.js';
 import { InboxStore } from '../apps/server/src/inbox/store.js';
@@ -16,7 +16,7 @@ import { sandboxReader } from '../apps/server/src/inbox/reader.js';
 import { sandboxPolicy } from '../apps/server/src/sandbox/seed.js';
 
 const runProcess = promisify(execFile);
-const footer = 'This email was sent automatically by Clam on behalf of the account owner.';
+const footer = 'This email was sent automatically by Siftvane on behalf of the account owner.';
 
 it('injects non-strippable disclosure into the sandbox outbox and Gmail wire payload', async () => {
   const store = new InboxStore(':memory:');
@@ -42,7 +42,7 @@ it('injects non-strippable disclosure into the sandbox outbox and Gmail wire pay
       const [headers] = decoded.split('\r\n\r\n');
       expect(headers).toContain('X-Agent-Automated: true');
       expect(headers).not.toContain('X-Agent-Automated: false');
-      const content = /Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--clam-/.exec(decoded)?.[1] ?? '';
+      const content = /Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--siftvane-/.exec(decoded)?.[1] ?? '';
       expect(Buffer.from(content, 'base64').toString('utf8')).toBe(action.after!.text + '\n\n' + footer);
       return Response.json({ id: 'stub-confirmed' });
     });
@@ -59,12 +59,14 @@ it('injects non-strippable disclosure into the sandbox outbox and Gmail wire pay
 it('selects LLM defaults from credentials or an Ollama endpoint and respects explicit offline mode', () => {
   expect(resolveAgentConfig({ GROQ_API_KEY: 'test' })).toMatchObject({ mode: 'llm', provider: 'groq' });
   expect(resolveAgentConfig({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434' })).toMatchObject({ mode: 'llm', provider: 'ollama' });
-  expect(resolveAgentConfig({ GEMINI_API_KEY: 'test', CLAM_AGENT_MODE: 'offline-smoke' })).toMatchObject({ mode: 'offline-smoke' });
-  expect(() => resolveAgentConfig({ CLAM_AGENT_MODE: 'llm', CLAM_LLM_PROVIDER: 'gemini' })).toThrow('Missing GEMINI_API_KEY');
+  expect(resolveAgentConfig({ GEMINI_API_KEY: 'test', SIFTVANE_AGENT_MODE: 'offline-smoke' })).toMatchObject({ mode: 'offline-smoke' });
+  expect(resolveAgentConfig({ CLAM_AGENT_MODE: 'offline-smoke' })).toMatchObject({ mode: 'offline-smoke' });
+  expect(resolveAgentConfig({ CLAM_AGENT_MODE: 'llm', SIFTVANE_AGENT_MODE: 'offline-smoke' })).toMatchObject({ mode: 'offline-smoke' });
+  expect(() => resolveAgentConfig({ SIFTVANE_AGENT_MODE: 'llm', SIFTVANE_LLM_PROVIDER: 'gemini' })).toThrow('Missing GEMINI_API_KEY');
 });
 
 it('uses the actual CLI to halt a run while its read-only model request is still open', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'clam-halt-cli-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'siftvane-halt-cli-'));
   let signalStart!: () => void;
   const requested = new Promise<void>((resolve) => { signalStart = resolve; });
   let wire: Record<string, unknown> | undefined;
@@ -80,16 +82,16 @@ it('uses the actual CLI to halt a run while its read-only model request is still
   const addr = provider.address();
   if (!addr || typeof addr === 'string') throw new Error('Test provider address unavailable');
   const agent = resolveAgentConfig({
-    CLAM_AGENT_MODE: 'llm', CLAM_LLM_PROVIDER: 'ollama', OLLAMA_BASE_URL: 'http://127.0.0.1:' + addr.port,
+    SIFTVANE_AGENT_MODE: 'llm', SIFTVANE_LLM_PROVIDER: 'ollama', OLLAMA_BASE_URL: 'http://127.0.0.1:' + addr.port,
   });
-  const runtime = await createClamApp({
+  const runtime = await createSiftvaneApp({
     databasePath: ':memory:', config: { tracesDir: directory, inboxLive: false }, agent,
   });
   const compiler = path.join(directory, 'cli.tsconfig.json');
   await writeFile(compiler, JSON.stringify({ compilerOptions: {
     baseUrl: process.cwd(), paths: {
-      '@clam/shared': ['packages/shared/src/index.ts'],
-      '@clam/agent': ['apps/agent/src/index.ts'],
+      '@siftvane/shared': ['packages/shared/src/index.ts'],
+      '@siftvane/agent': ['apps/agent/src/index.ts'],
     },
   } }));
   try {
@@ -101,7 +103,7 @@ it('uses the actual CLI to halt a run while its read-only model request is still
     expect(wire).not.toHaveProperty('tool_choice');
     expect(runtime.inbox.store.run(run.run.id)?.status).toBe('RUNNING');
     await runProcess(process.execPath, ['--import', 'tsx', 'scripts/inbox-agent.ts', 'halt', 'mid-flight test'],
-      { env: { ...process.env, TSX_TSCONFIG_PATH: compiler, CLAM_PUBLIC_URL: base, DATABASE_PATH: ':memory:' }, timeout: 7000 });
+      { env: { ...process.env, TSX_TSCONFIG_PATH: compiler, SIFTVANE_PUBLIC_URL: base, DATABASE_PATH: ':memory:' }, timeout: 7000 });
     const outcome = await run.done;
     expect(outcome).toMatchObject({ status: 'HALTED', agent_mode: 'llm', outbound: 0, calendar: 0 });
     expect(runtime.inbox.store.actions(outcome.id)).toEqual([]);
@@ -138,9 +140,9 @@ it('holds the actual Plane A SQLite connection read-only during a sandbox read',
 });
 
 it('exits nonzero from the trace CLI after modifying exactly one byte', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'clam-tamper-cli-'));
-  const runtime = await createClamApp({
-    databasePath: ':memory:', config: { tracesDir: directory }, agent: resolveAgentConfig({ CLAM_AGENT_MODE: 'offline-smoke' }),
+  const directory = await mkdtemp(path.join(tmpdir(), 'siftvane-tamper-cli-'));
+  const runtime = await createSiftvaneApp({
+    databasePath: ':memory:', config: { tracesDir: directory }, agent: resolveAgentConfig({ SIFTVANE_AGENT_MODE: 'offline-smoke' }),
   });
   try {
     const result = await runtime.inbox.start('cli-proof').done;
@@ -148,7 +150,7 @@ it('exits nonzero from the trace CLI after modifying exactly one byte', async ()
     const compiler = path.join(directory, 'tsconfig.json');
     await writeFile(compiler, JSON.stringify({ compilerOptions: {
       baseUrl: process.cwd(),
-      paths: { '@clam/shared': ['packages/shared/src/index.ts'], '@clam/agent': ['apps/agent/src/index.ts'] },
+      paths: { '@siftvane/shared': ['packages/shared/src/index.ts'], '@siftvane/agent': ['apps/agent/src/index.ts'] },
     } }));
     const cli = (filename: string) => runProcess(process.execPath, ['--import', 'tsx', 'scripts/inbox-agent.ts', 'verify-trace', filename],
       { env: { ...process.env, TSX_TSCONFIG_PATH: compiler, DATABASE_PATH: ':memory:' }, timeout: 7000 });

@@ -14,12 +14,12 @@
 
 | Command or check | Result | Observed output |
 | --- | --- | --- |
-| `CLAM_AGENT_MODE=offline-smoke DATABASE_PATH=:memory: pnpm test` | Pass, exit 0 | `Test Files  9 passed (9)` and `Tests  31 passed (31)` |
+| `SIFTVANE_AGENT_MODE=offline-smoke DATABASE_PATH=:memory: pnpm test` | Pass, exit 0 | `Test Files  9 passed (9)` and `Tests  31 passed (31)` |
 | `pnpm test:adversarial` | Pass, exit 0 | `Result **PASS** across 5 adversarial inputs and two safety checks.` |
 | `pnpm agent verify-trace traces/c611f6b5-2153-4c50-9a86-ac06ee13103e.json` | Pass, exit 0 | `Verified 72 steps · 8689b4b9215582cdb22b9cb52bf485b780440adce2e9319795ce77879f6b40ad` |
 | `pnpm agent verify-trace` with one byte changed | Pass, expected exit 1 | `Trace integrity check failed.` |
 | `pnpm build` | Pass, exit 0 | `Compiled successfully` and `Generating static pages (7/7)` |
-| `CLAM_AGENT_MODE=offline-smoke DATABASE_PATH=:memory: pnpm agent sandbox` | Pass, exit 0 | `COMPLETED`, `emails: 20`, `calendar: 6`, `outbound: 3`. The read-back receipts cover all nine playbooks. |
+| `SIFTVANE_AGENT_MODE=offline-smoke DATABASE_PATH=:memory: pnpm agent sandbox` | Pass, exit 0 | `COMPLETED`, `emails: 20`, `calendar: 6`, `outbound: 3`. The read-back receipts cover all nine playbooks. |
 | `docker compose build --no-cache` | Pass, exit 0 | Built the image in **95.2 s** with the base image already available. |
 | `docker compose up --no-build -d --wait` | Pass, exit 0 | API and web reported `Healthy` in **7.6 s** with a fresh sandbox volume. |
 | `make sandbox` | Pass, exit 0 | API and web reported `Healthy`. The briefing API returned `sandbox` and `offline-smoke`. |

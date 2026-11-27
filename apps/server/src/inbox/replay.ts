@@ -1,4 +1,4 @@
-import type { ThreadReplay, ThreadReplayHop } from '@clam/shared';
+import type { ThreadReplay, ThreadReplayHop } from '@siftvane/shared';
 import type { Mode } from './contracts.js';
 import type { InboxStore } from './store.js';
 

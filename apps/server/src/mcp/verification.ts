@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { recoveryNotice, verificationNotice, type EphemeralEmail } from '@clam/shared';
+import { recoveryNotice, verificationNotice, type EphemeralEmail } from '@siftvane/shared';
 import type { InboxEngine } from '../inbox/engine.js';
 import type { McpCaller, Mode } from '../inbox/contracts.js';
 import { stripHtml } from '../inbox/reader.js';

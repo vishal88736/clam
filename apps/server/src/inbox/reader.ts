@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { inboxIntentSchema, recoveryNotice, scanOutboundSecrets, scanPromptInjection, verificationNotice, type InboxIntent, type InboxPolicy } from '@clam/shared';
+import { inboxIntentSchema, recoveryNotice, scanOutboundSecrets, scanPromptInjection, verificationNotice, type InboxIntent, type InboxPolicy } from '@siftvane/shared';
 import type { ReaderMessage } from '../sandbox/seed.js';
 import { readAttachments } from './attachments.js';
 import { analyzeBatch, ModelFailure, type ModelDecision } from './model.js';

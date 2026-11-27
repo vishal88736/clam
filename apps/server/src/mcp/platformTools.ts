@@ -59,8 +59,8 @@ export function registerPlatformTools(server: McpServer, args: {
   };
 
   server.tool('provision_and_run_agent',
-    'Zero-setup entry point: turn any natural-language request into a persistent Clam agent across Gmail, Calendar, Drive, Docs, Sheets, and Photos. ' +
-    'Clam compiles a validated plan, creates the agent, switches the user to it, and starts it in the backend under the policy engine, ' +
+    'Zero-setup entry point: turn any natural-language request into a persistent Siftvane agent across Gmail, Calendar, Drive, Docs, Sheets, and Photos. ' +
+    'Siftvane compiles a validated plan, creates the agent, switches the user to it, and starts it in the backend under the policy engine, ' +
     'Tier 2 approval gate, and kill switch. Returns the agent id, plan summary, and dashboard URL.', {
       user_instruction: z.string().trim().min(4).max(4000),
       agent_name: z.string().trim().max(80).optional(),
@@ -92,11 +92,11 @@ export function registerPlatformTools(server: McpServer, args: {
       });
       if (!input.wait_seconds) return result;
       const agent = await waitFor(result.agent_id, input.wait_seconds);
-      return { ...result, status: agent.status, phase: agent.state.phase, pending_approvals: agent.state.pending_approvals,
+      return { ...result, status: agent.status, phase: agent.state.phase, pending_approvals: agent.state.pending_approvals, last_error: agent.state.last_error ?? null,
         artifacts: platform.artifacts(grant.userId, agent.id).map((row) => artifactView(row.id)) };
     }));
 
-  server.tool('switch_active_agent', "Switch the user's active Clam agent and record the switch in the audited timeline.", {
+  server.tool('switch_active_agent', "Switch the user's active Siftvane agent and record the switch in the audited timeline.", {
     agent_id: z.string().uuid(), reason: z.string().trim().max(300).optional(),
   }, ({ agent_id, reason }) => workflow('switch_active_agent', 'agent:manage', async () =>
     platform.switchAgent(grant.userId, agent_id, 'cli_manual', reason || 'Switched from a CLI agent')));
@@ -123,7 +123,7 @@ export function registerPlatformTools(server: McpServer, args: {
       return { ...(result as T & object), run_id, agent_id: agent.id };
     });
 
-  server.tool('drive_ensure_folder', 'Find or create a Drive folder (idempotent by name and parent). Uses drive.file; Clam can only see files it created.', {
+  server.tool('drive_ensure_folder', 'Find or create a Drive folder (idempotent by name and parent). Uses drive.file; Siftvane can only see files it created.', {
     name: segment, parent_path: z.array(segment).max(4).optional(), parent_id: z.string().uuid().optional(),
   }, ({ name, parent_path, parent_id }) => direct('drive_ensure_folder', 'workspace:write', ['drive'], async (ops) => {
     const path = [...(parent_id ? folderKeyPath(parent_id) : parent_path ?? []), name];
@@ -143,7 +143,7 @@ export function registerPlatformTools(server: McpServer, args: {
     return { verified: saved.verified, decision: saved.decision, policy_rule_id: saved.ruleId, file: artifactView(saved.artifactId) };
   }));
 
-  server.tool('drive_list_files', 'List Drive folders and files created or accessible through Clam (drive.file).', {
+  server.tool('drive_list_files', 'List Drive folders and files created or accessible through Siftvane (drive.file).', {
     folder_id: z.string().uuid().optional(), query: z.string().max(120).optional(),
   }, ({ folder_id, query }) => workflow('drive_list_files', 'workspace:write', async () => ({
     files: platform.artifacts(grant.userId).filter((row) => ['drive_folder', 'drive_file', 'google_doc', 'google_sheet'].includes(row.service) &&
@@ -182,8 +182,8 @@ export function registerPlatformTools(server: McpServer, args: {
     return { verified: doc.verified, decision: doc.decision, policy_rule_id: doc.ruleId, document: artifactView(doc.artifactId) };
   }));
 
-  server.tool('photos_start_picker', 'Live Google Photos: start a Picker session. Open picker_uri, choose the receipts Clam may read, then call ' +
-    'photos_search_and_extract. Clam never sees photos you did not pick.', {}, () => workflow('photos_start_picker', 'photos:read', async () => {
+  server.tool('photos_start_picker', 'Live Google Photos: start a Picker session. Open picker_uri, choose the receipts Siftvane may read, then call ' +
+    'photos_search_and_extract. Siftvane never sees photos you did not pick.', {}, () => workflow('photos_start_picker', 'photos:read', async () => {
     requireLive(['photos']);
     const adapter = inbox.workspace(mode);
     if (!adapter.startPhotoPicker) return { mode: 'sandbox', picker_required: false, note: 'The $0 sandbox Photos library needs no picker.' };

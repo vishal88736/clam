@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 
 describe('Kill Switch, HTTP 423 Enforcement, AbortController & Auto-Trip Circuit Breaker', () => {
   it('engages Kill Switch via API, returns HTTP 423 on /mcp, freezes approvals, and requires reason to resume', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clam-ks-'));
-    const runtime = await createClamApp({
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'siftvane-ks-'));
+    const runtime = await createSiftvaneApp({
       databasePath: ':memory:',
       config: {
         artifactsDir: path.join(tmpDir, 'artifacts'),
@@ -107,7 +107,7 @@ describe('Kill Switch, HTTP 423 Enforcement, AbortController & Auto-Trip Circuit
   });
 
   it('aborts in-flight AbortController registrations immediately upon Kill Switch engage', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const controller = new AbortController();
       let abortedFired = false;
@@ -138,7 +138,7 @@ describe('Kill Switch, HTTP 423 Enforcement, AbortController & Auto-Trip Circuit
   });
 
   it('Auto-Trip Circuit Breaker halts agent automatically after repeated forbidden tool violations', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     await runtime.app.listen({ port: 0, host: '127.0.0.1' });
 
     try {

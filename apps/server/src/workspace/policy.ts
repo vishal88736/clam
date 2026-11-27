@@ -1,4 +1,4 @@
-import { scanOutboundSecrets, scanPromptInjection } from '@clam/shared';
+import { scanOutboundSecrets, scanPromptInjection } from '@siftvane/shared';
 import type { PolicyVerdict, SafeAction } from '../inbox/contracts.js';
 import { flattenText, hasLiveFormula } from './sanitize.js';
 import { verifiedState, type WorkspaceState } from './types.js';
@@ -9,8 +9,8 @@ const verdict = (decision: PolicyVerdict['decision'], tier: PolicyVerdict['tier'
 
 /**
  * Policy for Drive, Docs, and Sheets writes. Writes are reversible (Tier 0) once they pass the secret scanner,
- * the formula/taint firewall, and the file-type allowlist. Clam can never delete or share unrelated files:
- * the only provider deletion is a rollback of an artifact Clam itself created in this run.
+ * the formula/taint firewall, and the file-type allowlist. Siftvane can never delete or share unrelated files:
+ * the only provider deletion is a rollback of an artifact Siftvane itself created in this run.
  */
 export function evaluateWorkspaceAction(action: SafeAction): PolicyVerdict {
   const state = action.after as unknown as WorkspaceState | null;

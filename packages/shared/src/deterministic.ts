@@ -178,8 +178,8 @@ export function evaluateDeterministicGate(params: {
  * Blocks recognizable credentials and authentication material in outgoing content.
  */
 export function scanOutboundSecrets(text: string): string | null {
-  if (/\bclm_(?:ag|inbox|pod)_[A-Za-z0-9_-]{12,}/.test(text)) {
-    return 'Clam bearer token';
+  if (/\b(?:siftvane|clm)_(?:ag|inbox|pod)_[A-Za-z0-9_-]{12,}/.test(text)) {
+    return 'Siftvane bearer token';
   }
   if (/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/.test(text)) {
     return 'AWS access key identifier';

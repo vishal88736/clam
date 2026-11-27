@@ -6,7 +6,7 @@ import {
   type SemanticClassificationResult,
   type SemanticScope,
   type SensitiveCategory,
-} from '@clam/shared';
+} from '@siftvane/shared';
 
 export interface ClassifierRuntimeConfig {
   provider: LlmProvider;

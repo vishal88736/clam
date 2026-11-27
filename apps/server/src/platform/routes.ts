@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
 import { sandboxMcpOwner, type GoogleAccounts } from '../auth/google.js';
-import type { ClamConfig } from '../config.js';
+import type { SiftvaneConfig } from '../config.js';
 import type { InboxEngine } from '../inbox/engine.js';
 import type { SandboxWorkspaceAdapter } from '../workspace/adapters.js';
 import type { MissionRunner } from './runner.js';
@@ -9,7 +9,7 @@ import { services, type PlatformService } from './service.js';
 
 const agentId = z.object({ id: z.string().uuid() });
 
-export function viewer(request: FastifyRequest, accounts: GoogleAccounts, config: ClamConfig) {
+export function viewer(request: FastifyRequest, accounts: GoogleAccounts, config: SiftvaneConfig) {
   const session = accounts.session(request.headers.cookie);
   return {
     userId: session?.user_id ?? sandboxMcpOwner,
@@ -20,7 +20,7 @@ export function viewer(request: FastifyRequest, accounts: GoogleAccounts, config
 
 /** Website system-of-record API for users, agents, agent switches, execution logs, and Workspace artifacts. */
 export function registerPlatformRoutes(app: FastifyInstance, deps: {
-  inbox: InboxEngine; platform: PlatformService; missions: MissionRunner; accounts: GoogleAccounts; config: ClamConfig;
+  inbox: InboxEngine; platform: PlatformService; missions: MissionRunner; accounts: GoogleAccounts; config: SiftvaneConfig;
 }) {
   const { inbox, platform, missions, accounts, config } = deps;
   app.register(async (router) => {
@@ -34,7 +34,7 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
     router.setErrorHandler((error, _request, reply) => {
       const message = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : 'PLATFORM_OPERATION_FAILED';
       const code = error instanceof ZodError ? 400 : message === 'INBOX_HALTED' ? 423 : /NOT_AVAILABLE/.test(message) ? 404 :
-        /ALREADY|INVALID|NOT_ALLOWED/.test(message) ? 409 : 500;
+        /ALREADY|INVALID|NOT_ALLOWED|AGENT_(?:RUN_STOPPING|STATUS_CHANGED)/.test(message) ? 409 : 500;
       reply.code(code).send({ error: error instanceof ZodError ? 'INVALID_INPUT' : message });
     });
 
@@ -67,15 +67,20 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
       const agent = platform.ownedAgent(who.userId, id);
       if (action === 'pause') {
         if (!['active', 'input_required'].includes(agent.status)) throw new Error('AGENT_NOT_RUNNING');
-        return platform.updateAgent(id, { status: 'paused', next_run_at: null });
+        return missions.stopAgent(agent, false);
       }
-      if (action === 'cancel') return platform.updateAgent(id, { status: 'archived', next_run_at: null });
+      if (action === 'cancel') return missions.stopAgent(agent, true);
       if (!['paused', 'halted', 'completed'].includes(agent.status)) throw new Error('AGENT_ALREADY_ACTIVE');
+      if (agent.state.running_run_id) throw new Error('AGENT_RUN_STOPPING');
       inbox.guard();
-      const waiting = agent.state.pending_approvals.length > 0;
-      const updated = platform.updateAgent(id, { status: waiting ? 'input_required' : 'active',
-        next_run_at: waiting ? null : new Date().toISOString(),
-        state: agent.status === 'completed' ? { ...agent.state, phase: agent.workflow_plan.template === 'vendor_rfq' ? agent.state.phase : 'start' } : agent.state });
+      const updated = platform.updateAgentIfStatus(id, agent.status, (current) => {
+        if (current.state.running_run_id) throw new Error('AGENT_RUN_STOPPING');
+        const waiting = current.state.pending_approvals.length > 0;
+        return { status: waiting ? 'input_required' : 'active', next_run_at: waiting ? null : new Date().toISOString(),
+          state: current.status === 'completed' && current.workflow_plan.template !== 'vendor_rfq' ?
+            { ...current.state, phase: 'start' } : current.state };
+      });
+      if (!updated) throw new Error('AGENT_STATUS_CHANGED');
       setImmediate(() => void missions.tick());
       return updated;
     });

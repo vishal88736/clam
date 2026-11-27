@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
-import type { MailMode } from '@clam/shared';
-import type { ClamConfig } from '../config.js';
-import type { ClamDatabase } from '../db/index.js';
+import type { MailMode } from '@siftvane/shared';
+import type { SiftvaneConfig } from '../config.js';
+import type { SiftvaneDatabase } from '../db/index.js';
 import { vaultSecrets } from '../db/schema.js';
 import { SandboxMailProvider } from './sandbox.js';
 import type { MailProvider } from './types.js';
@@ -12,9 +12,9 @@ const VAULT_MAIL_MODE_KEY = 'mail_mode_config';
 export class MailService {
   public readonly sandbox = new SandboxMailProvider();
   constructor(
-    private readonly db: ClamDatabase,
+    private readonly db: SiftvaneDatabase,
     private readonly vault: CryptoVault,
-    private readonly config: ClamConfig
+    private readonly config: SiftvaneConfig
   ) {}
 
   getMode(): MailMode { return 'sandbox'; }

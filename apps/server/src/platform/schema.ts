@@ -1,6 +1,6 @@
 /**
  * Durable platform state: persistent CLI/Web agents, agent switches, per-step execution logs,
- * and every Workspace artifact Clam created or updated. Lives in the inbox SQLite file so that the
+ * and every Workspace artifact Siftvane created or updated. Lives in the inbox SQLite file so that the
  * same `system_state.kill_switch_active` latch guards it through triggers.
  */
 export const platformSchema = `
@@ -79,13 +79,13 @@ CREATE INDEX IF NOT EXISTS workspace_artifacts_user ON workspace_artifacts(user_
 
 CREATE TABLE IF NOT EXISTS sandbox_photos (id TEXT PRIMARY KEY, body TEXT NOT NULL);
 
--- Previous bytes of a Drive file Clam overwrote, keyed by content hash, so rollback can restore it.
+-- Previous bytes of a Drive file Siftvane overwrote, keyed by content hash, so rollback can restore it.
 CREATE TABLE IF NOT EXISTS workspace_file_backups (
   inbox_id TEXT NOT NULL, logical_key TEXT NOT NULL, md5 TEXT NOT NULL, mime TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL,
   PRIMARY KEY (inbox_id, logical_key, md5)
 );
 
--- Google Photos Picker sessions: the user chooses receipts in Google's own UI; Clam only reads what was picked.
+-- Google Photos Picker sessions: the user chooses receipts in Google's own UI; Siftvane only reads what was picked.
 CREATE TABLE IF NOT EXISTS photo_picker_sessions (
   inbox_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, picker_uri TEXT NOT NULL, created_at TEXT NOT NULL, expire_time TEXT
 );

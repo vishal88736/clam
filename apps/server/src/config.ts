@@ -3,12 +3,14 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { LlmProvider, MailMode } from '@clam/shared';
+import { siftvaneEnvironment, type LlmProvider, type MailMode } from '@siftvane/shared';
 
-export const workspaceRoot = process.env.CLAM_WORKSPACE_ROOT || fileURLToPath(new URL('../../../', import.meta.url));
-dotenv.config({ path: path.join(workspaceRoot, '.env') });
+siftvaneEnvironment(process.env);
+export const workspaceRoot = process.env.SIFTVANE_WORKSPACE_ROOT || fileURLToPath(new URL('../../../', import.meta.url));
+if (process.env.NODE_ENV !== 'test') dotenv.config({ path: path.join(workspaceRoot, '.env') });
+siftvaneEnvironment(process.env);
 
-export interface ClamConfig {
+export interface SiftvaneConfig {
   port: number;
   bindHost: string;
   webPort: number;
@@ -63,8 +65,15 @@ export interface ClamConfig {
   };
 }
 
+function existingLocalPath(input: string, filename: string, legacyFilename: string) {
+  const resolved = path.resolve(workspaceRoot, input);
+  if (path.basename(resolved) !== filename || fs.existsSync(resolved)) return resolved;
+  const legacy = path.join(path.dirname(resolved), legacyFilename);
+  return fs.existsSync(legacy) ? legacy : resolved;
+}
+
 function resolveEncryptionKey(databasePath: string): Buffer {
-  const raw = process.env.CLAM_ENCRYPTION_KEY?.trim();
+  const raw = process.env.SIFTVANE_ENCRYPTION_KEY?.trim();
   if (raw) {
     if (/^[0-9a-fA-F]{64}$/.test(raw)) {
       return Buffer.from(raw, 'hex');
@@ -76,7 +85,7 @@ function resolveEncryptionKey(databasePath: string): Buffer {
     return crypto.randomBytes(32);
   }
 
-  const keyFile = path.resolve(workspaceRoot, process.env.CLAM_KEY_FILE?.trim() || '.clam.key');
+  const keyFile = existingLocalPath(process.env.SIFTVANE_KEY_FILE?.trim() || '.siftvane.key', '.siftvane.key', '.clam.key');
   try {
     if (fs.existsSync(keyFile)) {
       const hex = fs.readFileSync(keyFile, 'utf8').trim();
@@ -92,13 +101,17 @@ function resolveEncryptionKey(databasePath: string): Buffer {
   }
 }
 
-export function loadConfig(): ClamConfig {
-  const databaseInput = process.env.DATABASE_PATH?.trim() || 'data/clam.db';
-  const databasePath = databaseInput === ':memory:' ? databaseInput : path.resolve(workspaceRoot, databaseInput);
-  const mailModeEnv = process.env.CLAM_MAIL_MODE?.trim().toLowerCase();
+export function resolveDatabasePath(): string {
+  const databaseInput = process.env.DATABASE_PATH?.trim() || 'data/siftvane.db';
+  return databaseInput === ':memory:' ? databaseInput : existingLocalPath(databaseInput, 'siftvane.db', 'clam.db');
+}
+
+export function loadConfig(): SiftvaneConfig {
+  const databasePath = resolveDatabasePath();
+  const mailModeEnv = process.env.SIFTVANE_MAIL_MODE?.trim().toLowerCase();
   const defaultMailMode: MailMode = mailModeEnv === 'gmail' ? 'gmail' : 'sandbox';
 
-  const llmEnv = process.env.CLAM_LLM_PROVIDER?.trim().toLowerCase();
+  const llmEnv = process.env.SIFTVANE_LLM_PROVIDER?.trim().toLowerCase();
   const validProviders: LlmProvider[] = ['local_heuristic', 'openai', 'anthropic', 'gemini', 'ollama'];
   const llmProvider: LlmProvider = validProviders.includes(llmEnv as LlmProvider)
     ? (llmEnv as LlmProvider)
@@ -106,39 +119,39 @@ export function loadConfig(): ClamConfig {
 
   return {
     port: Number(process.env.PORT || 4000),
-    bindHost: process.env.CLAM_BIND_HOST?.trim() || '127.0.0.1',
+    bindHost: process.env.SIFTVANE_BIND_HOST?.trim() || '127.0.0.1',
     webPort: Number(process.env.WEB_PORT || 3000),
-    publicUrl: process.env.CLAM_PUBLIC_URL?.trim() || 'http://localhost:4000',
+    publicUrl: process.env.SIFTVANE_PUBLIC_URL?.trim() || 'http://localhost:4000',
     databasePath,
-    artifactsDir: path.resolve(workspaceRoot, process.env.CLAM_ARTIFACTS_DIR?.trim() || 'artifacts'),
-    tracesDir: path.resolve(workspaceRoot, process.env.CLAM_TRACES_DIR?.trim() || 'traces'),
-    lockfile: path.resolve(workspaceRoot, process.env.CLAM_KILLSWITCH_FILE?.trim() || '.killswitch'),
-    inboxLive: process.env.CLAM_INBOX_LIVE === 'true',
-    calendarId: process.env.CLAM_GOOGLE_CALENDAR_ID?.trim() || 'primary',
-    operatorToken: process.env.CLAM_OPERATOR_TOKEN?.trim() || '',
-    webOrigin: process.env.CLAM_WEB_ORIGIN?.trim() || `http://localhost:${Number(process.env.WEB_PORT || 3000)}`,
+    artifactsDir: path.resolve(workspaceRoot, process.env.SIFTVANE_ARTIFACTS_DIR?.trim() || 'artifacts'),
+    tracesDir: path.resolve(workspaceRoot, process.env.SIFTVANE_TRACES_DIR?.trim() || 'traces'),
+    lockfile: path.resolve(workspaceRoot, process.env.SIFTVANE_KILLSWITCH_FILE?.trim() || '.killswitch'),
+    inboxLive: process.env.SIFTVANE_INBOX_LIVE === 'true',
+    calendarId: process.env.SIFTVANE_GOOGLE_CALENDAR_ID?.trim() || 'primary',
+    operatorToken: process.env.SIFTVANE_OPERATOR_TOKEN?.trim() || '',
+    webOrigin: process.env.SIFTVANE_WEB_ORIGIN?.trim() || `http://localhost:${Number(process.env.WEB_PORT || 3000)}`,
     encryptionKey: resolveEncryptionKey(databasePath),
     defaultMailMode,
     googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET?.trim() || '',
     googleRedirectUri:
       process.env.GOOGLE_REDIRECT_URI?.trim() || 'http://localhost:4000/api/auth/google/callback',
-    mailAttachmentsDir: path.resolve(workspaceRoot, process.env.CLAM_MAIL_ATTACHMENTS_DIR?.trim() || 'workspace/mail-attachments'),
-    googleTokenKey: process.env.CLAM_TOKEN_ENCRYPTION_KEY?.trim() || '',
-    sessionSecret: process.env.CLAM_SESSION_SECRET?.trim() || '',
+    mailAttachmentsDir: path.resolve(workspaceRoot, process.env.SIFTVANE_MAIL_ATTACHMENTS_DIR?.trim() || 'workspace/mail-attachments'),
+    googleTokenKey: process.env.SIFTVANE_TOKEN_ENCRYPTION_KEY?.trim() || '',
+    sessionSecret: process.env.SIFTVANE_SESSION_SECRET?.trim() || '',
     llmProvider,
-    llmModel: process.env.CLAM_LLM_MODEL?.trim() || '',
+    llmModel: process.env.SIFTVANE_LLM_MODEL?.trim() || '',
     openaiApiKey: process.env.OPENAI_API_KEY?.trim() || '',
     anthropicApiKey: process.env.ANTHROPIC_API_KEY?.trim() || '',
     geminiApiKey: process.env.GEMINI_API_KEY?.trim() || '',
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL?.trim() || 'http://127.0.0.1:11434',
-    classifierTimeoutMs: Number(process.env.CLAM_CLASSIFIER_TIMEOUT_MS || 8000),
-    approvalTtlSeconds: Number(process.env.CLAM_APPROVAL_TTL_SECONDS || 900),
+    classifierTimeoutMs: Number(process.env.SIFTVANE_CLASSIFIER_TIMEOUT_MS || 8000),
+    approvalTtlSeconds: Number(process.env.SIFTVANE_APPROVAL_TTL_SECONDS || 900),
     circuitBreaker: {
-      violationThreshold: Number(process.env.CLAM_CB_VIOLATION_THRESHOLD || 3),
-      windowSeconds: Number(process.env.CLAM_CB_WINDOW_SECONDS || 30),
-      maxCallsPerMin: Number(process.env.CLAM_CB_MAX_CALLS_PER_MIN || 25),
-      tripOnCriticalInjection: process.env.CLAM_CB_TRIP_CRITICAL_INJECTION !== 'false',
+      violationThreshold: Number(process.env.SIFTVANE_CB_VIOLATION_THRESHOLD || 3),
+      windowSeconds: Number(process.env.SIFTVANE_CB_WINDOW_SECONDS || 30),
+      maxCallsPerMin: Number(process.env.SIFTVANE_CB_MAX_CALLS_PER_MIN || 25),
+      tripOnCriticalInjection: process.env.SIFTVANE_CB_TRIP_CRITICAL_INJECTION !== 'false',
     },
     slack: {
       botToken: process.env.SLACK_BOT_TOKEN?.trim() || '',

@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
-import type { ClamConfig } from '../config.js';
+import type { SiftvaneConfig } from '../config.js';
 import { writeControlTrace } from '../inbox/controlTrace.js';
 import type { InboxEngine } from '../inbox/engine.js';
-import { cookie, flowCookie, GoogleAccounts, mcpScopes, sessionCookie } from './google.js';
+import { cookie, flowCookie, GoogleAccounts, legacyFlowCookie, legacySessionCookie, mcpScopes, sessionCookie } from './google.js';
 
 const id = z.string().uuid();
 const scope = z.union([z.enum(mcpScopes), z.string().regex(/^otp:read:[a-z0-9](?:[a-z0-9.-]{0,245}[a-z0-9])?\.[a-z]{2,24}$/)]);
@@ -15,7 +15,7 @@ const errors: Record<string, number> = {
   GOOGLE_REAUTH_REQUIRED: 409, GOOGLE_TOKEN_EXCHANGE_FAILED: 502, GOOGLE_TOKENS_INVALID: 502,
 };
 
-export function registerGoogleAuthRoutes(app: FastifyInstance, accounts: GoogleAccounts, config: ClamConfig, inbox: InboxEngine) {
+export function registerGoogleAuthRoutes(app: FastifyInstance, accounts: GoogleAccounts, config: SiftvaneConfig, inbox: InboxEngine) {
   app.register(async (router) => {
     router.addHook('preHandler', async (request, reply) => {
       reply.headers({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
@@ -56,12 +56,14 @@ export function registerGoogleAuthRoutes(app: FastifyInstance, accounts: GoogleA
       const result = await accounts.complete(query.code, query.state, request.headers.cookie);
       if (result.next) return reply.header('Set-Cookie', result.next.cookie).redirect(result.next.url);
       if (result.inboxId) inbox.store.policy(`live:${result.inboxId}`);
-      reply.header('Set-Cookie', [cookie(flowCookie, '', 0, accounts.secure), ...(result.session ? [result.session] : [])]);
+      reply.header('Set-Cookie', [cookie(flowCookie, '', 0, accounts.secure), cookie(legacyFlowCookie, '', 0, accounts.secure),
+        ...(result.session ? [result.session, cookie(legacySessionCookie, '', 0, accounts.secure)] : [])]);
       return reply.redirect(new URL('/settings?google=connected', config.webOrigin).toString());
     });
     router.post('/api/auth/logout', async (request, reply) => {
       accounts.logout(accounts.session(request.headers.cookie));
-      return reply.header('Set-Cookie', [cookie(sessionCookie, '', 0, accounts.secure), cookie(flowCookie, '', 0, accounts.secure)]).send({ ok: true });
+      return reply.header('Set-Cookie', [sessionCookie, flowCookie, legacySessionCookie, legacyFlowCookie]
+        .map((name) => cookie(name, '', 0, accounts.secure))).send({ ok: true });
     });
     router.post('/api/auth/inbox', async (request) => {
       const input = z.object({ inbox_id: z.union([id, z.literal('sandbox')]) }).strict().parse(request.body);

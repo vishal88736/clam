@@ -2,7 +2,7 @@
 
 import { ArrowUpRight, GitBranch } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { ThreadReplay } from '@clam/shared';
+import type { ThreadReplay } from '@siftvane/shared';
 
 const label = (value: string) => value.replace(/_/g, ' ').toLowerCase();
 const readable = (date: string) => new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });

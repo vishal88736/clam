@@ -1,4 +1,4 @@
-import type { InboxCalendarEvent, InboxIntent, InboxPolicy, InboxStage } from '@clam/shared';
+import type { InboxCalendarEvent, InboxIntent, InboxPolicy, InboxStage } from '@siftvane/shared';
 
 import type { AgentConfig, AgentMode, ModelUsage } from './agentConfig.js';
 
@@ -54,7 +54,16 @@ export interface Claim {
   ruleId: string;
   status: 'CLAIMED' | 'APPLIED' | 'VERIFIED' | 'REVIEW_REQUIRED' | 'ROLLED_BACK' | 'ROLLBACK_PENDING';
   providerId: string | null;
+  creationPending?: boolean;
   traceId: string | null;
+}
+
+export interface MailSearch {
+  keywords: string[];
+  from_contains?: string;
+  subject_contains?: string;
+  newer_than_days?: number;
+  limit: number;
 }
 
 export interface McpCaller {
@@ -143,7 +152,7 @@ export interface InboxTarget {
   read(action: Pick<SafeAction, 'kind' | 'target'>, providerId?: string | null): Promise<Snapshot>;
   calendar(): Promise<InboxCalendarEvent[]>;
   all(kind: ActionKind): Snapshot[];
-  dispatch(action: SafeAction, tier: Tier, before: Snapshot, id: string, signal: AbortSignal): Promise<string>;
+  dispatch(action: SafeAction, tier: Tier, before: Snapshot, id: string, signal: AbortSignal, onCreated?: (providerId: string) => void): Promise<string>;
   restore(claim: Claim, signal: AbortSignal): Promise<void>;
 }
 

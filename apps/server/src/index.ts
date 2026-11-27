@@ -1,10 +1,10 @@
-import { createClamApp } from './app.js';
+import { createSiftvaneApp } from './app.js';
 
 async function main() {
-  const runtime = await createClamApp();
+  const runtime = await createSiftvaneApp();
   await runtime.app.listen({ port: runtime.config.port, host: runtime.config.bindHost });
   console.log(
-    `[clam-server] Listening on http://localhost:${runtime.config.port} (mode=${runtime.mailService.getMode()}, zero-retention=active)`
+    `[siftvane-server] Listening on http://localhost:${runtime.config.port} (mode=${runtime.mailService.getMode()}, zero-retention=active)`
   );
 
   const shutdown = async () => {
@@ -16,6 +16,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[clam-server] Fatal startup error:', err);
+  console.error('[siftvane-server] Fatal startup error:', err);
   process.exit(1);
 });

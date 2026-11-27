@@ -2,7 +2,7 @@ import {
   scanPromptInjection,
   type EphemeralEmail,
   type PromptInjectionResult,
-} from '@clam/shared';
+} from '@siftvane/shared';
 
 /**
  * Evaluates an ephemeral email strictly in RAM for indirect prompt-injection attacks,

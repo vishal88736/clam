@@ -1,4 +1,4 @@
-import { handoffId, handoffInputFields } from '@clam/shared';
+import { handoffId, handoffInputFields } from '@siftvane/shared';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { podCase } from '../handoffs/sample.js';
@@ -9,7 +9,7 @@ import type { InboxEngine } from '../inbox/engine.js';
 import { mcpCaller } from './caller.js';
 
 export function createPodMcpServer(inbox: InboxEngine, grant: PodGrant, stagingDir: string) {
-  const server = new McpServer({ name: 'clam-agent-pod', version: '2.3.0' });
+  const server = new McpServer({ name: 'siftvane-agent-pod', version: '2.3.0' });
   const caller = (tool: string) => mcpCaller(server, grant, tool);
   const run = async (tool: string, scope: string, work: () => unknown, read = false) => {
     try {

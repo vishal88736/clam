@@ -11,7 +11,7 @@ import type { SafeAction } from '../apps/server/src/inbox/contracts.js';
 import { sandboxMessages, sandboxPolicy } from '../apps/server/src/sandbox/seed.js';
 
 async function withInbox(work: (engine: InboxEngine, directory: string) => Promise<void>) {
-  const directory = await mkdtemp(path.join(tmpdir(), 'clam-kernel-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'siftvane-kernel-'));
   const engine = new InboxEngine({ databasePath: ':memory:', tracesDir: directory, lockfile: path.join(directory, '.killswitch') });
   try { await work(engine, directory); }
   finally {
@@ -32,7 +32,7 @@ describe('Agentic Inbox safety kernel', () => {
     expect(evaluateSafeAction({ ...send, effectiveContact: 'director@partner.example' }, sandboxPolicy).ruleId).toBe('VIP_RECIPIENT');
     expect(evaluateSafeAction({ ...send, effectiveContact: 'out@other.example', bodyOnlyRecipient: true }, sandboxPolicy).decision).toBe('BLOCKED');
     expect(outboundPayload(send, 1)).toMatchObject({ headers: { 'X-Agent-Automated': 'true' } });
-    expect(outboundPayload(send, 1).body).toContain('automatically by Clam');
+    expect(outboundPayload(send, 1).body).toContain('automatically by Siftvane');
     expect(() => outboundPayload({ ...send, after: { subject: 'Unsafe\r\nSubject', text: 'p' } }, 1)).toThrow('INVALID_OUTBOUND');
   });
 
@@ -42,12 +42,12 @@ describe('Agentic Inbox safety kernel', () => {
     expect(() => engine.start()).toThrow('RUN_ALREADY_ACTIVE');
     const run = await first.done;
     expect(run).toMatchObject({ status: 'COMPLETED', emails: 20, outbound: 3, calendar: 6, conflicts: 2 });
-    expect(engine.store.entity('sandbox', 'calendar', 'flight-clam42')?.start).toBe('2026-12-07T16:45:00.000Z');
+    expect(engine.store.entity('sandbox', 'calendar', 'flight-siftvane42')?.start).toBe('2026-12-07T16:45:00.000Z');
     expect(engine.store.entity('sandbox', 'mail', 'password-alert')?.labels).toEqual(['INBOX']);
     expect(engine.store.entity('sandbox', 'mail', 'otp-one')?.labels).not.toContain('INBOX');
     expect(engine.store.entities('sandbox', 'calendar').some((event) => Array.isArray(event?.dossier))).toBe(true);
     expect(engine.store.entities('sandbox', 'review').every((mail) =>
-      (mail?.headers as Record<string, string>)['X-Agent-Automated'] === 'true' && String(mail?.body).includes('automatically by Clam'))).toBe(true);
+      (mail?.headers as Record<string, string>)['X-Agent-Automated'] === 'true' && String(mail?.body).includes('automatically by Siftvane'))).toBe(true);
     const trace = JSON.parse(await readFile(path.join(directory, run.id + '.json'), 'utf8'));
     expect(verifyTrace(trace)).toBe(true);
     trace.steps[1].detail.actions = 777;
@@ -59,7 +59,7 @@ describe('Agentic Inbox safety kernel', () => {
     const rollback = await engine.rollback(run.id).done;
     expect(rollback.status).toBe('COMPLETED');
     expect(engine.store.entities('sandbox', 'calendar')).toHaveLength(8);
-    expect(engine.store.entity('sandbox', 'calendar', 'flight-clam42')?.start).toBe('2026-12-07T14:20:00Z');
+    expect(engine.store.entity('sandbox', 'calendar', 'flight-siftvane42')?.start).toBe('2026-12-07T14:20:00Z');
     expect(engine.store.entity('sandbox', 'mail', 'otp-one')?.labels).toContain('INBOX');
     expect(engine.store.trace(rollback.id).steps.some((step) => step.detail.outcome === 'SENT_MAIL_CANNOT_BE_RECALLED')).toBe(true);
   }));
@@ -81,7 +81,7 @@ describe('Agentic Inbox safety kernel', () => {
   }));
 
   it('produces evidence and a read-only policy diff across all 20 inbox messages', () => withInbox(async (engine) => {
-    const parsed = parseMessage({ ...sandboxMessages[0], text: 'Booking: CLAM42' }, sandboxPolicy);
+    const parsed = parseMessage({ ...sandboxMessages[0], text: 'Booking: SIFTVANE42' }, sandboxPolicy);
     expect(parsed?.confidence).toBeLessThan(sandboxPolicy.confidenceThreshold);
     expect(parsed?.evidence).toBeTruthy();
     const candidate = { ...sandboxPolicy, allowlist: [], confidenceThreshold: 0.99 };
@@ -137,7 +137,7 @@ it('cancels a stale follow-up on a verified related reply in a different thread'
     id: 'reply-in-other-thread', threadId: 'different-thread', from: 'priya@team.example',
     subject: 'A different subject', receivedAt: '2026-12-06T10:00:00.000Z',
     text: 'I reviewed the notes yesterday.', labels: ['ARCHIVED'], verifiedSender: true,
-    references: ['<launch-followup@clam.example>'],
+    references: ['<launch-followup@siftvane.example>'],
   };
   engine.store.sqlite.prepare('INSERT INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(returned.id, 'history', JSON.stringify(returned));
   engine.store.setEntity('sandbox', 'mail', returned.id, { labels: returned.labels });

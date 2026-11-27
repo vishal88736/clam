@@ -1,4 +1,4 @@
-import type { SafeEmailDetail } from '@clam/shared';
+import type { SafeEmailDetail } from '@siftvane/shared';
 
 export interface ExtractedFlight {
   flight_number: string;

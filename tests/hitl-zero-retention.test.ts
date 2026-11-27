@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 import { CryptoVault } from '../apps/server/src/mail/vault.js';
 
 describe('HITL Approvals, AES-256-GCM Vault & Zero-Retention Guarantees', () => {
   it('HITL Flow Test: ask-me-first creates approval, accepts signed Slack webhook, executes draft, and wipes RAM payload', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const signingSecret = 'test_slack_signing_secret_xyz';
       await runtime.approvalService.saveChannelConfigs({
@@ -60,7 +60,7 @@ describe('HITL Approvals, AES-256-GCM Vault & Zero-Retention Guarantees', () => 
 
       // Approve via signed Slack interactive webhook
       const slackPayload = JSON.stringify({
-        actions: [{ action_id: 'clam_approve', value: toolResult.approval_id }],
+        actions: [{ action_id: 'siftvane_approve', value: toolResult.approval_id }],
       });
       const formBody = new URLSearchParams({ payload: slackPayload }).toString();
       const timestamp = String(Math.floor(Date.now() / 1000));
@@ -107,7 +107,7 @@ describe('HITL Approvals, AES-256-GCM Vault & Zero-Retention Guarantees', () => 
   });
 
   it('TTL Expiry wipes ephemeral RAM payload automatically', async () => {
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       const approval = await runtime.approvalService.createApproval({
         agentId: 'ag_travel',
@@ -138,10 +138,10 @@ describe('HITL Approvals, AES-256-GCM Vault & Zero-Retention Guarantees', () => 
   });
 
   it('Zero-Retention Assertion Test: SQLite on disk NEVER stores email subjects, bodies, senders, or draft payloads', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clam-zero-ret-'));
-    const dbFile = path.join(tmpDir, 'clam-test.db');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'siftvane-zero-ret-'));
+    const dbFile = path.join(tmpDir, 'siftvane-test.db');
 
-    const runtime = await createClamApp({ databasePath: dbFile });
+    const runtime = await createSiftvaneApp({ databasePath: dbFile });
     try {
       const issued = await runtime.agentService.issueToken('ag_travel', 'Zero Retention Probe');
       const headers = {

@@ -1,14 +1,16 @@
-# Clam · Agentic Inbox
+# Siftvane · Agentic Inbox
+
+<img src="apps/web/src/app/icon.svg" width="84" height="84" alt="Siftvane logo">
 
 **Agentware 2026 Track 1 · Inbox & Calendar**
 
 [Open the three-minute walkthrough](#three-minute-walkthrough)
 
-Clam reads inbox threads, plans calendar and inbox work, and returns a receipt showing **what changed**, **what it handled**, and **what needs approval**. A read-only LLM analyzes the email. A separate executor enforces policy, verifies each write, and supports rollback for eligible actions. A recorded demo has yet to be published.
+Siftvane reads inbox threads, plans calendar and inbox work, and returns a receipt showing **what changed**, **what it handled**, and **what needs approval**. A read-only LLM analyzes the email. A separate executor enforces policy, verifies each write, and supports rollback for eligible actions. A recorded demo has yet to be published.
 
 ## Primary LLM Mode
 
-Use Node.js 24 or newer and pnpm 10. Configure an API key or an Ollama endpoint to select `llm` automatically, or set `CLAM_AGENT_MODE=llm` explicitly. The LLM can run against the synthetic mailbox before you connect Google.
+Use Node.js 24 or newer and pnpm 10. Configure an API key or an Ollama endpoint to select `llm` automatically, or set `SIFTVANE_AGENT_MODE=llm` explicitly. The LLM can run against the synthetic mailbox before you connect Google.
 
 ```sh
 cp .env.example .env
@@ -17,13 +19,19 @@ pnpm build
 pnpm dev
 ```
 
-For the recommended low-cost cloud setup, set `CLAM_LLM_PROVIDER=gemini`, `CLAM_LLM_MODEL=gemini-3.1-flash-lite`, and `GEMINI_API_KEY` in `.env`. The published standard rates are **$0.25/1M input tokens** and **$1.50/1M output tokens**. Clam records provider-reported usage and estimates USD from these rates. [Google pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite)
+For the recommended low-cost cloud setup, set `SIFTVANE_LLM_PROVIDER=gemini`, `SIFTVANE_LLM_MODEL=gemini-3.1-flash-lite`, and `GEMINI_API_KEY` in `.env`. The published standard rates are **$0.25/1M input tokens** and **$1.50/1M output tokens**. Siftvane records provider-reported usage and estimates USD from these rates. [Google pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite)
 
 Two real local Ollama runs on the 20-message sandbox averaged **5,305 tokens per run** (3,976 input and 1,329 output), with **$0 in provider charges** for `qwen2.5:1.5b`. Each run recorded 2 verified protected-message actions, 10 approvals, and 1 quarantine. Gemini usage and billed cost remain unmeasured. [Run receipts and timings](docs/AGENTWARE_AUDIT.md#measured-model-runs)
 
 Open `http://localhost:3000/#briefing`. The status bar labels the current agent as `llm` or `offline-smoke` separately from the mailbox. Google access is optional and works with either inference mode.
 
-OpenAI, Anthropic, Groq, and Ollama are also supported. Set their provider, model, and applicable key or endpoint. For providers without configured rates, usage is displayed and estimated USD is marked unavailable. Live cloud processing sends bounded, sanitized message and context text to the selected provider. For a local model, set `OLLAMA_BASE_URL` and `CLAM_LLM_MODEL`.
+OpenAI, Anthropic, Groq, and Ollama are also supported. Set their provider, model, and applicable key or endpoint. For providers without configured rates, usage is displayed and estimated USD is marked unavailable. Live cloud processing sends bounded, sanitized message and context text to the selected provider. For a local model, set `OLLAMA_BASE_URL` and `SIFTVANE_LLM_MODEL`.
+
+### Upgrade an existing installation
+
+Use the `SIFTVANE_*` names in `.env.example` for new configuration. The app accepts the previous environment names, reads the former default database and key paths when needed, and continues to accept existing MCP tokens. Keep your database and encryption key together when moving them. Published audit receipts retain their original content and hashes.
+
+To reuse an existing Compose sandbox volume, set `SIFTVANE_SANDBOX_VOLUME` to its name before starting Compose.
 
 ## Zero-Key Offline Smoke Mode
 
@@ -37,13 +45,13 @@ Open `http://localhost:3000/#briefing` and click **Run now**. Compose explicitly
 
 On the verification machine, a Docker build with layer caching disabled took **95.2 seconds** with the base image already available. Starting the built image with a fresh sandbox volume took **7.6 seconds** to reach healthy API and web states.
 
-Use `make logs` for service logs or `make stop` to stop services and keep the SQLite volume. The default API is `http://localhost:4000`. For an isolated local run from source, use `CLAM_AGENT_MODE=offline-smoke DATABASE_PATH=:memory: pnpm agent sandbox`.
+Use `make logs` for service logs or `make stop` to stop services and keep the SQLite volume. The default API is `http://localhost:4000`. For an isolated local run from source, use `SIFTVANE_AGENT_MODE=offline-smoke DATABASE_PATH=:memory: pnpm agent sandbox`.
 
 ## Connect Google Gmail and Calendar
 
 1. In Google Cloud Console, enable **Gmail API** and **Google Calendar API**. In Google Auth Platform, configure your app branding and audience. For an external app in Testing, add a dedicated Gmail account under **Test users**.
-2. Create a **Web application** OAuth client. Add `http://localhost:4000/api/auth/google/callback` as the authorized redirect URI. Keep both Clam URLs on the same hostname for the session cookie to reach both ports.
-3. In `.env`, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and `CLAM_INBOX_LIVE=true`. Generate **two separate** values with `openssl rand -hex 32` for `CLAM_TOKEN_ENCRYPTION_KEY` and `CLAM_SESSION_SECRET`. Start from source with `pnpm dev`. The Compose judge setup explicitly disables live access.
+2. Create a **Web application** OAuth client. Add `http://localhost:4000/api/auth/google/callback` as the authorized redirect URI. Keep both Siftvane URLs on the same hostname for the session cookie to reach both ports.
+3. In `.env`, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and `SIFTVANE_INBOX_LIVE=true`. Generate **two separate** values with `openssl rand -hex 32` for `SIFTVANE_TOKEN_ENCRYPTION_KEY` and `SIFTVANE_SESSION_SECRET`. Start from source with `pnpm dev`. The Compose judge setup explicitly disables live access.
 4. Open `http://localhost:3000/settings`. Click **Sign in with Google**, then **Connect Gmail (Read-Only)**. Use **Link another Google account** to connect a second account. Choose the target in **Active inbox** before starting a run.
 5. Use **Upgrade to Read+Write** when you want to authorize mail or calendar actions. Each account starts with an empty allowlist. Review Tier 2 actions in the Approval Inbox, and use **Disconnect & Revoke Token** to revoke the Google grant and the account's MCP tokens.
 
@@ -53,13 +61,13 @@ Use `make logs` for service logs or `make stop` to stop services and keep the SQ
 | Connect read-only | `gmail.readonly`, `calendar.events.readonly` |
 | Enable actions | `gmail.modify`, `calendar.events` |
 
-Google can return a subset of the requested scopes or include earlier grants. Connections displays the actual set, and Clam checks the required scope before each operation. Google refresh tokens for external apps in Testing generally expire after seven days when Gmail or Calendar scopes are granted. Use **Reconnect** when the account shows **Re-auth Required**. [Google OAuth setup and revocation](https://developers.google.com/identity/protocols/oauth2/web-server) · [Refresh-token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)
+Google can return a subset of the requested scopes or include earlier grants. Connections displays the actual set, and Siftvane checks the required scope before each operation. Google refresh tokens for external apps in Testing generally expire after seven days when Gmail or Calendar scopes are granted. Use **Reconnect** when the account shows **Re-auth Required**. [Google OAuth setup and revocation](https://developers.google.com/identity/protocols/oauth2/web-server) · [Refresh-token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)
 
 ### Scoped MCP access
 
-In **Connections**, mint a token for a specific inbox. The token is shown once and expires after 30 days. Clam accepts it at `http://localhost:4000/mcp` via Streamable HTTP. The Connections screen includes setup snippets for Claude Code, Cline, Cursor, and Codex.
+In **Connections**, mint a token for a specific inbox. The token is shown once and expires after 30 days. Siftvane accepts it at `http://localhost:4000/mcp` via Streamable HTTP. The Connections screen includes setup snippets for Claude Code, Cline, Cursor, and Codex.
 
-For Streamable HTTP, pass the token in `Authorization: Bearer …` or `x-api-key`. The MCP server checks the token on every request, including the session's `GET` stream. For local stdio clients, start `pnpm --silent clam-mcp` from the repo with `CLAM_API_URL` and `CLAM_MCP_TOKEN` exported. The bridge also accepts `CLAM_PUBLIC_URL`. **Runs & Live Monitor** shows tool calls with their reported client name, token identifier, policy verdict, budget, and trace.
+For Streamable HTTP, pass the token in `Authorization: Bearer …` or `x-api-key`. The MCP server checks the token on every request, including the session's `GET` stream. For local stdio clients, start `pnpm --silent siftvane-mcp` from the repo with `SIFTVANE_API_URL` and `SIFTVANE_MCP_TOKEN` exported. The bridge also accepts `SIFTVANE_PUBLIC_URL`. **Runs & Live Monitor** shows tool calls with their reported client name, token identifier, policy verdict, budget, and trace.
 
 If pnpm is available through this checkout's dependencies, run `export PATH="$PWD/node_modules/.bin:$PATH"` before starting the client.
 
@@ -67,9 +75,9 @@ The **Sandbox mailbox tokens** panel also works without Google sign-in. Tokens m
 
 Scopes cover mail and threads, attachment extraction, draft proposals, policy-gated sends, calendar proposals, and optional verification lookups for a single sender domain. The verification scope checks the Gmail search window, exact authenticated domain, and message age. Password-reset and account-recovery notices are excluded. Documents and messages returned by tools carry an untrusted-data label.
 
-Verification tools return a matching code or HTTPS verification URL once per message and inbox. Link hosts must exactly match the authenticated sender domain or an explicit host in `CLAM_VERIFICATION_REDIRECTS`, for example `{"example.com":["verify.example.net"]}`. Clam rejects redirect parameters and never follows the URL. The journal and live stream contain redacted receipts with the caller's token identifier.
+Verification tools return a matching code or HTTPS verification URL once per message and inbox. Link hosts must exactly match the authenticated sender domain or an explicit host in `SIFTVANE_VERIFICATION_REDIRECTS`, for example `{"example.com":["verify.example.net"]}`. Siftvane rejects redirect parameters and never follows the URL. The journal and live stream contain redacted receipts with the caller's token identifier.
 
-For trusted local CLI operations, configure `CLAM_OPERATOR_TOKEN` on the server and CLI. Set `CLAM_INBOX_ID` to the connected account's inbox ID before running `pnpm agent run`, `pnpm agent watch`, or `pnpm agent rollback RUN_ID`. Pull the inbox ID from the signed-in `/api/auth/session` endpoint. The CLI uses the sandbox when no inbox ID is supplied.
+For trusted local CLI operations, configure `SIFTVANE_OPERATOR_TOKEN` on the server and CLI. Set `SIFTVANE_INBOX_ID` to the connected account's inbox ID before running `pnpm agent run`, `pnpm agent watch`, or `pnpm agent rollback RUN_ID`. Pull the inbox ID from the signed-in `/api/auth/session` endpoint. The CLI uses the sandbox when no inbox ID is supplied.
 
 ### Agent Pod handoffs
 
@@ -83,36 +91,76 @@ Mint a sandbox MCP token with `agent:manage`, `workspace:write`, `photos:read`, 
 
 > Email these 4 vendors for quotes on 500 custom boxes, compare their prices in a Sheet and Doc, and book the cheapest one.
 
-The CLI calls `provision_and_run_agent`. Clam compiles the request into a validated step DAG, stores a persistent agent (`user_agents`), switches your active agent (`agent_switch_history`), and runs it in the backend. Every step goes through the policy engine, Tier 0/1/2 gate, kill switch, and read-back `CHECK`. The **Agents & Activity** page streams the agent list, switch timeline, per-step logs (`agent_execution_logs`), and Sheet/Doc/Drive artifacts (`workspace_artifacts`) over SSE. In `$0` sandbox mode you can open an in-browser preview of each artifact.
+The CLI calls `provision_and_run_agent`. Siftvane compiles the request into a validated step DAG, stores a persistent agent (`user_agents`), switches your active agent (`agent_switch_history`), and runs it in the backend. Every step goes through the policy engine, Tier 0/1/2 gate, kill switch, and read-back `CHECK`. The **Agents & Activity** page streams the agent list, switch timeline, per-step logs (`agent_execution_logs`), and Sheet/Doc/Drive artifacts (`workspace_artifacts`) over SSE. In `$0` sandbox mode you can open an in-browser preview of each artifact.
 
 | Built-in workflow | What runs autonomously (Tier 0) | What waits for you (Tier 2) |
 | --- | --- | --- |
-| Invoices & recurring bills | Drive `Clam / Invoices / YYYY-MM`, screened PDF upload, deduplicated ledger rows, summary Doc | Duplicate or spoofed invoices |
+| Invoices & recurring bills | Drive `Siftvane / Invoices / YYYY-MM`, screened PDF upload, deduplicated ledger rows, summary Doc | Duplicate or spoofed invoices |
 | Vendor RFQ → comparison | Quote parsing (body and PDF), sanitized comparison Sheet, winner flag, memo Doc | The RFQ batch to non-allowlisted vendors, and the final booking (`FINANCIAL_COMMITMENT_APPROVAL`) |
 | Receipt photos | Read-only Photos search, bounded extraction, receipt Sheet, Calendar payment reminders | — |
 | Anything else | A sanitized digest Doc, plus an optional tracker Sheet and Drive folder | Any outbound email |
 
-**Any task, not only the built-in workflows.** With `CLAM_AGENT_MODE=llm`, the configured model plans every request. It writes its reasoning and composes a program from Clam's step library:
+**Any task, not only the built-in workflows.** With `SIFTVANE_AGENT_MODE=llm`, the configured model plans every request. It writes its reasoning and composes a program from Siftvane's step library:
 - read: `mail.search` and `photos.extract`;
 - shape the data: `filter` and `summarize`;
 - write: `drive.folder`, `drive.save_attachments`, `drive.save_text`, `sheets.append`, `docs.write`, `calendar.reminders` and `mail.label`;
 - outbound: `mail.draft_replies` and `mail.send`.
 
-The model may also pick one of the ready-made workflows when one fits better. After the program runs, the model reviews sanitized results (counts, field names, short redacted samples) and can add up to two rounds of follow-up steps. Clam executes every step itself under the policy engine. A model can never call an unlisted tool or add a recipient you didn't write, and replies always wait for approval. Without a model, an offline composer builds a general program from the sources and outputs your request names, and the log records that fallback.
+The model may also pick one of the ready-made workflows when one fits better. After the program runs, the model reviews sanitized results (counts, field names, short redacted samples) and can add up to two rounds of follow-up steps. Siftvane executes every step itself under the policy engine. A model can never call an unlisted tool or add a recipient you didn't write, and replies always wait for approval. Without a model, an offline composer builds a general program from the sources and outputs your request names, and the log records that fallback.
 
 For MCP-created agents, grant `mail:label` for labeling, `mail:draft` for drafts, `mail:send` for outbound mail, and `attachment:extract` when a program reads or saves attachments.
 
 Add phrases like "wait up to 48 hours for replies" to set the quote window; the default is 24 hours live and immediate in the sandbox. Raster receipt photos are OCR'd with Tesseract when it is installed.
 
-To check a real Google account end to end, run `CLAM_INBOX_LIVE=true pnpm workspace:smoke [inbox-id] [--keep]`. It creates a folder, a file, a Sheet (including a formula-injection row), and a Doc, verifies every read-back, checks Photos, then rolls back what it created unless you pass `--keep`.
+To check a real Google account end to end, run `SIFTVANE_INBOX_LIVE=true pnpm workspace:smoke [inbox-id] [--keep] [--skip-photos]`. It creates a folder, a file, a Sheet (including a formula-injection row), and a Doc, verifies every read-back, and rolls back what it created even if a check fails. Use `--keep` to retain the test files or `--skip-photos` when testing Drive, Sheets, and Docs alone.
 
 Direct tools are also available: `drive_ensure_folder`, `drive_save_file`, `drive_list_files`, `sheets_create_tracker`, `sheets_append_rows`, `sheets_update_cells`, `docs_create_or_update`, `photos_start_picker`, `photos_search_and_extract`, `switch_active_agent`, and `list_user_agents_and_logs`.
+
+### Test an agent from Antigravity
+
+1. Start `ollama serve` in one terminal. In the repository, start Siftvane with the installed model and a separate sandbox database.
+
+   ```sh
+   export PATH="$PWD/node_modules/.bin:$PATH"
+   DATABASE_PATH=./data/antigravity-sandbox.db SIFTVANE_TRACES_DIR=./data/antigravity-sandbox-traces \
+     SIFTVANE_INBOX_LIVE=false SIFTVANE_AGENT_MODE=llm SIFTVANE_LLM_PROVIDER=ollama SIFTVANE_LLM_MODEL=qwen2.5:7b pnpm dev
+   ```
+
+2. In another terminal, mint a sandbox MCP token scoped to reading mail and writing Workspace output. Copy the `token` value into Antigravity's MCP settings.
+
+   ```sh
+   curl -fsS http://127.0.0.1:4000/api/inbox/mcp-tokens \
+     -H 'Content-Type: application/json' \
+     -d '{"inbox_id":"sandbox","scopes":["agent:manage","mail:read","workspace:write"]}'
+   ```
+
+3. Open **MCP Servers → Manage MCP Servers → View raw config** in the Antigravity IDE. Add the `siftvane` entry under `mcpServers` and refresh the connection. Antigravity invokes Siftvane over MCP. Siftvane calls local Ollama for planning and review. [Antigravity MCP configuration](https://antigravity.google/docs/mcp?tab=ide)
+
+   ```json
+   {
+     "mcpServers": {
+       "siftvane": {
+         "serverUrl": "http://127.0.0.1:4000/mcp",
+         "headers": { "Authorization": "Bearer REPLACE_WITH_SIFTVANE_MCP_TOKEN" },
+         "timeoutSeconds": 240
+       }
+     }
+   }
+   ```
+
+4. Give Antigravity this request and approve the tool call in its UI.
+
+   > Call Siftvane's `provision_and_run_agent` with `schedule_mode` set to `one_shot` and `wait_seconds` set to `0`. Search sandbox emails from orders@shop.example whose subject contains "Order confirmed" from the last 7 days. Put one row per matching email in "Siftvane Order Test", tab "Rows", with Date, From, and Subject columns. The Sheet is the only output.
+
+5. Open **Agents & Activity**. Check for **LLM-composed**, one verified Sheet row, and planning and review usage in the run trace. Click **Resume** on the completed one-shot agent and confirm the same Sheet still has one row. For a pause check, pause another run while it is active and confirm it stays paused after the worker finishes. [Local agent activity](http://localhost:3000/#agents)
+
+For the live version, stop the sandbox server and start Siftvane with your normal `.env` and `SIFTVANE_INBOX_LIVE=true`. Mint a token for the connected inbox with the same three scopes in **Connections**, and use a dedicated test message with a unique subject. Replace the sandbox sender and subject in the prompt and use a fresh Sheet title. Confirm that Google Sheets has exactly one row after two runs.
 
 Safety:
 - **Formula injection:** untrusted text is neutralized before it reaches a Sheet (for example `=IMPORTXML(...)` is stored as `'=IMPORTXML (...)`). Live writes also use `valueInputOption=RAW`.
 - **Secret scanner:** covers Drive file contents as well as Sheet and Doc text.
-- **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photospicker.mediaitems.readonly`. For Photos, Clam opens a Google Photos Picker session and reads only the receipts you choose (call `photos_start_picker`, or open the link on the agent card). `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*. Full `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
-- **Rollback:** rolling back a run deletes only artifacts Clam created in that run, using the id recorded in its own registry.
+- **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photospicker.mediaitems.readonly`. For Photos, Siftvane opens a Google Photos Picker session and reads only the receipts you choose (call `photos_start_picker`, or open the link on the agent card). `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*. Full `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
+- **Rollback:** rolling back a run deletes only artifacts Siftvane created in that run, using the id recorded in its own registry.
 
 ## Three-minute walkthrough
 
@@ -156,7 +204,7 @@ pnpm test:adversarial
 pnpm agent verify-trace traces/c611f6b5-2153-4c50-9a86-ac06ee13103e.json
 ```
 
-The built-in [adversarial regression report](tests/adversarial_regression_report.md) covers five synthetic inputs, a burst halt, and post-write timeout recovery. For the official files supplied separately, run `pnpm run-official-trap-pack PATH` with a directory or JSON manifest. The runner preserves per-case trace links, including failures, in `tests/official_trap_pack_report.md`. It uses an isolated database per file and defaults to offline analysis. Set `CLAM_AGENT_MODE=llm` explicitly to exercise the configured model with the supplied files. The organizer lists the official release at kickoff on November 27 at 18:00 UTC. [Agentware timeline](https://www.agentwarehack.com/)
+The built-in [adversarial regression report](tests/adversarial_regression_report.md) covers five synthetic inputs, a burst halt, and post-write timeout recovery. For the official files supplied separately, run `pnpm run-official-trap-pack PATH` with a directory or JSON manifest. The runner preserves per-case trace links, including failures, in `tests/official_trap_pack_report.md`. It uses an isolated database per file and defaults to offline analysis. Set `SIFTVANE_AGENT_MODE=llm` explicitly to exercise the configured model with the supplied files. The organizer lists the official release at kickoff on November 27 at 18:00 UTC. [Agentware timeline](https://www.agentwarehack.com/)
 
 ## Operator commands
 
@@ -170,7 +218,7 @@ The built-in [adversarial regression report](tests/adversarial_regression_report
 | `pnpm agent verify-trace TRACE_PATH` | Check the complete hash chain and terminal receipt. |
 | `pnpm run-official-trap-pack PATH` | Ingest a supplied pack and produce its separate report. |
 
-Compose users can run online commands with `docker compose exec api pnpm agent watch`. If you changed the host API port, set `CLAM_PUBLIC_URL` for a host CLI.
+Compose users can run online commands with `docker compose exec api pnpm agent watch`. If you changed the host API port, set `SIFTVANE_PUBLIC_URL` for a host CLI.
 
 ## Known Failure Modes & Non-Goals
 

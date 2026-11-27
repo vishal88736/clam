@@ -1,7 +1,7 @@
-import type { TrapPackReport } from '@clam/shared';
-import { createClamApp } from '../apps/server/src/app.js';
+import type { TrapPackReport } from '@siftvane/shared';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 
-const DEFAULT_BASE_URL = process.env.CLAM_PUBLIC_URL?.replace(/\/$/, '') || 'http://localhost:4000';
+const DEFAULT_BASE_URL = process.env.SIFTVANE_PUBLIC_URL?.replace(/\/$/, '') || 'http://localhost:4000';
 
 async function tryRemoteTrapPack(): Promise<TrapPackReport | null> {
   try {
@@ -34,7 +34,7 @@ async function main() {
 
   if (!report) {
     mode = 'standalone-sandbox';
-    const runtime = await createClamApp({ databasePath: ':memory:' });
+    const runtime = await createSiftvaneApp({ databasePath: ':memory:' });
     try {
       await runtime.app.listen({ port: 0, host: '127.0.0.1' });
       report = await runtime.runnerService.runTrapPack();
@@ -43,7 +43,7 @@ async function main() {
     }
   }
 
-  console.log(`\n=== Clam Trap Pack Verification (${mode}) ===`);
+  console.log(`\n=== Siftvane Trap Pack Verification (${mode}) ===`);
   console.log(`Cases Passed:             ${report.passed_cases}/${report.total_cases}`);
   console.log(`Zero Exfiltration:        ${report.zero_exfiltration_verified}`);
   console.log(`Mission Survived:         ${report.mission_survived}`);
@@ -67,6 +67,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[clam-trap-pack] Error:', err);
+  console.error('[siftvane-trap-pack] Error:', err);
   process.exit(1);
 });

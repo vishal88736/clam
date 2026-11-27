@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { expect, it } from 'vitest';
-import { createClamApp } from '../apps/server/src/app.js';
+import { createSiftvaneApp } from '../apps/server/src/app.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 
 const root = 'https://www.googleapis.com/auth/';
@@ -53,7 +53,7 @@ async function fixture(work: (test: Awaited<ReturnType<typeof createFixture>>) =
 }
 
 async function createFixture() {
-  const dir = await mkdtemp(path.join(tmpdir(), 'clam-google-test-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-google-test-'));
   let nonce = '';
   let sub = 'google-operator-100';
   let granted = '';
@@ -64,7 +64,9 @@ async function createFixture() {
   let sendCount = 0;
   let revokeCount = 0;
   let refreshCount = 0;
-  const listStatuses: number[] = [];
+  const listStatuses: (number | { status: number; reason: string })[] = [];
+  const programQueries: URLSearchParams[] = [];
+  let attachmentCalls = 0;
   let includePinnedLink = false;
   let writeHeaders: Headers | undefined;
   const pdf = smallPdf('Quarterly notes ' + refresh);
@@ -134,7 +136,10 @@ async function createFixture() {
       return googleResult({ id: 'delivered-1' });
     }
     if (endpoint.endsWith('/messages/delivered-1')) return googleResult({ raw: sent?.raw });
-    if (endpoint.endsWith('/attachments/part-one')) return googleResult({ data: pdf.toString('base64url') });
+    if (endpoint.endsWith('/attachments/part-one')) {
+      attachmentCalls++;
+      return googleResult({ data: pdf.toString('base64url') });
+    }
     if (endpoint.endsWith('/messages/source-message')) return googleResult(raw);
     if (endpoint.endsWith('/messages/verify-decoy')) return googleResult(verificationMessage('verify-decoy', 'github.com.example.org', 1, '000001'));
     if (endpoint.endsWith('/messages/verify-stale')) return googleResult(verificationMessage('verify-stale', 'github.com', 45, '000002'));
@@ -146,7 +151,8 @@ async function createFixture() {
     if (endpoint.endsWith('/threads/thread-one')) return googleResult({ id: 'thread-one', messages: [raw] });
     if (endpoint.endsWith('/threads')) {
       const status = listStatuses.shift();
-      if (status) return Response.json({ debug: access }, { status });
+      if (status) return typeof status === 'number' ? Response.json({ debug: access }, { status }) :
+        Response.json({ error: { details: [{ reason: status.reason }] }, debug: access }, { status: status.status });
       return googleResult({ threads: [{ id: 'thread-one' }] });
     }
     if (endpoint.endsWith('/messages') && url.searchParams.get('q')?.startsWith('from:@github.com ')) {
@@ -159,7 +165,15 @@ async function createFixture() {
     if (endpoint.endsWith('/messages') && url.searchParams.get('q')?.startsWith('from:@code.example ')) {
       return googleResult({ messages: [{ id: 'alpha-code' }] });
     }
+    if (endpoint.endsWith('/messages') && url.searchParams.get('q')?.includes('subject:"Quarterly notes"')) {
+      programQueries.push(url.searchParams);
+      if (!url.searchParams.has('pageToken')) return googleResult({ messages: [{ id: 'verify-current' }], nextPageToken: 'page-two' });
+      return googleResult({ messages: [{ id: raw.id }] });
+    }
     if (endpoint.endsWith('/messages')) return googleResult({ messages: [{ id: raw.id }] });
+    if (url.hostname === 'photospicker.googleapis.com') return Response.json({
+      error: { status: 'FAILED_PRECONDITION', details: [{ reason: 'PENDING_USER_ACTION' }] }, debug: access,
+    }, { status: 400 });
     if (endpoint.endsWith('/labels')) return googleResult({ labels: [] });
     if (endpoint.endsWith('/events')) return googleResult({ items: [current] });
     if (endpoint.endsWith('/events/managed-event')) {
@@ -171,7 +185,7 @@ async function createFixture() {
     }
     throw new Error('Unexpected Google request ' + endpoint);
   };
-  const runtime = await createClamApp({
+  const runtime = await createSiftvaneApp({
     databasePath: ':memory:',
     config: {
       tracesDir: path.join(dir, 'traces'), mailAttachmentsDir: path.join(dir, 'stage'), inboxLive: true, googleClientId: 'fixture.apps.googleusercontent.com',
@@ -248,7 +262,8 @@ async function createFixture() {
     dir, runtime, api, base, cookie, begin, complete, login, connect, getInbox, issueToken, mcp, authorization,
     useSubject: (value: string) => { sub = value; },
     apiCalls: () => apiCalls, sendCount: () => sendCount, revokeCount: () => revokeCount,
-    refreshCount: () => refreshCount, respondToList: (...statuses: number[]) => { listStatuses.push(...statuses); },
+    refreshCount: () => refreshCount, respondToList: (...statuses: typeof listStatuses) => { listStatuses.push(...statuses); },
+    attachmentCalls: () => attachmentCalls, programQueries,
     enablePinnedLink: () => { includePinnedLink = true; },
     expire: () => { expiry = 1; refreshFailure = true; },
     setScopes: (value: string[]) => { granted = value.join(' '); },
@@ -347,11 +362,11 @@ it('runs isolated Gmail and Calendar MCP actions with verified read-back, rollba
     expect(test.sent()?.threadId).toBe('thread-one');
     const mime = Buffer.from(test.sent()!.raw, 'base64url').toString();
     const [headers] = mime.split('\r\n\r\n');
-    const body = /Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--clam-/.exec(mime)?.[1] ?? '';
+    const body = /Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--siftvane-/.exec(mime)?.[1] ?? '';
     expect(headers).toContain('X-Agent-Automated: true');
     expect(headers).toContain('In-Reply-To: <original@team.example>');
     expect(headers).toContain('References: <earlier@team.example> <original@team.example>');
-    expect(Buffer.from(body, 'base64').toString()).toContain('automatically by Clam');
+    expect(Buffer.from(body, 'base64').toString()).toContain('automatically by Siftvane');
     const sentRun = output(send).run_id;
     const proof = (await test.api('/api/inbox/runs/' + sentRun + '/trace')).json();
     expect(proof.steps.some((item: { detail: { outcome?: string } }) => item.detail.outcome === 'VERIFIED')).toBe(true);
@@ -410,9 +425,9 @@ it('marks expired refresh grants as reauth required without returning the upstre
 }));
 
 it('fails live startup when encryption and session keys are weak', async () => {
-  await expect(createClamApp({ databasePath: ':memory:', config: {
+  await expect(createSiftvaneApp({ databasePath: ':memory:', config: {
     inboxLive: true, googleClientId: 'mock', googleClientSecret: 'test', googleTokenKey: 'a'.repeat(64), sessionSecret: 'b'.repeat(64),
-  } })).rejects.toThrow('CLAM_TOKEN_ENCRYPTION_KEY');
+  } })).rejects.toThrow('SIFTVANE_TOKEN_ENCRYPTION_KEY');
 });
 
 it('retries one 401, backs off a 429, maps 403, and scopes verification lookups to exact recent senders', () => fixture(async (test) => {
@@ -426,13 +441,45 @@ it('retries one 401, backs off a 429, maps 403, and scopes verification lookups 
     expect(output(await client.callTool({ name: 'list_threads' }))).toHaveLength(1);
     expect(test.refreshCount()).toBe(1);
     test.respondToList(403);
-    expect(output(await client.callTool({ name: 'list_threads' })).error).toBe('SCOPE_UPGRADE_REQUIRED');
+    expect(output(await client.callTool({ name: 'list_threads' }))).toEqual({ error: 'GOOGLE_ACCESS_DENIED' });
+    test.respondToList({ status: 403, reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' });
+    expect(output(await client.callTool({ name: 'list_threads' }))).toMatchObject({ error: 'SCOPE_UPGRADE_REQUIRED' });
+    test.respondToList({ status: 403, reason: 'SERVICE_DISABLED' });
+    expect(output(await client.callTool({ name: 'list_threads' }))).toMatchObject({ error: 'GOOGLE_API_DISABLED', action: expect.stringContaining('Google Cloud') });
     const denied = await client.callTool({ name: 'get_verification_code', arguments: { expected_sender_domain: 'example.org' } });
     expect(output(denied)).toMatchObject({ error: 'MCP_SCOPE_REQUIRED' });
     const code = await client.callTool({ name: 'get_verification_code', arguments: { expected_sender_domain: 'github.com', max_age_minutes: 5 } });
     expect(output(code)).toEqual({ code: '653241' });
     const absent = await client.callTool({ name: 'get_verification_code', arguments: { expected_sender_domain: 'github.com', max_age_minutes: 1 } });
     expect(output(absent)).toEqual({ found: false });
+  } finally { await client.close(); }
+}));
+
+it('searches Gmail using the requested filters, follows pages, and loads only requested attachment bytes', () => fixture(async (test) => {
+  await test.login();
+  await test.connect('readonly');
+  const inbox = await test.getInbox();
+  const messages = await test.runtime.inbox.readMessages(`live:${inbox}`, {
+    newer_than_days: 30, from_contains: 'sam@team.example', subject_contains: 'Quarterly notes', keywords: [], limit: 1,
+  });
+  expect(test.programQueries.map((query) => query.get('pageToken'))).toEqual([null, 'page-two']);
+  expect(test.programQueries[0].get('q')).toBe('newer_than:30d -in:spam -in:trash -in:sent -in:drafts from:"sam@team.example" subject:"Quarterly notes"');
+  expect(messages.map((message) => message.id)).toEqual(['source-message']);
+  expect(test.attachmentCalls()).toBe(0);
+  expect(await messages[0].loadAttachments?.()).toEqual([expect.objectContaining({ name: 'notes.pdf' })]);
+  await messages[0].loadAttachments?.();
+  expect(test.attachmentCalls()).toBe(1);
+}));
+
+it('tells an OAuth-connected user when Google Photos still needs account setup', () => fixture(async (test) => {
+  await test.login();
+  await test.connect('readonly', [...readonly, root + 'photospicker.mediaitems.readonly']);
+  const inbox = await test.getInbox();
+  const client = await test.mcp(await test.issueToken(inbox, ['photos:read']));
+  try {
+    const result = output(await client.callTool({ name: 'photos_start_picker' }));
+    expect(result).toMatchObject({ error: 'GOOGLE_PHOTOS_SETUP_REQUIRED', action: expect.stringContaining('Complete Google Photos setup') });
+    expect(JSON.stringify(result)).not.toContain(access);
   } finally { await client.close(); }
 }));
 
@@ -459,7 +506,7 @@ it('links a second Google account and keeps policy, history, and scoped MCP requ
   const client = await test.mcp(sandboxToken);
   const before = test.apiCalls();
   try {
-    const thread = await client.callTool({ name: 'get_thread', arguments: { thread_id: 'trip-clam42' } });
+    const thread = await client.callTool({ name: 'get_thread', arguments: { thread_id: 'trip-siftvane42' } });
     expect(output(thread).messages).toHaveLength(2);
     expect(test.apiCalls()).toBe(before);
   } finally { await client.close(); }

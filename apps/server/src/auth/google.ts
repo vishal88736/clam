@@ -1,13 +1,13 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import type { DatabaseSync } from 'node:sqlite';
-import type { ClamConfig } from '../config.js';
+import type { SiftvaneConfig } from '../config.js';
 
 const scopes = {
   identity: ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
   readonly: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/calendar.events.readonly'],
   readwrite: ['https://www.googleapis.com/auth/gmail.modify', 'https://www.googleapis.com/auth/calendar.events'],
-  // Least-privilege Workspace grant: drive.file only reaches files Clam created or the user opened with Clam;
+  // Least-privilege Workspace grant: drive.file only reaches files Siftvane created or the user opened with Siftvane;
   // Photos is strictly read-only. Docs/Sheets scopes are requested only for edits of pre-existing files.
   workspace: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'],
   workspace_edit: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/documents',
@@ -19,7 +19,7 @@ export const workspaceScopes = {
   spreadsheets: 'https://www.googleapis.com/auth/spreadsheets',
   photosReadonly: 'https://www.googleapis.com/auth/photoslibrary.readonly',
   photosAppCreated: 'https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata',
-  // Google Photos Picker: the user selects items in Google's UI; Clam reads only the selection.
+  // Google Photos Picker: the user selects items in Google's UI; Siftvane reads only the selection.
   photosPicker: 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
 } as const;
 /** Hard ban: unrestricted Drive and any Photos write/share scope can never be stored for an inbox. */
@@ -33,10 +33,13 @@ const acceptedScopes = new Set<string>([...scopes.identity, ...scopes.readonly, 
   workspaceScopes.photosAppCreated, workspaceScopes.photosReadonly, 'email', 'profile']);
 const tokenEndpoint = 'https://oauth2.googleapis.com/token';
 const retiring = 30_000;
-export const sessionCookie = 'clam_session';
-export const flowCookie = 'clam_google_flow';
+export const sessionCookie = 'siftvane_session';
+export const flowCookie = 'siftvane_google_flow';
+export const legacySessionCookie = 'clam_session';
+export const legacyFlowCookie = 'clam_google_flow';
 export const mcpScopes = ['mail:read', 'attachment:extract', 'mail:draft', 'mail:send', 'mail:label', 'calendar:propose', 'inbox:manage',
   'agent:manage', 'workspace:write', 'photos:read'] as const;
+// This identity anchors existing agents, tokens, and artifact namespaces.
 export const sandboxMcpOwner = 'clam-local-sandbox';
 export type AuthStage = keyof typeof scopes;
 export type GoogleCapability = 'mail:read' | 'mail:write' | 'calendar:read' | 'calendar:write' | 'drive:write' | 'docs:write' | 'sheets:write' | 'photos:read';
@@ -69,13 +72,13 @@ const strongKey = (encoded: string) => {
   return new Set(bytes).size >= 16 ? bytes : null;
 };
 
-export function validateGoogleConfig(config: ClamConfig) {
+export function validateGoogleConfig(config: SiftvaneConfig) {
   if (!config.inboxLive && !config.googleClientId && !config.googleClientSecret) return false;
   if (!config.googleClientId || !config.googleClientSecret) throw new Error('Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for Google access.');
-  if (!strongKey(config.googleTokenKey)) throw new Error('CLAM_TOKEN_ENCRYPTION_KEY must be 32 random bytes encoded as 64 hex characters.');
-  if (!strongKey(config.sessionSecret)) throw new Error('CLAM_SESSION_SECRET must be 32 random bytes encoded as 64 hex characters.');
+  if (!strongKey(config.googleTokenKey)) throw new Error('SIFTVANE_TOKEN_ENCRYPTION_KEY must be 32 random bytes encoded as 64 hex characters.');
+  if (!strongKey(config.sessionSecret)) throw new Error('SIFTVANE_SESSION_SECRET must be 32 random bytes encoded as 64 hex characters.');
   if (config.googleTokenKey.toLowerCase() === config.sessionSecret.toLowerCase()) {
-    throw new Error('Generate separate values for CLAM_TOKEN_ENCRYPTION_KEY and CLAM_SESSION_SECRET.');
+    throw new Error('Generate separate values for SIFTVANE_TOKEN_ENCRYPTION_KEY and SIFTVANE_SESSION_SECRET.');
   }
   const uri = new URL(config.googleRedirectUri);
   const web = new URL(config.webOrigin);
@@ -86,7 +89,7 @@ export function validateGoogleConfig(config: ClamConfig) {
   }
   if (uri.pathname !== '/api/auth/google/callback' || uri.search || uri.hash || uri.username || uri.password ||
       uri.hostname !== web.hostname || uri.protocol !== web.protocol) {
-    throw new Error('GOOGLE_REDIRECT_URI must target /api/auth/google/callback on the same host and scheme as CLAM_WEB_ORIGIN.');
+    throw new Error('GOOGLE_REDIRECT_URI must target /api/auth/google/callback on the same host and scheme as SIFTVANE_WEB_ORIGIN.');
   }
   return true;
 }
@@ -132,7 +135,7 @@ export class GoogleAccounts {
   private readonly refreshing = new Map<string, Promise<string>>();
   private readonly quota = new Map<string, { time: number; units: number }[]>();
 
-  constructor(private readonly db: DatabaseSync, private readonly config: ClamConfig, options: Options = {}) {
+  constructor(private readonly db: DatabaseSync, private readonly config: SiftvaneConfig, options: Options = {}) {
     this.enabled = validateGoogleConfig(config);
     this.secure = config.googleRedirectUri.startsWith('https:');
     this.encryption = Buffer.from(config.googleTokenKey, 'hex');
@@ -155,7 +158,7 @@ export class GoogleAccounts {
 
   session(cookies?: string): OperatorSession | undefined {
     if (!this.enabled) return undefined;
-    const token = readCookie(cookies, sessionCookie);
+    const token = readCookie(cookies, sessionCookie) || readCookie(cookies, legacySessionCookie);
     if (!/^[\w-]{43}$/.test(token)) return undefined;
     return this.db.prepare('SELECT * FROM operator_sessions WHERE token_hash=? AND expires_at>?')
       .get(hash(token), Date.now()) as OperatorSession | undefined;
@@ -227,7 +230,7 @@ export class GoogleAccounts {
 
   async complete(code: string, state: string, cookies?: string) {
     this.requireEnabled();
-    const browser = readCookie(cookies, flowCookie);
+    const browser = this.browser(cookies);
     const [id, signature, extra] = state.split('.');
     if (extra || !/^[\w-]{43}$/.test(id) || !/^[\w-]{43}$/.test(signature ?? '') ||
         !/^[\w-]{43}$/.test(browser) || !timingSafeEqual(Buffer.from(signature), Buffer.from(this.sign(id + '.' + browser)))) {
@@ -295,7 +298,7 @@ export class GoogleAccounts {
     return { inboxId: idForInbox };
   }
 
-  browser(cookies?: string) { return readCookie(cookies, flowCookie); }
+  browser(cookies?: string) { return readCookie(cookies, flowCookie) || readCookie(cookies, legacyFlowCookie); }
 
   connection(inboxId: string) {
     return this.db.prepare('SELECT * FROM oauth_connections WHERE inbox_id=?').get(inboxId) as Connection | undefined;
@@ -408,11 +411,22 @@ export class GoogleAccounts {
         this.db.prepare("UPDATE oauth_connections SET status='reauth_required',updated_at=? WHERE inbox_id=?").run(nowIso(), inboxId);
         throw new Error('GOOGLE_REAUTH_REQUIRED');
       }
-      if (response.status === 403) {
-        const forbidden = await response.clone().json().catch(() => null) as { error?: { errors?: { reason: string }[] } } | null;
-        if (!forbidden?.error?.errors?.some((reason) => ['userRateLimitExceeded','rateLimitExceeded'].includes(reason.reason))) {
+      if (response.status === 403 || (response.status === 400 && capability === 'photos:read')) {
+        const failure = (await response.clone().json().catch(() => null) as {
+          error?: { errors?: { reason?: string }[]; details?: { reason?: string }[]; status?: string };
+        } | null)?.error;
+        const reasons = new Set([...(failure?.errors ?? []), ...(failure?.details ?? [])].map((item) => item.reason));
+        if (response.status === 400) {
+          if (failure?.status === 'FAILED_PRECONDITION' && reasons.has('PENDING_USER_ACTION')) {
+            throw new Error('GOOGLE_PHOTOS_SETUP_REQUIRED');
+          }
+          return response;
+        }
+        if (reasons.has('SERVICE_DISABLED') || reasons.has('accessNotConfigured')) throw new Error('GOOGLE_API_DISABLED');
+        if (reasons.has('ACCESS_TOKEN_SCOPE_INSUFFICIENT') || reasons.has('insufficientPermissions')) {
           throw new Error('SCOPE_UPGRADE_REQUIRED');
         }
+        if (!reasons.has('userRateLimitExceeded') && !reasons.has('rateLimitExceeded')) throw new Error('GOOGLE_ACCESS_DENIED');
       } else if (response.status !== 429) return response;
       if (attempts >= 2) throw new Error('GOOGLE_RATE_LIMIT');
       const after = response.headers.get('retry-after');
@@ -438,13 +452,13 @@ export class GoogleAccounts {
   }
 
   mintSandbox(scopes: string[]) {
-    this.db.prepare("INSERT OR IGNORE INTO users (id,google_sub,email,name,updated_at) VALUES (?,?,'sandbox@clam.local','Local sandbox',?)")
+    this.db.prepare("INSERT OR IGNORE INTO users (id,google_sub,email,name,updated_at) VALUES (?,?,'sandbox@siftvane.local','Local sandbox',?)")
       .run(sandboxMcpOwner, 'local:' + sandboxMcpOwner, new Date().toISOString());
     return this.issueInboxToken(sandboxMcpOwner, 'sandbox', scopes);
   }
 
   private issueInboxToken(userId: string, inboxId: string, scopes: string[]) {
-    const raw = 'clm_inbox_' + opaque();
+    const raw = 'siftvane_inbox_' + opaque();
     const expires = Date.now() + 30 * 86_400_000;
     const digest = hash(raw);
     this.db.prepare('INSERT INTO inbox_mcp_tokens VALUES (?,?,?,?,?)')
@@ -466,7 +480,7 @@ export class GoogleAccounts {
   }
 
   authenticateMcp(token: string): McpGrant | undefined {
-    if (!/^clm_inbox_[\w-]{43}$/.test(token)) return undefined;
+    if (!/^(?:siftvane|clm)_inbox_[\w-]{43}$/.test(token)) return undefined;
     const row = this.db.prepare('SELECT * FROM inbox_mcp_tokens WHERE token_hash=? AND expires_at>?').get(hash(token), Date.now());
     if (!row || (row.inbox_id !== 'sandbox' && (!this.config.inboxLive || !this.isOwned(String(row.inbox_id), String(row.user_id))))) return undefined;
     return { userId: String(row.user_id), inboxId: String(row.inbox_id), scopes: JSON.parse(String(row.scopes)) as string[],

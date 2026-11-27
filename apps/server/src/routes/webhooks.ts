@@ -65,7 +65,7 @@ export function registerWebhookRoutes(
         return reply.code(400).send({ error: 'Missing Slack action payload' });
       }
 
-      const resolution = action.action_id === 'clam_approve' ? 'APPROVED' : 'REJECTED';
+      const resolution = action.action_id === 'siftvane_approve' || action.action_id === 'clam_approve' ? 'APPROVED' : 'REJECTED';
       try {
         const outcome = await approvalService.resolveApproval({
           id: action.value,
@@ -74,7 +74,7 @@ export function registerWebhookRoutes(
         });
         return {
           replace_original: true,
-          text: `Clam HITL ${resolution} via Slack (Approval ${outcome.approval.id}). Ephemeral payload wiped.`,
+          text: `Siftvane HITL ${resolution} via Slack (Approval ${outcome.approval.id}). Ephemeral payload wiped.`,
         };
       } catch (err) {
         return reply.code(400).send({
@@ -121,7 +121,7 @@ export function registerWebhookRoutes(
           await answerTelegramCallback(
             channels.telegram,
             body.callback_query.id,
-            `Clam ${resolution}`
+            `Siftvane ${resolution}`
           );
         }
         return { ok: true, status: resolution, approval_id: approvalId };
