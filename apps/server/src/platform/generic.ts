@@ -138,7 +138,8 @@ export function composeProgram(instruction: string, requested: Set<string>): { p
   if (photos) program.push(genericStepSchema.parse({ id: 'photos', op: 'photos.extract', category: /screenshot/.test(text) ? 'SCREENSHOTS' : /document/.test(text) ? 'DOCUMENTS' : 'RECEIPTS' }));
   else program.push(genericStepSchema.parse({ id: 'mail', op: 'mail.search', keywords: subject ? [] : keywords.filter((word) => word !== sender),
     from_contains: sender, subject_contains: subject, newer_than_days: days, include_attachments: /\b(?:attachment|attachments|pdf|pdfs|files?)\b/.test(text) }));
-  const fields = [...new Set(words.map((word) => fieldWords[word]).filter(Boolean))];
+  // Field words include short ones such as "due", which the 4+ letter topic words above never contain.
+  const fields = [...new Set((text.match(/\b[a-z]{3,}\b/g) ?? []).map((word) => fieldWords[word]).filter(Boolean))];
   const wantsFolder = requested.has('drive') || /\b(?:drive|folder|save|attachments?|pdfs?)\b/.test(text);
   const folder = ['Siftvane', title.replace(/^Siftvane - /, '')];
   if (wantsFolder && !photos && /\b(?:attachment|attachments|pdf|pdfs|files?|save)\b/.test(text)) {

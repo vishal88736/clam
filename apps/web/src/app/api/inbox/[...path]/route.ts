@@ -10,6 +10,8 @@ const allowed = [
   /^connection$/, /^policy(?:\/preview)?$/, /^schedule$/, /^events$/, /^kill-switch$/,
   /^platform\/(?:me|agents|switches|logs|artifacts)$/,
   /^platform\/agents\/[a-f\d-]{36}\/(?:switch|pause|resume|cancel)$/, /^platform\/artifacts\/[a-f\d-]{36}$/,
+  /^platform\/recipes(?:\/[a-f\d-]{36}(?:\/(?:backtest|enable|disable|run|archive))?)?$/,
+  /^platform\/recipes\/[a-f\d-]{36}\/items\/[\w.:@-]{1,160}\/(?:approve|decline|escalate)$/, /^platform\/sandbox\/messages$/,
 ];
 
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
@@ -45,4 +47,4 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   }
 }
 
-export { proxy as GET, proxy as POST, proxy as PUT };
+export { proxy as GET, proxy as POST, proxy as PUT, proxy as PATCH };

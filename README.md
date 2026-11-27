@@ -162,6 +162,35 @@ Safety:
 - **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photospicker.mediaitems.readonly`. For Photos, Siftvane opens a Google Photos Picker session and reads only the receipts you choose (call `photos_start_picker`, or open the link on the agent card). `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*. Full `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
 - **Rollback:** rolling back a run deletes only artifacts Siftvane created in that run, using the id recorded in its own registry.
 
+## Recipes: teach once, run with zero model calls
+
+An agent that handled a kind of email correctly can be saved as a **recipe**. Siftvane then handles matching mail in code, with no model call. Recipes start from incoming email and are built from an agent's step-by-step plan.
+
+1. **Teach.** Click **Teach as recipe** on an agent card, use the **Recipes** page, or call `learn_recipe`. The agent must have finished one run. Code compiles the recipe, not a model. Every argument of every step is traced to where it comes from:
+   - a field of the email;
+   - an earlier step;
+   - a fixed value;
+   - one of your formulas;
+   - a built-in value (date, count, summary).
+
+   Siftvane proves each field reference against fields it actually saw in your mail. Anything it cannot prove becomes a **question** that you answer once: use an email field, a fixed value, a formula, or leave it blank.
+2. **Check.** Add **rules**. They are checked top to bottom on every email, and the first match decides:
+   - **Ask me first** holds the email in the Approval Inbox through the Tier 2 gate (`RECIPE_RULE_APPROVAL`);
+   - **Skip it**;
+   - **Hand it to an agent**.
+
+   Add **formulas** such as `refund = amount * 0.5` or `fee = round(total * 0.03, 2)`. Then run a **backtest**: a read-only replay over mail already in the inbox. It shows what the recipe would do per email and how often it agrees with the agent it learned from. Any change to rules or formulas needs a new backtest.
+3. **Switch on.** The recipe checks for new mail on its schedule. Every email is decided exactly once (`recipe_items`):
+   - an email with no matching rule runs automatically;
+   - a held email continues after you approve it;
+   - an email the recipe cannot evaluate goes to a one-shot LLM agent, limited to the recipe's own scopes, instead of being guessed. This happens automatically in LLM mode and with **Hand to agent** otherwise.
+
+   Each run is recorded with its time and token count (`recipe_runs`), and the page compares it with the agent's own runs.
+
+New recipes start with one safe rule: `sender_verified is no → ask me first`. This rule is what holds look-alike-domain invoices that ask you to pay new bank details. In the `$0` sandbox, **Try it with a test email** drops a message into the inbox and runs the recipe on it.
+
+From a CLI, use `list_recipes`, `update_recipe`, `backtest_recipe`, `set_recipe_enabled` and `run_recipe`. Each switched-on recipe is also published as its own MCP tool (for example `recipe_billing_tracker_1a2b`) with no deploy. Running one requires the token to hold every scope the recipe's steps use. MCP tokens can never approve held emails; only the account owner can, in the web app.
+
 ## Three-minute walkthrough
 
 | View | What to demonstrate |

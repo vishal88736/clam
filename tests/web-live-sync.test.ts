@@ -202,8 +202,66 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
     await until('photos log filter', () => page.evaluate<string[]>(`[...document.querySelectorAll('[data-testid=log-row]')].map((row) => row.dataset.service)`),
       (services) => services.length > 0 && services.every((service) => service === 'photos'));
 
+    // 5. Recipes ("muscle memory"): teach from a finished agent, backtest, add a rule, switch on, and approve a held email — all by clicking.
     const shots = process.env.SIFTVANE_E2E_SCREENSHOTS;
+    const capture = async (name: string, width = 1440, height = 2400, mobile = false) => {
+      if (!shots) return;
+      await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+        const { data } = await page.send<{ data: string }>('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+        await writeFile(path.join(shots, `${name}-${theme}.png`), Buffer.from(data, 'base64'));
+      }
+      await page.send('Emulation.clearDeviceMetricsOverride');
+    };
+    const click = (selector: string) => page.evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)});
+      if (!node || node.disabled) return false; node.click(); return true; })()`);
+    const billing = await runtime.app.inject({ method: 'POST', url: '/api/inbox/platform/agents',
+      payload: { instruction: 'Find billing emails, put them in a tracker sheet with the amount and due date, and label them.' } });
+    const billingId = billing.json().agent_id as string;
+    await until('billing agent completes', async () => runtime.platform.agent(billingId)!.status, (status) => status === 'completed');
+    await until('Teach as recipe button', () => page.evaluate<boolean>(`Boolean([...document.querySelectorAll('[data-testid=agent-card]')]
+      .find((card) => card.dataset.agentId === ${JSON.stringify(billingId)})?.querySelector('[data-testid=teach-from-agent]'))`), Boolean);
+    await page.evaluate(`[...document.querySelectorAll('[data-testid=agent-card]')].find((card) => card.dataset.agentId === ${JSON.stringify(billingId)})
+      .querySelector('[data-testid=teach-from-agent]').click()`);
+    const recipeView = () => page.evaluate<{ hash: string; status: string; bindings: number; text: string; backtest: number; items: string[] }>(`({
+      hash: location.hash, status: document.querySelector('[data-testid=recipe-status]')?.textContent ?? '',
+      bindings: document.querySelectorAll('[data-testid=recipe-binding]').length,
+      backtest: document.querySelectorAll('[data-testid=backtest-row]').length,
+      items: [...document.querySelectorAll('[data-testid=recipe-item]')].map((item) => item.dataset.status),
+      text: document.querySelector('[data-testid=recipe-detail]')?.innerText ?? '' })`);
+    const learnedView = await until('recipe learned and opened', recipeView, (state) => state.hash === '#recipes' && state.status === 'Draft' && state.bindings >= 5);
+    expect(learnedView.text).toContain('From the email');
+    expect(learnedView.text).toContain('Learned from');
+    await capture('recipe-learned');
+    expect(await click('[data-testid=recipe-backtest]')).toBe(true);
+    await until('backtest rows', recipeView, (state) => state.backtest > 0);
+    // Add the suggested approval rule, save it, and backtest the new version.
+    // New recipes start with a safe default: unverified senders ask first.
+    expect(await page.evaluate<number>(`document.querySelectorAll('[data-testid=recipe-rule]').length`)).toBe(1);
+    expect(await click('[data-testid=suggest-rule]')).toBe(true);
+    await until('rule row', () => page.evaluate<number>(`document.querySelectorAll('[data-testid=recipe-rule]').length`), (count) => count === 2);
+    expect(await click('[data-testid=save-rules]')).toBe(true);
+    await until('rules saved as v2', recipeView, (state) => state.text.includes('v2') && state.text.includes('Rules changed'));
+    expect(await click('[data-testid=recipe-backtest]')).toBe(true);
+    const tested = await until('backtest v2 with a held email', recipeView, (state) => state.text.includes('Asks you first') && !state.text.includes('Rules changed'));
+    expect(tested.text).toMatch(/Agrees with .+ on \d+ of \d+ emails/);
+    expect(await click('[data-testid=recipe-toggle]')).toBe(true);
+    await until('recipe switched on', recipeView, (state) => state.status === 'On');
+    await capture('recipe-on');
+    // A test email over the limit is held for approval; approving it lets the recipe finish with zero tokens.
+    await page.evaluate(`document.querySelector('[data-testid=recipe-test-email] button[type=submit]').click()`);
+    await until('test email held', recipeView, (state) => state.items.includes('awaiting_approval'));
+    await capture('recipe-waiting');
+    expect(await click('[data-testid=approve-item]')).toBe(true);
+    const finished = await until('held email handled', recipeView, (state) => !state.items.includes('awaiting_approval') &&
+      state.text.includes('Approved by you, then handled'));
+    expect(finished.text).toContain('0 tokens');
+    await capture('recipe-mobile', 390, 2600, true);
+
     if (shots) {
+      await page.evaluate(`location.hash = 'agents'`);
       await page.evaluate(`document.querySelector('[aria-label="Close preview"]')?.click()`);
       await page.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 2200, deviceScaleFactor: 1, mobile: false });
       await page.evaluate(`(() => { const select = [...document.querySelectorAll('select')].find((item) => [...item.options].some((option) => option.value === 'photos'));

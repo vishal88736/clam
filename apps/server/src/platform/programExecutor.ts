@@ -16,11 +16,18 @@ import { emailsIn, workflowPlanSchema } from './planner.js';
 import type { AgentRecord, LogService, PlatformService } from './service.js';
 import { verdictLabel, type WorkspaceOps } from './workspaceOps.js';
 
-type Value = string | number;
-interface Row { fields: Record<string, Value>; message?: ReaderMessage }
+export type Value = string | number;
+export interface Row { fields: Record<string, Value>; message?: ReaderMessage }
 interface StepResult { rows: Row[]; text?: string; notes: string[] }
 
-const key = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+/** Optional behaviour for saved recipes: a gate over the trigger rows and no model review. */
+export interface ExecutorHooks {
+  review?: boolean;
+  triggerId?: string;
+  gate?: (rows: Row[]) => Promise<Row[]>;
+}
+
+export const key = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 const synonyms: Record<string, string[]> = {
   amount: ['amount', 'total', 'price', 'unit_price', 'cost', 'fine'], total: ['total', 'amount'], price: ['price', 'unit_price', 'amount'],
   due: ['due', 'due_date', 'pay_by', 'deadline'], due_date: ['due_date', 'due', 'pay_by', 'deadline'], deadline: ['deadline', 'due', 'due_date'],
@@ -28,13 +35,18 @@ const synonyms: Record<string, string[]> = {
   invoice: ['invoice', 'invoice_number', 'reference'], invoice_number: ['invoice', 'reference'], reference: ['reference', 'invoice', 'ticket', 'order'],
   source_id: ['message_id', 'media_item_id'], link: ['drive_link'], drive_link: ['drive_link'], date: ['date', 'received'],
 };
-const lookup = (row: Row, column: string): Value => {
+/** The row field a column or template placeholder resolves to, using the same synonyms as execution. */
+export const fieldFor = (fields: Iterable<string>, column: string): string | undefined => {
   const name = key(column);
-  for (const candidate of [name, ...(synonyms[name] ?? [])]) if (row.fields[candidate] !== undefined) return row.fields[candidate];
-  const partial = Object.keys(row.fields).find((field) => field.includes(name) || (name.length > 3 && name.includes(field)));
-  return partial ? row.fields[partial] : '';
+  const names = [...fields];
+  for (const candidate of [name, ...(synonyms[name] ?? [])]) if (names.includes(candidate)) return candidate;
+  return names.find((field) => field.includes(name) || (name.length > 3 && name.includes(field)));
 };
-const money = (text: string) => /(-?[0-9]{1,9}(?:\.[0-9]{1,2})?)/.exec(text)?.[1];
+export const lookup = (row: Row, column: string): Value => {
+  const field = fieldFor(Object.keys(row.fields).filter((name) => row.fields[name] !== undefined), column);
+  return field ? row.fields[field] : '';
+};
+export const money = (text: string) => /(-?[0-9]{1,9}(?:\.[0-9]{1,2})?)/.exec(text)?.[1];
 
 class PickerRequired extends Error { constructor(readonly uri: string) { super('PHOTOS_PICKER_SELECTION_REQUIRED'); } }
 
@@ -48,7 +60,7 @@ export class ProgramExecutor {
   private summary = '';
 
   constructor(private readonly engine: InboxEngine, private readonly platform: PlatformService, private readonly agent: AgentRecord,
-    private readonly context: MissionContext, private readonly ops: WorkspaceOps) {}
+    private readonly context: MissionContext, private readonly ops: WorkspaceOps, private readonly hooks: ExecutorHooks = {}) {}
 
   private today() {
     return (this.context.mode === 'sandbox' ? sandboxClock : new Date().toISOString()).slice(0, 10);
@@ -84,14 +96,33 @@ export class ProgramExecutor {
     const program = this.agent.workflow_plan.params.program ?? [];
     if (program.some((step) => !this.hasStepScope(step))) throw new Error('MCP_SCOPE_REQUIRED');
     try {
-      for (const step of program) await this.step(step);
-      // Only model-authored programs are reviewed by the model; offline plans run exactly as compiled.
-      if (this.engine.agent.mode === 'llm' && this.agent.workflow_plan.planner === 'llm-planner') await this.review(program);
+      for (const step of program) {
+        await this.step(step);
+        // A recipe with no new emails to act on stops right after its trigger.
+        if (step.id === this.hooks.triggerId && !this.results.get(step.id)?.rows.length) break;
+      }
+      // Only model-authored programs are reviewed by the model; offline plans and saved recipes run exactly as compiled.
+      if (this.hooks.review !== false && this.engine.agent.mode === 'llm' && this.agent.workflow_plan.planner === 'llm-planner') await this.review(program);
     } catch (error) {
-      if (error instanceof PickerRequired) return { pending: [], phase: 'awaiting_photo_selection', notes: [error.uri] };
+      if (error instanceof PickerRequired) return { pending: [], phase: 'awaiting_photo_selection', notes: [error.uri], observed: this.observed(program) };
       throw error;
     }
-    return { pending: [...this.pending], phase: this.pending.length ? 'awaiting_review' : 'start', notes: [...this.ops.flags] };
+    return { pending: [...this.pending], phase: this.pending.length ? 'awaiting_review' : 'start', notes: [...this.ops.flags], observed: this.observed(program) };
+  }
+
+  /** Message ids and fields the trigger search saw, kept so a recipe can be learned and backtested against this run. */
+  private observed(program: GenericStep[]) {
+    const trigger = program.find((step) => step.op === 'mail.search');
+    const result = trigger && this.results.get(trigger.id);
+    if (!trigger || !result) return undefined;
+    return { step: trigger.id, message_ids: result.rows.map((row) => String(row.fields.message_id)).slice(0, 100),
+      fields: [...new Set(result.rows.flatMap((row) => Object.keys(row.fields)))].slice(0, 60) };
+  }
+
+  /** Runs one read-only search step and returns its rows (used to learn and backtest recipes). */
+  async searchRows(step: Extract<GenericStep, { op: 'mail.search' }>) {
+    await this.step(step);
+    return this.results.get(step.id)!.rows;
   }
 
   private hasStepScope(step: GenericStep) {
@@ -234,12 +265,14 @@ export class ProgramExecutor {
             if (amount) fields[name] = Number(amount);
           }
           Object.assign(fields, { date: message.receivedAt.slice(0, 10), from: address(message.from), subject: this.engine.redact(this.context.mode, message.subject),
-            message_id: message.id, thread_id: message.threadId, attachments: message.attachmentNames?.length ?? message.attachments?.length ?? 0 });
+            message_id: message.id, thread_id: message.threadId, attachments: message.attachmentNames?.length ?? message.attachments?.length ?? 0,
+            // Sender authentication (DMARC-aligned in live Gmail); recipes hold unverified senders for approval by default.
+            sender_verified: message.verifiedSender === false ? 'no' : 'yes' });
           matched.push({ fields, message });
           if (matched.length >= step.limit) break;
         }
-        result = { rows: matched, notes };
         this.log('gmail', 'mail_search', describeStep(step), `${matched.length} matching messages${quarantined ? `, ${quarantined} quarantined` : ''}`);
+        result = { rows: this.hooks.gate && step.id === this.hooks.triggerId ? await this.hooks.gate(matched) : matched, notes };
         break;
       }
       case 'photos.extract': {

@@ -3,7 +3,7 @@
 import {
   Activity, ArrowDownToLine, ArrowRight, Bot, CalendarDays, CircleHelp, Clock3,
   FileCheck2, GitCompareArrows, Inbox, ListChecks, Play, Power, ReceiptText,
-  RotateCcw, ShieldCheck, Sun, Moon, TriangleAlert,
+  Repeat, RotateCcw, ShieldCheck, Sun, Moon, TriangleAlert,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -13,10 +13,12 @@ import { useTheme } from './ThemeContext';
 import { GoogleAccountBar, useGoogleSession } from './GoogleSession';
 import { ThreadExecutionStack } from './ThreadExecutionStack';
 import { AgentSwitcherBar, AgentsView, usePlatformData } from './AgentConsole';
+import { RecipesView } from './RecipeConsole';
 
 const views = [
   { id: 'briefing', label: 'Inbox Briefing', icon: Inbox },
   { id: 'agents', label: 'Agents & Activity', icon: Bot },
+  { id: 'recipes', label: 'Recipes', icon: Repeat },
   { id: 'approvals', label: 'Approval Inbox', icon: ListChecks },
   { id: 'calendar', label: 'Calendar Sync', icon: CalendarDays },
   { id: 'policy', label: 'Policy Change Preview', icon: GitCompareArrows },
@@ -600,6 +602,7 @@ export function InboxWorkspace() {
         <div className="inbox-title"><h1>{title}</h1>
           <p>{view === 'briefing' ? 'What changed, what needs you, and what Siftvane handled.' :
             view === 'agents' ? 'Every agent your CLI or this console created, with live logs and Workspace artifacts.' :
+            view === 'recipes' ? 'Teach a recipe from an agent once; matching emails then run with zero model calls.' :
             view === 'approvals' ? 'Review actions that require your permission.' :
             view === 'calendar' ? 'Review verified changes and upcoming calendar events.' :
             view === 'policy' ? 'See how rule changes affect real decisions before saving.' :
@@ -653,6 +656,8 @@ export function InboxWorkspace() {
           <ThreadExecutionStack revision={revision} onTrace={(id, step) => void inspect(id, true, step)} />
         </> :
         view === 'agents' ? <AgentsView data={platformData} revision={platformRevision} onError={reportError}
+          onTrace={(id) => void inspect(id, true)} /> :
+        view === 'recipes' ? <RecipesView data={platformData} revision={platformRevision} onError={reportError}
           onTrace={(id) => void inspect(id, true)} /> :
         view === 'approvals' ? <ApprovalsView pending={data.needs_attention} busy={busy || halted}
           onResolve={(id, approve, edit, calendarEdit, batchEdits) => void act(() => api(`approvals/${id}`, 'POST', { approve, edit, calendarEdit, batchEdits }),

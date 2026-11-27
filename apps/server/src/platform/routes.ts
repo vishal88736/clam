@@ -1,9 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
 import { sandboxMcpOwner, type GoogleAccounts } from '../auth/google.js';
 import type { SiftvaneConfig } from '../config.js';
 import type { InboxEngine } from '../inbox/engine.js';
 import type { SandboxWorkspaceAdapter } from '../workspace/adapters.js';
+import { sandboxClock } from '../sandbox/seed.js';
+import { recipeComputedSchema, recipeRuleSchema } from './recipes.js';
 import type { MissionRunner } from './runner.js';
 import { services, type PlatformService } from './service.js';
 
@@ -34,7 +37,7 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
     router.setErrorHandler((error, _request, reply) => {
       const message = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : 'PLATFORM_OPERATION_FAILED';
       const code = error instanceof ZodError ? 400 : message === 'INBOX_HALTED' ? 423 : /NOT_AVAILABLE/.test(message) ? 404 :
-        /ALREADY|INVALID|NOT_ALLOWED|AGENT_(?:RUN_STOPPING|STATUS_CHANGED)/.test(message) ? 409 : 500;
+        /ALREADY|INVALID|NOT_ALLOWED|NOT_READY|NOT_WAITING|NOT_ESCALATED|DUPLICATE|UNKNOWN_FIELD|SANDBOX_ONLY|AGENT_(?:RUN_STOPPING|STATUS_CHANGED)/.test(message) ? 409 : 500;
       reply.code(code).send({ error: error instanceof ZodError ? 'INVALID_INPUT' : message });
     });
 
@@ -94,6 +97,62 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
       const { agent_id } = z.object({ agent_id: z.string().uuid().optional() }).strict().parse(request.query);
       return { artifacts: platform.artifacts(viewer(request, accounts, config).userId, agent_id) };
     });
+    /* ----------------------------- Saved recipes ("muscle memory") ----------------------------- */
+    const recipes = missions.recipes;
+    const recipeId = z.object({ id: z.string().uuid() });
+    const rules = z.array(recipeRuleSchema).max(12);
+    const computed = z.array(recipeComputedSchema).max(12);
+    router.get('/api/inbox/platform/recipes', async (request) => {
+      const who = viewer(request, accounts, config);
+      return { recipes: recipes.list(who.userId), learnable: recipes.learnable(who.userId), model_mode: inbox.agent.mode };
+    });
+    router.post('/api/inbox/platform/recipes', async (request) => {
+      const who = viewer(request, accounts, config);
+      const input = z.object({ agent_id: z.string().uuid(), name: z.string().trim().max(80).optional() }).strict().parse(request.body);
+      return { recipe: await recipes.learn(who.userId, input.agent_id, input.name) };
+    });
+    router.get('/api/inbox/platform/recipes/:id', async (request) => {
+      const who = viewer(request, accounts, config);
+      return recipes.detail(who.userId, recipeId.parse(request.params).id);
+    });
+    router.patch('/api/inbox/platform/recipes/:id', async (request) => {
+      const who = viewer(request, accounts, config);
+      const input = z.object({ name: z.string().trim().min(1).max(80).optional(), rules: rules.optional(), computed: computed.optional(),
+        interval_seconds: z.number().int().min(60).max(604_800).optional() }).strict().parse(request.body);
+      return { recipe: recipes.update(who.userId, recipeId.parse(request.params).id, input) };
+    });
+    router.post('/api/inbox/platform/recipes/:id/:action', async (request) => {
+      const who = viewer(request, accounts, config);
+      const { id, action } = z.object({ id: z.string().uuid(), action: z.enum(['backtest', 'enable', 'disable', 'run', 'archive']) }).parse(request.params);
+      if (action === 'backtest') return { recipe: await recipes.backtest(who.userId, id) };
+      if (action === 'enable' || action === 'disable') return { recipe: recipes.setEnabled(who.userId, id, action === 'enable') };
+      if (action === 'archive') return recipes.archive(who.userId, id);
+      return { result: await recipes.runNow(who.userId, id), ...recipes.detail(who.userId, id) };
+    });
+    router.post('/api/inbox/platform/recipes/:id/items/:message/:action', async (request) => {
+      const who = viewer(request, accounts, config);
+      const { id, message, action } = z.object({ id: z.string().uuid(), message: z.string().regex(/^[\w.:@-]{1,160}$/),
+        action: z.enum(['approve', 'decline', 'escalate']) }).parse(request.params);
+      if (action === 'escalate') return await recipes.escalate(who.userId, id, message);
+      return await recipes.decideItem(who.userId, id, message, action === 'approve');
+    });
+    // $0 sandbox only: drop a test email into the sandbox inbox to see a recipe (and its rules) react to new mail.
+    router.post('/api/inbox/platform/sandbox/messages', async (request) => {
+      const who = viewer(request, accounts, config);
+      if (who.inboxId !== 'sandbox') throw new Error('SANDBOX_ONLY');
+      inbox.guard();
+      const input = z.object({
+        from: z.string().trim().email().max(120).transform((value) => value.toLowerCase()),
+        subject: z.string().trim().min(1).max(150).regex(/^[^\r\n]+$/), text: z.string().trim().min(1).max(4000),
+      }).strict().parse(request.body);
+      const count = Number((inbox.store.sqlite.prepare("SELECT count(*) AS n FROM inbox_sandbox_messages WHERE id LIKE 'test-%'").get() as { n: number }).n);
+      const id = `test-${count + 1}-${randomUUID().slice(0, 8)}`;
+      const received = new Date(Date.parse(sandboxClock) + (count + 1) * 60_000).toISOString();
+      const message = { id, threadId: id, from: input.from, subject: input.subject, text: input.text, receivedAt: received, labels: ['INBOX'], attachmentNames: [], verifiedSender: true };
+      inbox.store.sqlite.prepare("INSERT INTO inbox_sandbox_messages VALUES (?, 'workspace', ?)").run(id, JSON.stringify(message));
+      return { message_id: id, received_at: received };
+    });
+
     router.get('/api/inbox/platform/artifacts/:id', async (request, reply) => {
       const who = viewer(request, accounts, config);
       const { id } = agentId.parse(request.params);

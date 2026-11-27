@@ -90,6 +90,68 @@ CREATE TABLE IF NOT EXISTS photo_picker_sessions (
   inbox_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, picker_uri TEXT NOT NULL, created_at TEXT NOT NULL, expire_time TEXT
 );
 
+-- Saved recipes ("muscle memory"): an agent's verified program with argument provenance, rules, and a backtest.
+CREATE TABLE IF NOT EXISTS agent_recipes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  inbox_id TEXT NOT NULL,
+  source_agent_id TEXT NOT NULL REFERENCES user_agents(id),
+  name TEXT NOT NULL,
+  goal_prompt TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft','enabled','paused','archived')),
+  version INTEGER NOT NULL DEFAULT 1,
+  spec_json TEXT NOT NULL,
+  backtest_json TEXT,
+  stats_json TEXT NOT NULL DEFAULT '{}',
+  interval_seconds INTEGER NOT NULL DEFAULT 300,
+  next_run_at TEXT,
+  last_run_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS agent_recipes_user ON agent_recipes(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS agent_recipes_due ON agent_recipes(status, next_run_at);
+
+-- One row per email a recipe has decided on, so every request is handled exactly once.
+CREATE TABLE IF NOT EXISTS recipe_items (
+  recipe_id TEXT NOT NULL REFERENCES agent_recipes(id),
+  message_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('done','awaiting_approval','declined','escalated','skipped')),
+  reason TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  approval_id TEXT,
+  run_id TEXT,
+  agent_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (recipe_id, message_id)
+);
+
+CREATE TABLE IF NOT EXISTS recipe_runs (
+  run_id TEXT PRIMARY KEY,
+  recipe_id TEXT NOT NULL REFERENCES agent_recipes(id),
+  trigger TEXT NOT NULL,
+  status TEXT NOT NULL,
+  handled INTEGER NOT NULL,
+  held INTEGER NOT NULL,
+  escalated INTEGER NOT NULL,
+  skipped INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  tokens INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recipe_runs_recipe ON recipe_runs(recipe_id, created_at DESC);
+
+DROP TRIGGER IF EXISTS agent_recipes_halt;
+CREATE TRIGGER agent_recipes_halt BEFORE UPDATE OF status ON agent_recipes
+  WHEN NEW.status = 'enabled' AND OLD.status <> 'enabled' BEGIN
+  SELECT RAISE(ABORT, 'INBOX_HALTED') WHERE (SELECT kill_switch_active FROM system_state WHERE singleton=1)=1;
+END;
+DROP TRIGGER IF EXISTS recipe_runs_append_only;
+CREATE TRIGGER recipe_runs_append_only BEFORE UPDATE ON recipe_runs BEGIN
+  SELECT RAISE(ABORT, 'RECIPE_RUN_IMMUTABLE');
+END;
+
 DROP TRIGGER IF EXISTS agent_logs_append_only_update;
 DROP TRIGGER IF EXISTS agent_logs_append_only_delete;
 DROP TRIGGER IF EXISTS agent_switch_append_only;

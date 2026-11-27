@@ -4,6 +4,7 @@ import { mcpScopes, type GoogleAccounts, type GoogleCapability, type McpGrant } 
 import type { McpCaller, Mode } from '../inbox/contracts.js';
 import type { InboxEngine } from '../inbox/engine.js';
 import { genericStepScopes } from '../platform/generic.js';
+import { recipeComputedSchema, recipeRuleSchema } from '../platform/recipes.js';
 import { detectSourceCli, type MissionRunner } from '../platform/runner.js';
 import { services, type PlatformService, type Service } from '../platform/service.js';
 import { extractPhotoDetails } from '../workspace/photos.js';
@@ -181,6 +182,76 @@ export function registerPlatformTools(server: McpServer, args: {
     const doc = await ops.upsertDoc(input.title, folder, input.heading, input.text, input.mode);
     return { verified: doc.verified, decision: doc.decision, policy_rule_id: doc.ruleId, document: artifactView(doc.artifactId) };
   }));
+
+  /* ------------------------- Saved recipes ("muscle memory"): learned once, replayed with no model call ------------------------- */
+  const recipes = missions.recipes;
+  const ownRecipe = (id: string) => {
+    const detail = recipes.detail(grant.userId, id);
+    if (detail.recipe.mode !== (mode === 'sandbox' ? 'sandbox' : 'live')) throw new Error('RECIPE_NOT_AVAILABLE');
+    return detail;
+  };
+  const brief = (recipe: ReturnType<typeof recipes.view>) => ({
+    recipe_id: recipe.id, name: recipe.name, status: recipe.status, version: recipe.version, tool_name: recipe.tool_name,
+    trigger: recipe.trigger.description, steps: recipe.steps.map((step) => step.label), rules: recipe.rules, computed: recipe.computed,
+    open_questions: recipe.asks.map((ask) => ({ step: ask.step, field: ask.name, question: ask.detail })), observed_fields: recipe.observed_fields,
+    ready: recipe.ready, blockers: recipe.blockers,
+    backtest: recipe.backtest && { current: recipe.backtest_current, counts: recipe.backtest.counts, agreement: recipe.backtest.agreement, per_email_ms: recipe.backtest.per_email_ms },
+    stats: recipe.stats, agent_baseline: recipe.baseline,
+  });
+
+  server.tool('learn_recipe', 'Teach a saved recipe from an agent that already did the job right. Siftvane compiles the agent\'s verified steps into ' +
+    'a recipe by code (no model): each argument is traced to the email, an earlier step, a fixed value, or a formula, and anything unproven becomes an ' +
+    'open question. Matching emails then run with zero model calls under the same policy gates.', {
+    agent_id: z.string().uuid(), name: z.string().trim().max(80).optional(),
+  }, ({ agent_id, name }) => workflow('learn_recipe', 'agent:manage', async () => brief(await recipes.learn(grant.userId, agent_id, name))));
+
+  server.tool('list_recipes', 'List saved recipes with their trigger, steps, rules, open questions, backtest, and token/time savings versus the agent.', {},
+    () => workflow('list_recipes', 'agent:manage', async () => ({
+      recipes: recipes.list(grant.userId).map(brief), learnable_agents: recipes.learnable(grant.userId),
+    })));
+
+  server.tool('update_recipe', 'Set a recipe\'s rules (for example amount > 100 → approve), formulas (refund = amount * 0.5), or answers to open ' +
+    'questions (a formula named after the field; "" leaves it blank). Rule or formula changes require a new backtest before the recipe runs.', {
+    recipe_id: z.string().uuid(), name: z.string().trim().min(1).max(80).optional(),
+    rules: z.array(recipeRuleSchema).max(12).optional(), computed: z.array(recipeComputedSchema).max(12).optional(),
+  }, ({ recipe_id, ...input }) => workflow('update_recipe', 'agent:manage', async () => {
+    ownRecipe(recipe_id);
+    return brief(recipes.update(grant.userId, recipe_id, input));
+  }));
+
+  server.tool('backtest_recipe', 'Replay a recipe read-only over mail already in the inbox: what it would do per email, which emails need approval or ' +
+    'an agent, and how often it agrees with the agent it was learned from. Changes nothing.', { recipe_id: z.string().uuid() },
+  ({ recipe_id }) => workflow('backtest_recipe', 'agent:manage', async () => {
+    ownRecipe(recipe_id);
+    const recipe = await recipes.backtest(grant.userId, recipe_id);
+    return { ...brief(recipe), rows: recipe.backtest?.rows.slice(0, 25) };
+  }));
+
+  server.tool('set_recipe_enabled', 'Switch a recipe on (it then checks new mail on its schedule) or off. Switching on requires answered questions and a current backtest.', {
+    recipe_id: z.string().uuid(), enabled: z.boolean(),
+  }, ({ recipe_id, enabled }) => workflow('set_recipe_enabled', 'agent:manage', async () => {
+    ownRecipe(recipe_id);
+    return brief(recipes.setEnabled(grant.userId, recipe_id, enabled));
+  }));
+
+  const runRecipe = (tool: string, recipeId: string) => workflow(tool, 'agent:manage', async () => {
+    const { recipe } = ownRecipe(recipeId);
+    // A token can only replay what it could have done itself.
+    requireToken(recipe.required_scopes);
+    const result = await recipes.runNow(grant.userId, recipeId, 'mcp:' + tool);
+    return { recipe: recipe.name, ...result,
+      note: result.waiting_for_approval ? 'Held emails wait for the account owner in the Siftvane Approval Inbox; MCP tokens cannot approve them.' : undefined };
+  });
+  server.tool('run_recipe', 'Run a saved recipe now on new matching mail: zero model calls, every action policy-checked and verified.', {
+    recipe_id: z.string().uuid(),
+  }, ({ recipe_id }) => runRecipe('run_recipe', recipe_id));
+
+  // Every switched-on recipe is published as its own tool, with no deploy.
+  for (const recipe of recipes.enabledFor(grant.userId, grant.inboxId)) {
+    const view = recipes.view(recipe);
+    server.tool(view.tool_name, `Saved recipe "${view.name}": ${view.trigger.description}, then ${view.steps.map((step) => step.label.toLowerCase()).join('; ')}. ` +
+      'Runs with zero model calls; rules hold risky emails for the owner\'s approval.', {}, () => runRecipe(view.tool_name, view.id));
+  }
 
   server.tool('photos_start_picker', 'Live Google Photos: start a Picker session. Open picker_uri, choose the receipts Siftvane may read, then call ' +
     'photos_search_and_extract. Siftvane never sees photos you did not pick.', {}, () => workflow('photos_start_picker', 'photos:read', async () => {

@@ -14,7 +14,8 @@ import { sanitizeCell } from '../workspace/sanitize.js';
 import { compileIntent, interactivePlan, planFromChoice, planFromProgram, type CompiledIntent, type WorkflowPlan } from './planner.js';
 import { llmPlan, type PlannerCall } from './llmPlanner.js';
 import { ProgramExecutor } from './programExecutor.js';
-import type { AgentRecord, PlatformService, ScheduleMode, Service, SourceCli } from './service.js';
+import type { AgentRecord, AgentState, PlatformService, ScheduleMode, Service, SourceCli } from './service.js';
+import { RecipeService } from './recipes.js';
 import { namespace, verdictLabel, WorkspaceOps } from './workspaceOps.js';
 
 const errorCode = (error: unknown) => {
@@ -72,9 +73,12 @@ export class MissionRunner {
   private ticking = false;
   private readonly pickerPolls = new Map<string, number>();
   private closed = false;
+  /** Saved recipes ("muscle memory"): learned from agent runs, replayed with no model call. */
+  readonly recipes: RecipeService;
 
   constructor(private readonly engine: InboxEngine, private readonly platform: PlatformService,
     private readonly options: { webOrigin: string; tickMs?: number }) {
+    this.recipes = new RecipeService(engine, platform, this);
     engine.on('state', (state: { halted?: boolean }) => {
       if (state?.halted === true) this.platform.haltAll('KILL_SWITCH_ENGAGED');
     });
@@ -115,9 +119,11 @@ export class MissionRunner {
         if (agent.state.phase === 'awaiting_photo_selection') await this.checkPicker(agent);
         else this.checkApprovals(agent);
       }
+      this.recipes.checkApprovals();
       if (this.engine.busy()) return;
       const [due] = this.platform.dueAgents();
       if (due) await this.exclusive(() => this.runAgent(due.id));
+      else await this.recipes.runDue();
     } catch {
       // A failed tick is retried on the next interval; failures are journaled per agent.
     } finally {
@@ -319,6 +325,7 @@ export class MissionRunner {
     let phase = candidate.state.phase;
     let notes: string[] = [];
     let retryInMs: number | undefined;
+    let observed: AgentState['observed'];
     const failures = new Set<string>();
     const track = async (action: Promise<MissionOutcome>) => {
       const outcome = await action;
@@ -354,6 +361,7 @@ export class MissionRunner {
       phase = result.phase;
       notes = result.notes;
       retryInMs = (result as { retryInMs?: number }).retryInMs;
+      observed = (result as { observed?: AgentState['observed'] }).observed;
       if (failures.size) {
         notes = [...notes, ...failures];
         context.record('CHECK', { outcome: 'REQUESTED_ACTION_UNVERIFIED', errors: [...failures] });
@@ -371,6 +379,7 @@ export class MissionRunner {
     const activeApprovals = [...new Set(pending)].filter((approvalId) => this.engine.store.approval(approvalId));
     this.platform.finishAgentRun(id, run.id, (agent) => {
       const state = { ...agent.state, phase, pending_approvals: activeApprovals, last_error: failure, notes: [...new Set([...notes, ...failures])],
+        ...(observed ? { observed } : {}),
         ...(phase !== agent.state.phase ? { phase_started_at: new Date().toISOString() } : {}) };
       if (run.status === 'HALTED' || this.engine.halted()) return { status: 'halted', next_run_at: null, state };
       if (activeApprovals.length) return { status: 'input_required', next_run_at: null,

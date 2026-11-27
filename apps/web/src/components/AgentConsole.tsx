@@ -1,18 +1,19 @@
 'use client';
 
 import {
-  Bot, Calendar, ExternalLink, FileSpreadsheet, FileText, Folder, FolderOpen, History, Image as ImageIcon, Mail,
+  Bot, Calendar, ExternalLink, FileSpreadsheet, FileText, Folder, FolderOpen, GraduationCap, History, Image as ImageIcon, Mail,
   Pause, Play, ScrollText, Shuffle, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { googleErrorMessage } from './GoogleSession';
+import { teachRecipe } from './RecipeConsole';
 
 export type AgentStatus = 'active' | 'input_required' | 'paused' | 'completed' | 'halted' | 'archived';
 export type Agent = {
   id: string; name: string; goal_prompt: string; source_cli: string; allowed_services: string[]; schedule_mode: string;
   interval_seconds: number | null; status: AgentStatus; run_count: number; last_run_at: string | null; next_run_at: string | null;
   created_at: string; state: { phase: string; pending_approvals: string[]; last_error?: string | null; picker_uri?: string | null; notes?: string[] };
-  workflow_plan: { template: string; planner: string; params?: { reasoning?: string }; steps: Array<{ id: string; service: string; action: string; label: string; tier_hint: number }> };
+  workflow_plan: { template: string; planner: string; params?: { reasoning?: string; program?: Array<{ op: string }> }; steps: Array<{ id: string; service: string; action: string; label: string; tier_hint: number }> };
 };
 export type Profile = {
   id: string; email: string; display_name: string; avatar_url: string | null; active_agent_id: string | null; mode: 'sandbox' | 'live';
@@ -34,7 +35,7 @@ type Preview = Record<string, unknown> & {
 };
 
 const allServices = ['gmail', 'calendar', 'drive', 'docs', 'sheets', 'photos'] as const;
-const serviceLabel: Record<string, string> = {
+export const serviceLabel: Record<string, string> = {
   gmail: 'Gmail', calendar: 'Calendar', drive: 'Drive', docs: 'Docs', sheets: 'Sheets', photos: 'Photos', policy: 'Policy', system: 'System',
 };
 const sourceLabel: Record<string, string> = {
@@ -47,7 +48,7 @@ const statusLabel: Record<AgentStatus, [string, 'green' | 'amber' | 'red' | 'neu
 const verdictTone: Record<string, 'green' | 'amber' | 'red' | 'neutral'> = {
   ALLOW_TIER_0: 'green', ALLOW_TIER_1: 'green', GATE_TIER_2: 'amber', BLOCKED: 'red',
 };
-const serviceIcon = (service: string, size = 16): ReactNode => ({
+export const serviceIcon = (service: string, size = 16): ReactNode => ({
   drive_folder: <Folder size={size} />, drive_file: <FileText size={size} />, google_doc: <FileText size={size} />,
   google_sheet: <FileSpreadsheet size={size} />, google_photo: <ImageIcon size={size} />, gmail: <Mail size={size} />,
   calendar: <Calendar size={size} />, drive: <FolderOpen size={size} />, docs: <FileText size={size} />, sheets: <FileSpreadsheet size={size} />,
@@ -57,7 +58,7 @@ const artifactLabel: Record<string, string> = {
   drive_folder: 'Drive folder', drive_file: 'Drive file', google_doc: 'Google Doc', google_sheet: 'Google Sheet', google_photo: 'Photos receipt',
 };
 
-async function platform<T>(endpoint: string, method = 'GET', body?: unknown): Promise<T> {
+export async function platform<T>(endpoint: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch('/api/inbox/platform/' + endpoint, {
     method, cache: 'no-store', headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -66,11 +67,11 @@ async function platform<T>(endpoint: string, method = 'GET', body?: unknown): Pr
   if (!response.ok) throw new Error(result.error ?? 'HTTP ' + response.status);
   return result as T;
 }
-const time = (value: string | null | undefined) => value && !Number.isNaN(Date.parse(value))
+export const time = (value: string | null | undefined) => value && !Number.isNaN(Date.parse(value))
   ? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value)) : '—';
-const nice = (value: string) => value.replace(/_/g, ' ').replace(/^./, (char) => char.toUpperCase());
+export const nice = (value: string) => value.replace(/_/g, ' ').replace(/^./, (char) => char.toUpperCase());
 
-function Tag({ children, tone = 'neutral', testId }: { children: ReactNode; tone?: 'neutral' | 'green' | 'amber' | 'red'; testId?: string }) {
+export function Tag({ children, tone = 'neutral', testId }: { children: ReactNode; tone?: 'neutral' | 'green' | 'amber' | 'red'; testId?: string }) {
   return <span className="inbox-tag" data-tone={tone} data-testid={testId}>{children}</span>;
 }
 
@@ -232,9 +233,9 @@ export function AgentsView({ data, revision, onTrace, onError }: {
     return () => { live = false; };
   }, [revision, agentFilter, serviceFilter, onError]);
   const names = useMemo(() => new Map(agents.map((agent) => [agent.id, agent.name])), [agents]);
-  const control = async (endpoint: string, body?: unknown) => {
+  const control = async (endpoint: string, body?: unknown, work?: () => Promise<unknown>) => {
     setBusy(true);
-    try { await platform(endpoint, 'POST', body ?? {}); await data.reload(); }
+    try { await (work ? work() : platform(endpoint, 'POST', body ?? {})); await data.reload(); }
     catch (failure) { onError(failure instanceof Error ? nice(failure.message) : 'Request failed'); }
     finally { setBusy(false); }
   };
@@ -294,6 +295,11 @@ export function AgentsView({ data, revision, onTrace, onError }: {
                 onClick={() => void control(`agents/${agent.id}/pause`)}><Pause size={14} /> Pause</button> :
                 <button type="button" className="inbox-button" disabled={busy || data.profile?.halted || agent.status === 'archived'}
                   onClick={() => void control(`agents/${agent.id}/resume`)}><Play size={14} /> Resume</button>}
+              {agent.workflow_plan.template === 'generic' && agent.workflow_plan.params?.program?.[0]?.op === 'mail.search' && agent.run_count > 0 &&
+                agent.state.last_error == null && agent.status !== 'archived' &&
+                <button type="button" className="inbox-button" disabled={busy} data-testid="teach-from-agent"
+                  title="Save how this agent did the job as a recipe that runs with no model call"
+                  onClick={() => void control('', undefined, () => teachRecipe(agent.id))}><GraduationCap size={14} /> Teach as recipe</button>}
               <button type="button" className="inbox-button" data-tone="danger" disabled={busy || agent.status === 'archived'}
                 onClick={() => window.confirm(`Cancel "${agent.name}"? Its logs and artifacts are kept.`) && void control(`agents/${agent.id}/cancel`)}>
                 <Trash2 size={14} /> Cancel</button>

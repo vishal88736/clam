@@ -51,3 +51,14 @@ Persistent agents created through `provision_and_run_agent` or the web console r
   - `agent_execution_logs` and `agent_switch_history` are append-only; SQLite triggers reject updates and deletes.
   - New `workspace_artifacts` rows and agent reactivation are rejected while the kill switch is latched.
   - Engaging the kill switch halts every active or waiting agent.
+
+## Recipes (saved, model-free replays)
+
+- **Same engine, no model.** A recipe run is an ordinary engine mission: lease, kill-switch latch, budgets, policy gate, taint firewall, secret scanner, read-back `CHECK`, and the hash-chained trace all apply. Its `PLAN` step records `model_calls: 0`, and every run stores its token count in `recipe_runs` (append-only).
+- **Compiled by code, not a model.** Learning copies the agent's validated program. Siftvane proves each field reference against fields observed in real mail, and anything unproven blocks the recipe until the user answers it. Formulas use a small parser with no `eval`: numbers, field names, arithmetic, and `round/min/max/abs/floor/ceil` only.
+- **Never guesses.** A rule that needs a missing value, or a formula that cannot be computed, sends the email to an agent instead of running. Each email is decided once (`recipe_items`); a failed or unverified action fails the run so the email is retried.
+- **Human gate.** "Ask me first" rules raise a Tier 2 `review` approval (`RECIPE_RULE_APPROVAL`) with an expiry; an expired approval counts as declined. MCP tokens can run recipes but cannot approve them.
+- **No authority creep.** Recipe steps keep the source agent's MCP scopes. An MCP token can run a recipe only if it holds every scope the recipe's steps use. Agents created by escalation are limited to the recipe's scopes. Changing rules or formulas puts the recipe back into draft until it passes a new backtest.
+- **Safe default.** New recipes hold email from senders that fail authentication (`sender_verified = no`) for approval.
+- **Kill switch.** Engaging it switches every recipe off, and a SQLite trigger refuses to switch one back on while the latch is set.
+

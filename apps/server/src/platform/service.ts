@@ -28,6 +28,8 @@ export interface AgentState {
   planning_calls?: PlannerCall[];
   interactive?: boolean;
   picker_uri?: string | null;
+  /** What the trigger search saw on the last run; recipes are learned and backtested against it. */
+  observed?: { step: string; message_ids: string[]; fields: string[] };
 }
 
 export interface AgentRecord {
@@ -69,7 +71,7 @@ export interface LogEntry {
 }
 
 export interface PlatformEvent {
-  type: 'agent.created' | 'agent.switched' | 'agent.updated' | 'log.appended' | 'artifact.updated';
+  type: 'agent.created' | 'agent.switched' | 'agent.updated' | 'log.appended' | 'artifact.updated' | 'recipe.updated';
   user_id: string;
   data: unknown;
 }
@@ -100,7 +102,7 @@ export class PlatformService extends EventEmitter {
     this.ensureUser(sandboxMcpOwner);
   }
 
-  private publish(event: PlatformEvent) {
+  publish(event: PlatformEvent) {
     this.emit('event', event);
   }
 
@@ -269,6 +271,10 @@ export class PlatformService extends EventEmitter {
       this.log({ userId: agent.user_id, agentId: id, runId: null, service: 'system', action: 'kill_switch_halt',
         input: reason, output: 'Agent halted by the out-of-band kill switch.', verdict: 'BLOCKED', ruleId: 'KILL_SWITCH', verified: true });
     }
+    // Saved recipes stop too; switching one back on is blocked by a trigger while the latch is set.
+    const recipes = this.store.sqlite.prepare("SELECT id, user_id FROM agent_recipes WHERE status='enabled'").all() as { id: string; user_id: string }[];
+    this.store.sqlite.prepare("UPDATE agent_recipes SET status='paused', next_run_at=NULL, updated_at=? WHERE status='enabled'").run(now());
+    for (const recipe of recipes) this.publish({ type: 'recipe.updated', user_id: recipe.user_id, data: { id: recipe.id } });
     return rows.length;
   }
 
