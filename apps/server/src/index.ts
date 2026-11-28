@@ -4,7 +4,7 @@ async function main() {
   const runtime = await createSiftvaneApp();
   await runtime.app.listen({ port: runtime.config.port, host: runtime.config.bindHost });
   console.log(
-    `[siftvane-server] Listening on http://localhost:${runtime.config.port} (mode=${runtime.mailService.getMode()}, zero-retention=active)`
+    `[siftvane-server] Listening on http://localhost:${runtime.config.port} (${runtime.config.inboxLive ? 'Gmail' : 'sandbox'} mode)`
   );
 
   const shutdown = async () => {

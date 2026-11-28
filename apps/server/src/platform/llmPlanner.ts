@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AgentConfig, ModelUsage } from '../inbox/agentConfig.js';
 import { providerUsage, type ProviderWire } from '../inbox/model.js';
 import { opCatalogForPrompt, repairProgram, type GenericStep, type RowKind } from './generic.js';
-import type { PlannerChoice } from './planner.js';
+import type { CompiledIntent } from './planner.js';
 
 export class PlannerFailure extends Error {}
 
@@ -127,7 +127,7 @@ const planOutput = z.object({
   program: z.array(z.unknown()).min(1).max(15).optional(),
 }).strip();
 
-export type LlmPlan = { kind: 'program'; reasoning: string; name: string; scheduleMode: PlannerChoice['schedule_mode']; program: GenericStep[]; issues: string[] };
+export type LlmPlan = { kind: 'program'; reasoning: string; name: string; scheduleMode: CompiledIntent['scheduleMode']; program: GenericStep[]; issues: string[] };
 
 /** The model reasons about the request and composes its own program from the operation catalog (no fixed workflows). */
 export async function llmPlan(config: AgentConfig, instruction: string, mode: 'sandbox' | 'live', fetcher?: typeof fetch, record?: RecordCall): Promise<LlmPlan> {

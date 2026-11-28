@@ -8,6 +8,25 @@ import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/di
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { expect, it } from 'vitest';
 import { createSiftvaneApp } from '../apps/server/src/app.js';
+import { fakeModel } from './support/fakeModel.js';
+
+// What the AI plans for each request in this walkthrough (a fake model returns them in order).
+const plans = [
+  { reasoning: 'File invoice PDFs, log them, and summarize.', name: 'Invoice Filing', schedule_mode: 'daily', program: [
+    { id: 'invoices', op: 'mail.search', keywords: ['invoice'], include_attachments: true },
+    { id: 'folder', op: 'drive.folder', path: ['Siftvane', 'Invoices'] },
+    { id: 'pdfs', op: 'drive.save_attachments', from: 'invoices', folder: 'folder' },
+    { id: 'log', op: 'sheets.append', from: 'invoices', title: 'Invoice Log', columns: ['Date', 'From', 'Subject'] },
+    { id: 'summary', op: 'summarize', from: 'invoices' },
+    { id: 'doc', op: 'docs.write', title: 'Invoice Summary', content: '{{summary}}' }] },
+  { reasoning: 'Read receipt photos into a sheet.', name: 'Receipt Photos', schedule_mode: 'one_shot', program: [
+    { id: 'photos', op: 'photos.extract', category: 'RECEIPTS' },
+    { id: 'sheet', op: 'sheets.append', from: 'photos', title: 'Receipts', columns: ['Merchant', 'Date', 'Amount'] }] },
+  { reasoning: 'Track billing mail with amount and due date, and label it.', name: 'Billing Tracker', schedule_mode: 'one_shot', program: [
+    { id: 'mail', op: 'mail.search', keywords: ['billing'] },
+    { id: 'sheet', op: 'sheets.append', from: 'mail', title: 'Billing Tracker', columns: ['Date', 'From', 'Subject', 'Amount', 'Due'] },
+    { id: 'label', op: 'mail.label', from: 'mail', label: 'SIFTVANE_BILLING' }] },
+];
 
 const chromium = process.env.SIFTVANE_CHROMIUM ?? ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find((file) => existsSync(file));
 const payload = (result: { content: unknown }) => JSON.parse((result.content as { text: string }[])[0].text);
@@ -101,7 +120,8 @@ async function stop(child: ChildProcess | undefined) {
 
 it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artifact previews to the website in headless Chromium with zero console errors', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-web-e2e-'));
-  const runtime = await createSiftvaneApp({ databasePath: ':memory:', config: {
+  const model = await fakeModel(plans);
+  const runtime = await createSiftvaneApp({ databasePath: ':memory:', agent: model.agent, config: {
     inboxLive: false, tracesDir: path.join(dir, 'traces'), mailAttachmentsDir: path.join(dir, 'workspace', 'mail-attachments'),
   } });
   let web: ChildProcess | undefined;
@@ -167,12 +187,11 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
       text: document.body.innerText,
     })`);
     const synced = await until('first agent live sync', view, (state) => state.cards === 1 && state.active === first.agent_id &&
-      state.logs >= 10 && state.artifacts >= 7 && state.switches === 1 && state.status === 'Active' && state.text.includes('waiting in Approval Inbox'));
+      state.logs >= 6 && state.artifacts >= 5 && state.switches === 1 && state.status === 'Active');
     expect(synced.text).toContain('Claude Code');
     expect(synced.text).toContain('Scan my email for daily invoices');
-    expect(synced.text).toContain('Siftvane Invoice Ledger');
+    expect(synced.text).toContain('Invoice Log');
     expect(synced.text).toMatch(/ALLOW TIER 0/);
-    expect(synced.text).toMatch(/GATE TIER 2/);
 
     // 2. A second CLI agent and a manual CLI switch update the switcher and timeline in real time.
     const second = payload(await client.callTool({ name: 'provision_and_run_agent', arguments: {
@@ -185,12 +204,11 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
 
     // 3. The interactive Sheet viewer renders the verified rows inside the browser.
     await page.evaluate(`[...document.querySelectorAll('[data-testid=artifact-card][data-service=google_sheet]')]
-      .find((card) => card.innerText.includes('Siftvane Invoice Ledger')).querySelector('[data-testid=artifact-open]').click()`);
+      .find((card) => card.innerText.includes('Invoice Log')).querySelector('[data-testid=artifact-open]').click()`);
     const preview = await until('sheet preview', () => page.evaluate<{ rows: number; text: string }>(`({
       rows: document.querySelectorAll('[data-testid=artifact-preview] [data-testid=sheet-row]').length,
-      text: document.querySelector('[data-testid=artifact-preview]')?.innerText ?? '' })`), (state) => state.rows >= 5);
-    expect(preview.text).toContain('FIG-3391');
-    expect(preview.text).toContain('Daily Invoices');
+      text: document.querySelector('[data-testid=artifact-preview]')?.innerText ?? '' })`), (state) => state.rows >= 1);
+    expect(preview.text).toContain('Subject');
     await page.evaluate(`document.querySelector('[aria-label="Close preview"]').click()`);
     await page.evaluate(`document.querySelector('[data-testid=artifact-card][data-service=google_doc] [data-testid=artifact-open]').click()`);
     await until('doc preview', () => page.evaluate<number>(`document.querySelectorAll('[data-testid=doc-section]').length`), (count) => count >= 1);
@@ -294,6 +312,7 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
     await stop(browser);
     await stop(web);
     await runtime.close();
+    await model.close();
     await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }, 240_000);

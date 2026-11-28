@@ -82,7 +82,7 @@ export function registerPlatformTools(server: McpServer, args: {
           requireToken([
             ...(needed.some((service) => ['drive', 'docs', 'sheets'].includes(service)) ? ['workspace:write'] : []),
             ...(needed.includes('photos') ? ['photos:read'] : []), ...(needed.includes('gmail') ? ['mail:read'] : []),
-            ...(compiled.plan.template === 'vendor_rfq' ? ['mail:send'] : []), ...(needed.includes('calendar') ? ['calendar:propose'] : []),
+            ...(needed.includes('calendar') ? ['calendar:propose'] : []),
           ]);
           const program = compiled.plan.params.program;
           if (program) {

@@ -180,7 +180,8 @@ export class WorkspaceOps {
       fresh.push(trimRow(row));
     }
     const skipped = clean.value.length - fresh.length;
-    if (!fresh.length) {
+    // Nothing new to write (and no new columns requested): already current.
+    if (!fresh.length && tab.headers.length === found.headers.length) {
       const record = this.context.record('CHECK', { action: 'append_sheet_rows', target: key, outcome: 'ALREADY_CURRENT', rows_skipped_duplicates: skipped, row_count: tab.rows.length });
       this.platform.log({ userId: this.who.userId, agentId: this.who.agentId, runId: this.context.runId, service: 'sheets', action: 'append_sheet_rows',
         input: `${title} / ${tabName}: ${rows.length} candidate rows`, output: `${tabName}: no new rows; ${skipped} duplicates skipped (row count ${tab.rows.length})`,

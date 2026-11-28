@@ -1,13 +1,13 @@
 'use client';
 
 import {
-  Activity, ArrowDownToLine, ArrowRight, Bot, CalendarDays, CircleHelp, Clock3,
-  FileCheck2, GitCompareArrows, House, Inbox, ListChecks, Play, Power, ReceiptText, UserRound, Wrench,
-  Repeat, RotateCcw, ShieldCheck, Sun, Moon, TriangleAlert,
+  Activity, ArrowDownToLine, Bot, CalendarDays, CircleHelp,
+  FileCheck2, GitCompareArrows, House, Inbox, ListChecks, Power, UserRound, Wrench,
+  Repeat, RotateCcw, ShieldCheck, Sun, Moon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { InboxPolicy, InboxSchedule } from '@siftvane/shared';
+import type { InboxPolicy } from '@siftvane/shared';
 import { SiftvaneMark } from './SiftvaneMark';
 import { useTheme } from './ThemeContext';
 import { GoogleAccountBar, useGoogleSession } from './GoogleSession';
@@ -22,12 +22,9 @@ const views = [
   { id: 'home', label: 'Home', icon: House, simple: true },
   { id: 'approvals', label: 'Approvals', icon: ListChecks, simple: true },
   { id: 'agents', label: 'Agents & Activity', icon: Bot, simple: false },
-  { id: 'briefing', label: 'Inbox Briefing', icon: Inbox, simple: false },
   { id: 'recipes', label: 'Recipes', icon: Repeat, simple: false },
-  { id: 'calendar', label: 'Calendar Sync', icon: CalendarDays, simple: false },
   { id: 'policy', label: 'Rules & Policy', icon: GitCompareArrows, simple: false },
-  { id: 'monitor', label: 'Runs & Live Monitor', icon: Activity, simple: false },
-  { id: 'bills', label: 'Bills & Receipts', icon: ReceiptText, simple: false },
+  { id: 'monitor', label: 'Runs & traces', icon: Activity, simple: false },
 ] as const;
 type View = typeof views[number]['id'];
 type Snapshot = Record<string, unknown>;
@@ -56,15 +53,11 @@ type Step = {
 };
 type Briefing = {
   mode: 'sandbox' | 'live'; agent_mode: 'llm' | 'offline-smoke'; agent_model: string; halted: boolean; last_success: Run | null;
-  schedule: InboxSchedule; run_meta: (Run & { rollback_available: boolean }) | null;
+  run_meta: (Run & { rollback_available: boolean }) | null;
   autonomy: { autonomous_verified: number; gated_for_approval: number; blocked_quarantined: number };
   changed: Change[]; needs_attention: Approval[];
   handled_autonomously: Array<{ trace_step_id: string; playbook_id: string; action: string; entity: string; policy_rule_id: string; tier: number }>;
   blocked_and_quarantined: Array<{ msg_id: string; threat_type: string; policy_rule_id: string }>;
-  digest: {
-    upcoming_bills_summary: Snapshot[]; active_deliveries: Snapshot[];
-    waiting_on_commitments: Snapshot[]; newsletter_rollup: Snapshot[]; bill_flags: Approval[];
-  };
 };
 
 type RequestFn = <T,>(endpoint: string, method?: string, body?: unknown) => Promise<T>;
@@ -102,32 +95,6 @@ function Panel({ title, icon, children, action }: { title: string; icon: ReactNo
     <div className="inbox-panel-head"><h2>{icon}{title}</h2>{action}</div>
     {children}
   </section>;
-}
-
-function ChangeList({ changes }: { changes: Change[] }) {
-  if (!changes.length) return <Empty>No verified changes recorded for this run.</Empty>;
-  return <div className="inbox-stack">
-    {changes.map((change, index) => {
-      const names = Object.keys(change.diff).sort((left, right) => {
-        const priorities = ['start', 'end', 'deadline', 'amount', 'status', 'labels'];
-        return (priorities.includes(left) ? priorities.indexOf(left) : 99) - (priorities.includes(right) ? priorities.indexOf(right) : 99);
-      });
-      return <details className="inbox-change" key={change.entity + index} open={index < 4 || change.conflict_flag}>
-        <summary>
-          <div><strong>{change.diff.title?.after ? raw(change.diff.title.after) : label(change.entity.replace(/-/g, ' '))}</strong>
-            <span>{label(change.type)}</span></div>
-          {change.conflict_flag && <Tag tone="amber">Conflict</Tag>}
-        </summary>
-        <dl>
-          {names.map((name) => <div key={name}>
-            <dt>{label(name)}</dt>
-            <dd><span>{display(name, change.diff[name].before)}</span><ArrowRight size={14} aria-hidden="true" /><span>{display(name, change.diff[name].after)}</span></dd>
-          </div>)}
-        </dl>
-        <div className="inbox-source">Sources {change.source_msg_ids.join(' · ')}{change.next_action && <> · {change.next_action}</>}</div>
-      </details>;
-    })}
-  </div>;
 }
 
 /** Why something waits for the user, in plain words (the rule id stays available as a tooltip). */
@@ -246,94 +213,50 @@ function ApprovalsView({ pending, busy, onResolve }: {
 function PolicyView({ reload }: { reload: () => Promise<void> }) {
   const [policy, setPolicy] = useState<{ version: number; policy: InboxPolicy; mode: string } | null>(null);
   const [draft, setDraft] = useState<InboxPolicy | null>(null);
-  const [compared, setCompared] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [report, setReport] = useState<{ messages_scanned: number; rows: Array<{
-    id: string; before: { decision: string; ruleId: string } | null; after: { decision: string; ruleId: string } | null; changed: boolean;
-  }> } | null>(null);
   useEffect(() => {
     api<{ version: number; policy: InboxPolicy; mode: string }>('policy')
       .then((value) => { setPolicy(value); setDraft(value.policy); })
       .catch((err) => setError(showError(err)));
   }, []);
-  const execute = async (save: boolean) => {
+  const save = async () => {
+    if (!policy || !draft) return;
     setError('');
     setBusy(true);
     try {
-      const value = draft;
-      if (!value) return;
-      if (save && policy) {
-        const installed = await api<{ version: number; policy: InboxPolicy }>('policy', 'PUT', { version: policy.version, policy: value });
-        setPolicy({ ...installed, mode: policy.mode });
-        setDraft(installed.policy);
-        setReport(null);
-        setCompared('');
-        await reload();
-      } else {
-        setReport(await api('policy/preview', 'POST', value));
-        setCompared(JSON.stringify(value));
-      }
+      const installed = await api<{ version: number; policy: InboxPolicy }>('policy', 'PUT', { version: policy.version, policy: draft });
+      setPolicy({ ...installed, mode: policy.mode });
+      setDraft(installed.policy);
+      setNotice(`Saved as version ${installed.version}. Every agent follows it from its next step.`);
+      await reload();
     } catch (err) { setError(showError(err)); }
     finally { setBusy(false); }
   };
-  return <div className="inbox-stack">
-    <Panel title="Policy versions" icon={<GitCompareArrows size={18} />}>
-      {policy && draft ? <>
-        <p>You are on <strong>version {policy.version}</strong>. Edit a copy below, preview how it would treat the sandbox mail, then save it as version {policy.version + 1}. Nothing changes until you save.</p>
-        <PolicyEditor current={policy.policy} draft={draft} onChange={(next) => { setDraft(next); setError(''); }} />
-        <div className="inbox-actions">
-          <button className="inbox-button" disabled={busy || draft.workStart >= draft.workEnd} onClick={() => void execute(false)}>Preview sandbox decisions</button>
-          <button className="inbox-button" data-tone="primary" disabled={busy || compared !== JSON.stringify(draft) || !report || policyChanges(policy.policy, draft).length === 0}
-            onClick={() => void execute(true)}>Save as version {policy.version + 1}</button>
-          {report && compared !== JSON.stringify(draft) && <small>You changed something since the preview. Preview again to save.</small>}
-        </div></> : <Empty>Loading the active policy.</Empty>}
-      {error && <p role="alert" className="inbox-error">{error}</p>}
-    </Panel>
-    {report && <Panel title={`Decisions across ${report.messages_scanned} sandbox messages`} icon={<FileCheck2 size={18} />}>
-      <div className="inbox-table-wrap"><table><thead><tr><th>Source and action</th><th>Current</th><th>Draft</th></tr></thead><tbody>
-        {report.rows.map((row) => <tr key={row.id} data-changed={row.changed}>
-          <td>{row.id}</td><td>{label(row.before?.decision ?? 'No action')}<small>{row.before?.ruleId}</small></td>
-          <td>{label(row.after?.decision ?? 'No action')}<small>{row.after?.ruleId}</small></td>
-        </tr>)}
-      </tbody></table></div>
-    </Panel>}
-  </div>;
+  return <Panel title="Rules every agent follows" icon={<GitCompareArrows size={18} />}>
+    {policy && draft ? <>
+      <p>You are on <strong>version {policy.version}</strong>. These rules decide which actions run on their own and which wait for your approval.</p>
+      <PolicyEditor current={policy.policy} draft={draft} onChange={(next) => { setDraft(next); setError(''); setNotice(''); }} />
+      <div className="inbox-actions">
+        <button className="inbox-button" data-tone="primary" disabled={busy || policyChanges(policy.policy, draft).length === 0}
+          onClick={() => void save()}>Save as version {policy.version + 1}</button>
+      </div></> : <Empty>Loading your rules.</Empty>}
+    {notice && <p role="status">{notice}</p>}
+    {error && <p role="alert" className="inbox-error">{error}</p>}
+  </Panel>;
 }
 
-function Monitor({ runs, steps, schedule, loadTrace, saveSchedule, connected, busy, traceRun, selectedStep }: {
-  runs: Run[]; steps: Step[]; schedule: InboxSchedule; loadTrace: (id: string) => void;
-  saveSchedule: (value: InboxSchedule) => void; connected: boolean; busy: boolean; traceRun: string | null; selectedStep: string | null;
+function Monitor({ runs, steps, loadTrace, connected, traceRun, selectedStep }: {
+  runs: Run[]; steps: Step[]; loadTrace: (id: string) => void; connected: boolean; traceRun: string | null; selectedStep: string | null;
 }) {
-  const [frequency, setFrequency] = useState(schedule.frequency);
-  const [interval, setIntervalValue] = useState(schedule.intervalMinutes);
-  const [enabled, setEnabled] = useState(schedule.enabled);
-  useEffect(() => {
-    setFrequency(schedule.frequency);
-    setIntervalValue(schedule.intervalMinutes);
-    setEnabled(schedule.enabled);
-  }, [schedule.frequency, schedule.intervalMinutes, schedule.enabled]);
   useEffect(() => {
     if (selectedStep) document.getElementById('trace-' + selectedStep)?.scrollIntoView({ block: 'nearest' });
   }, [selectedStep, steps]);
   const latest = steps[steps.length - 1];
   return <div className="inbox-stack">
-    <Panel title="Schedule" icon={<Clock3 size={18} />}>
-      <form className="inbox-form-row" onSubmit={(event) => {
-        event.preventDefault();
-        saveSchedule({ enabled, frequency, intervalMinutes: interval });
-      }}>
-        <label><input type="checkbox" disabled={busy} checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> Enable runs</label>
-        <label>Frequency<select disabled={busy} value={frequency} onChange={(event) => setFrequency(event.target.value as InboxSchedule['frequency'])}>
-          <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="interval">Custom interval</option>
-        </select></label>
-        {frequency === 'interval' && <label>Minutes<input type="number" min="1" max="10080" disabled={busy} value={interval} onChange={(event) => setIntervalValue(Number(event.target.value))} /></label>}
-        <button className="inbox-button" type="submit" disabled={busy}>Save schedule</button>
-      </form>
-      {schedule.nextAt && <p>Next run {when(schedule.nextAt)}</p>}
-    </Panel>
     <Panel title="Run history" icon={<ListChecks size={18} />}>
-      {!runs.length ? <Empty>Run the inbox agent to populate history.</Empty> : <div className="inbox-table-wrap"><table>
+      {!runs.length ? <Empty>Agent runs appear here with every step they took.</Empty> : <div className="inbox-table-wrap"><table>
         <thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Messages</th><th>Changes</th><th>Conflicts</th><th>Writes</th><th /></tr></thead>
         <tbody>{runs.map((run) => <tr key={run.id}>
           <td>{when(run.startedAt)}</td><td>{run.mcp_caller ? <>
@@ -369,134 +292,6 @@ function Monitor({ runs, steps, schedule, loadTrace, saveSchedule, connected, bu
       </div>}
     </Panel>
   </div>;
-}
-
-type CalendarDiff = {
-  id: string; run_id: string; before: Snapshot | null; after: Snapshot | null; status: string; tier: number;
-};
-
-function CalendarView({ revision, blocked, rollback }: {
-  revision: number; blocked: boolean; rollback: (id: string, actionIds?: string[]) => void;
-}) {
-  const [data, setData] = useState<{ events: Snapshot[]; changes: CalendarDiff[]; pending: Approval[] } | null>(null);
-  const [selection, setSelection] = useState<CalendarDiff[]>([]);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    api<typeof data>('calendar').then(setData).catch((err) => setError(showError(err)));
-  }, [revision]);
-  const group = (kind: 'add' | 'change' | 'cancel') => data?.changes.filter((entry) => {
-    const before = Boolean(entry.before);
-    const after = Boolean(entry.after);
-    return kind === 'add' ? !before && after : kind === 'cancel' ? before && !after : before && after;
-  }) ?? [];
-  return <div className="inbox-stack">
-    <Panel title="Calendar changes" icon={<CalendarDays size={18} />} action={
-      <a className="inbox-button" href="/api/inbox/calendar.ics"><ArrowDownToLine size={16} /> Export .ics</a>}>
-      {error && <p role="alert" className="inbox-error">{error}</p>}
-      <div className="inbox-three">
-        {([['add', 'Additions'], ['change', 'Changes'], ['cancel', 'Cancellations']] as const).map(([kind, title]) =>
-          <section key={kind} className="inbox-item">
-            <h3>{title}</h3>
-            {!group(kind).length && <Empty>Nothing recorded.</Empty>}
-            {group(kind).slice(0, 30).map((entry) => <div className="inbox-event" key={entry.id}>
-              <strong>{raw(entry.after?.title ?? entry.before?.title)}</strong>
-              <p>{when(entry.before?.start)} → {when(entry.after?.start)}</p>
-              <Tag tone={entry.status === 'VERIFIED' ? 'green' : 'neutral'}>{label(entry.status)}</Tag>
-              {entry.status === 'VERIFIED' && <label className="inbox-check">
-                <input type="checkbox" checked={selection.some((item) => item.id === entry.id)}
-                  onChange={(event) => setSelection(event.target.checked
-                    ? [...selection.filter((item) => item.run_id === entry.run_id), entry]
-                    : selection.filter((item) => item.id !== entry.id))} />
-                Select to roll back
-              </label>}
-            </div>)}
-          </section>)}
-      </div>
-      {!!selection.length && <button className="inbox-button" disabled={blocked} onClick={() => {
-        rollback(selection[0].run_id, selection.map(({ id }) => id));
-        setSelection([]);
-      }}><RotateCcw size={16} /> Roll back selected changes</button>}
-    </Panel>
-    <Panel title="Pending calendar approvals" icon={<ListChecks size={18} />} action={<a href="#approvals" className="inbox-text-link">Review approvals <ArrowRight size={15} /></a>}>
-      {data?.pending.length ? data.pending.map((item) => <div className="inbox-item" key={item.approval_id}>
-        <strong>{raw(item.proposed_action.after?.title ?? item.proposed_action.target)}</strong>
-        <p>{item.triggered_rule_id} · {when(item.proposed_action.after?.start)}</p>
-      </div>) : <Empty>No calendar changes waiting for approval.</Empty>}
-    </Panel>
-    <Panel title="Current calendar" icon={<CalendarDays size={18} />}>
-      <div className="inbox-table-wrap"><table><thead><tr><th>Event</th><th>Starts</th><th>Ends</th><th>Context</th></tr></thead><tbody>
-        {data?.events.map((event) => <tr key={raw(event.id)}><td>{raw(event.title)}</td><td>{when(event.start)}</td><td>{when(event.end)}</td><td>{raw(event.dossier)}</td></tr>)}
-      </tbody></table></div>
-    </Panel>
-  </div>;
-}
-
-function BillsView({ records, approvals }: { records: Snapshot[]; approvals: Approval[] }) {
-  const warnings = approvals;
-  return <div className="inbox-stack">
-    <Panel title="Bills and subscriptions" icon={<ReceiptText size={18} />} action={
-      <a className="inbox-button" href="/api/inbox/bills.csv"><ArrowDownToLine size={16} /> Export CSV</a>}>
-      {records.length ? <div className="inbox-table-wrap">
-        <table><thead><tr><th>Vendor</th><th>Reference</th><th>Amount</th><th>Due</th><th>Flags</th></tr></thead><tbody>
-          {records.map((bill) => <tr key={raw(bill.invoice)}><td>{raw(bill.vendor)}</td><td>{raw(bill.invoice)}</td>
-            <td>{raw(bill.amount)} {raw(bill.currency)}</td><td>{raw(bill.due)}</td>
-            <td>{Boolean(bill.duplicateOrSpoofed) && <Tag tone="red">Duplicate flagged</Tag>}{Boolean(bill.priceHike) && <Tag tone="amber">Price increase · {raw(bill.previousAmount)} → {raw(bill.amount)}</Tag>}</td></tr>)}
-        </tbody></table>
-      </div> : <Empty>No bills extracted yet. Run the inbox agent to build the ledger.</Empty>}
-    </Panel>
-    <Panel title="Invoice and renewal flags" icon={<TriangleAlert size={18} />} action={<a href="#approvals" className="inbox-text-link">Open approval inbox <ArrowRight size={15} /></a>}>
-      {warnings.length ? warnings.map((item) => <div className="inbox-item" key={item.approval_id}>
-        <strong>{label(item.triggered_rule_id)}</strong><p>{raw(item.proposed_action.after?.vendor)} · {raw(item.proposed_action.after?.invoice)}</p>
-      </div>) : <Empty>No billing flags awaiting review.</Empty>}
-    </Panel>
-  </div>;
-}
-
-function BriefingView({ data, onTrace }: { data: Briefing; onTrace: (id: string) => void }) {
-  const firstBill = [...data.digest.upcoming_bills_summary].sort((left, right) => raw(left.due).localeCompare(raw(right.due)))[0];
-  const groups = new Map<string, Briefing['handled_autonomously']>();
-  for (const item of data.handled_autonomously) groups.set(item.playbook_id, [...groups.get(item.playbook_id) ?? [], item]);
-  return <>
-    <div className="inbox-digest inbox-autonomy" aria-label="Autonomy breakdown">
-      <div><ShieldCheck size={19} /><span>Autonomous &amp; Verified (Tier 0/1)</span><strong>{data.autonomy.autonomous_verified}</strong></div>
-      <div><ListChecks size={19} /><span>Gated for Approval (Tier 2)</span><strong>{data.autonomy.gated_for_approval}</strong></div>
-      <div><TriangleAlert size={19} /><span>Blocked / Quarantined</span><strong>{data.autonomy.blocked_quarantined}</strong></div>
-    </div>
-    <div className="inbox-digest">
-      {[
-        [ReceiptText, 'Next bill due', firstBill ? `${raw(firstBill.vendor)} · ${raw(firstBill.due)}` : 'No bills tracked'],
-        [Inbox, 'Tracked deliveries', data.digest.active_deliveries.length],
-        [Clock3, 'Waiting on', data.digest.waiting_on_commitments.length],
-        [FileCheck2, 'Newsletter rollup', data.digest.newsletter_rollup.length],
-      ].map(([Icon, title, value]) => {
-        const DigestIcon = Icon as typeof Inbox;
-        return <div key={String(title)}><DigestIcon size={19} aria-hidden="true" /><span>{String(title)}</span><strong>{String(value)}</strong></div>;
-      })}
-    </div>
-    <div className="inbox-brief-grid">
-      <Panel title="What changed" icon={<GitCompareArrows size={19} />} action={<Tag>{data.changed.length} changes</Tag>}>
-        <ChangeList changes={data.changed} />
-      </Panel>
-      <div className="inbox-stack">
-        <Panel title="Needs attention" icon={<TriangleAlert size={19} />} action={<Tag tone={data.needs_attention.length ? 'amber' : 'neutral'}>{data.needs_attention.length} pending</Tag>}>
-          {!data.needs_attention.length ? <Empty>Nothing waiting for approval.</Empty> : data.needs_attention.slice(0, 5).map((item) =>
-            <article className="inbox-item" key={item.approval_id}><strong>{label(item.triggered_rule_id)}</strong><p>{item.reason}</p></article>)}
-          <a href="#approvals" className="inbox-text-link">Open approval inbox <ArrowRight size={15} /></a>
-        </Panel>
-        <Panel title="Already handled" icon={<ShieldCheck size={19} />}>
-          {!groups.size ? <Empty>Verified actions will appear after a run.</Empty> : [...groups].map(([key, values]) =>
-            <details key={key} className="inbox-item"><summary><strong>{playbookName(key)}</strong><Tag tone="green">{values.length} verified</Tag></summary>
-              {values.map((value) => <div key={value.trace_step_id} className="inbox-event">
-                <p>{label(value.action)} · {value.policy_rule_id}</p>
-                <button className="inbox-text-link" onClick={() => onTrace(value.trace_step_id.split(':')[0])}>View trace <ArrowRight size={14} /></button>
-              </div>)}
-            </details>)}
-          <p>{data.blocked_and_quarantined.length} threats blocked or quarantined</p>
-          {data.blocked_and_quarantined.map((item) => <p className="inbox-source" key={item.msg_id}>{item.msg_id} · {item.policy_rule_id}</p>)}
-        </Panel>
-      </div>
-    </div>
-  </>;
 }
 
 export function InboxWorkspace() {
@@ -607,7 +402,6 @@ export function InboxWorkspace() {
   const active = runs.some((run) => run.status === 'RUNNING');
   const halted = !!data?.halted;
   const blocked = !data || busy || active || halted;
-  const canRun = !blocked && !session?.inboxes.some((item) => item.id === session.active_inbox_id && item.status !== 'active');
 
   return <div className="inbox-layout">
     <aside className="inbox-sidebar">
@@ -634,14 +428,11 @@ export function InboxWorkspace() {
       <header className="inbox-header">
         <div className="inbox-title"><h1>{title}</h1>
           <p>{view === 'home' ? 'Tell Siftvane what you want done with your email. It builds an agent that keeps working for you.' :
-            view === 'briefing' ? 'What changed, what needs you, and what Siftvane handled.' :
             view === 'agents' ? 'Every agent your CLI or this console created, with live logs and Workspace artifacts.' :
             view === 'recipes' ? 'Teach a recipe from an agent once; matching emails then run with zero model calls.' :
             view === 'approvals' ? 'Replies, sends and changes your agents prepared. Nothing goes out until you approve it.' :
-            view === 'calendar' ? 'Review verified changes and upcoming calendar events.' :
-            view === 'policy' ? 'See how rule changes affect real decisions before saving.' :
-            view === 'monitor' ? 'Schedule runs and inspect the decisions they make.' :
-            'Invoice amounts, due dates, and subscription changes.'}</p></div>
+            view === 'policy' ? 'Who agents may contact on their own, and how much they may do in one run.' :
+            'Every step each agent run took, with its checks and decisions.'}</p></div>
         <div className="inbox-actions">
           <button type="button" className="inbox-button" aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} onClick={toggleTheme}>
             {theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}
@@ -651,10 +442,6 @@ export function InboxWorkspace() {
             onClick={() => halted ? setShowResume(true) : void act(() => api('kill-switch', 'POST', { active: true, reason: 'Operator used the Inbox panic button.' }))}>
             <Power size={16} /> {halted ? (simple ? 'Restart agents' : 'Resume agent') : (simple ? 'Stop all agents' : 'Halt agent')}
           </button>
-          {!simple && <button type="button" className="inbox-button" data-tone="primary" disabled={!canRun}
-            onClick={() => void act(() => api('runs', 'POST', { wait: true }), 'Inbox run completed.')}>
-            <Play size={16} /> {active ? 'Running…' : 'Run now'}
-          </button>}
         </div>
       </header>
       {!simple && <><GoogleAccountBar session={session} />
@@ -662,9 +449,8 @@ export function InboxWorkspace() {
       <section className="inbox-status" aria-label="Agent status">
         <div><span>Status</span><Tag tone={halted ? 'red' : connected ? 'green' : 'amber'}>{halted ? 'Halted' : active ? 'Running' : connected ? 'Ready' : 'Connecting'}</Tag></div>
         <div><span>Data source</span><strong>{data?.mode === 'live' ? 'Gmail + Calendar' : data?.mode === 'sandbox' ? 'Sandbox' : '—'}</strong></div>
-        <div><span>Agent mode</span>{data ? <Tag tone={data.agent_mode === 'llm' ? 'green' : 'amber'}>{data.agent_mode}</Tag> : '—'}</div>
+        <div><span>AI</span>{data ? <Tag tone={data.agent_mode === 'llm' ? 'green' : 'amber'}>{data.agent_mode === 'llm' ? data.agent_model : 'Not set'}</Tag> : '—'}</div>
         <div><span>Last successful run</span><strong>{when(data?.last_success?.completedAt)}</strong></div>
-        <div><span>Schedule</span><strong>{data?.schedule.enabled ? label(data.schedule.frequency) : 'Manual'}</strong></div>
         <button type="button" className="inbox-button" disabled={blocked || !data?.run_meta?.rollback_available}
           onClick={() => data?.run_meta && rollback(data.run_meta.id)}>
           <RotateCcw size={16} /> Roll back last run
@@ -688,25 +474,19 @@ export function InboxWorkspace() {
       {view === 'home' ? <HomeView data={platformData} session={session} waiting={data?.needs_attention.length ?? 0}
           aiReady={!data || data.agent_mode === 'llm'} onError={reportError} /> :
         !data ? <Empty><button className="inbox-button" onClick={() => void reload()}>Reload inbox state</button></Empty> :
-        view === 'briefing' ? <>
-          <BriefingView data={data} onTrace={(id) => void inspect(id, true)} />
-          <ThreadExecutionStack revision={revision} onTrace={(id, step) => void inspect(id, true, step)} />
-        </> :
         view === 'agents' ? <AgentsView data={platformData} revision={platformRevision} onError={reportError}
           onTrace={(id) => void inspect(id, true)} /> :
         view === 'recipes' ? <RecipesView data={platformData} revision={platformRevision} onError={reportError}
           onTrace={(id) => void inspect(id, true)} /> :
         view === 'approvals' ? <ApprovalsView pending={data.needs_attention} busy={busy || halted}
           onResolve={(id, approve, edit, calendarEdit, batchEdits) => void act(() => api(`approvals/${id}`, 'POST', { approve, edit, calendarEdit, batchEdits }),
-            approve ? 'Approval recorded.' : 'Request rejected.')} /> : view === 'calendar' ? <CalendarView revision={revision} blocked={blocked} rollback={rollback} /> :
+            approve ? 'Approval recorded.' : 'Request rejected.')} /> :
         view === 'policy' ? <PolicyView reload={reload} /> :
-        view === 'monitor' ? <>
+        <>
           <ThreadExecutionStack revision={revision} runId={traceRun} onTrace={(id, step) => void inspect(id, false, step)} />
-          <Monitor runs={runs} steps={steps} schedule={data.schedule}
-            loadTrace={(id) => void inspect(id)} saveSchedule={(schedule) => void act(() => api('schedule', 'PUT', schedule), 'Schedule saved.')}
-            connected={connected} busy={busy} traceRun={traceRun} selectedStep={selectedStep} />
-        </> :
-        <BillsView records={data.digest.upcoming_bills_summary} approvals={data.digest.bill_flags} />}
+          <Monitor runs={runs} steps={steps} loadTrace={(id) => void inspect(id)}
+            connected={connected} traceRun={traceRun} selectedStep={selectedStep} />
+        </>}
     </main>
   </div>;
 }

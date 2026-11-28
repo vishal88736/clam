@@ -5,7 +5,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils &
 RUN npm install --global pnpm@10.34.9
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/package.json
-COPY apps/agent/package.json apps/agent/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile

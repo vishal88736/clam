@@ -158,11 +158,6 @@ export function registerInboxRoutes(app: FastifyInstance, inbox: InboxEngine, co
     router.get('/api/inbox/runs', async (request) => ({
       runs: inbox.store.runs(selectedMode(request)).map((run) => ({ ...run, changesCount: inbox.store.countChanges(run.id) })),
     }));
-    router.post('/api/inbox/runs', async (request, reply) => {
-      const { wait } = z.object({ wait: z.boolean().optional() }).strict().parse(request.body ?? {});
-      const handle = inbox.start('manual', 'inbox', selectedMode(request));
-      return wait ? { run: await handle.done } : reply.code(202).send({ run: handle.run });
-    });
     router.get('/api/inbox/runs/:id/trace', async (request, reply) => {
       const id = runId(request);
       if (inbox.store.run(id)?.mode !== selectedMode(request)) return reply.code(404).send({ error: 'RUN_NOT_FOUND' });
@@ -200,31 +195,11 @@ export function registerInboxRoutes(app: FastifyInstance, inbox: InboxEngine, co
       return { approval: inbox.store.approval(id), run };
     });
 
-    router.get('/api/inbox/calendar', async (request) => inbox.calendar(selectedMode(request)));
-    router.get('/api/inbox/calendar.ics', async (request, reply) => reply
-      .type('text/calendar; charset=utf-8').header('Content-Disposition', 'attachment; filename="siftvane-calendar.ics"')
-      .send(await inbox.ics(selectedMode(request))));
-    router.get('/api/inbox/bills', async (request) => ({ bills: inbox.briefing(undefined, selectedMode(request))!.digest.upcoming_bills_summary }));
-    router.get('/api/inbox/bills.csv', async (request, reply) => {
-      const records = inbox.briefing(undefined, selectedMode(request))!.digest.upcoming_bills_summary;
-      const csv = (value: unknown) => {
-        let text = value === undefined || value === null ? '' : String(value);
-        if (/^\s*[=+@-]/.test(text)) text = "'" + text;
-        return '"' + text.replace(/"/g, '""') + '"';
-      };
-      const columns = ['vendor', 'invoice', 'amount', 'currency', 'due', 'type', 'priceHike', 'duplicateOrSpoofed'];
-      return reply.type('text/csv; charset=utf-8').header('Content-Disposition', 'attachment; filename="siftvane-bills.csv"')
-        .send([columns.join(','), ...records.map((record) => columns.map((column) => csv(record?.[column])).join(','))].join('\r\n') + '\r\n');
-    });
-
     router.get('/api/inbox/policy', async (request) => ({ mode: selectedMode(request), ...inbox.store.policy(selectedMode(request)) }));
-    router.post('/api/inbox/policy/preview', async (request) => inbox.preview(request.body, selectedMode(request)));
     router.put('/api/inbox/policy', async (request) => {
       const { version, policy } = z.object({ version: z.number().int().min(1), policy: inboxPolicySchema }).parse(request.body);
       return inbox.store.savePolicy(selectedMode(request), version, policy);
     });
-    router.get('/api/inbox/schedule', async (request) => inbox.store.schedule(selectedMode(request)));
-    router.put('/api/inbox/schedule', async (request) => inbox.setSchedule(request.body, selectedMode(request)));
     router.post('/api/inbox/kill-switch', haltControl);
     router.post('/api/kill-switch', haltControl);
 

@@ -1,4 +1,4 @@
-.PHONY: sandbox stop logs test trap-pack
+.PHONY: sandbox stop logs test
 sandbox:
 	docker compose up --build -d --wait
 
@@ -10,6 +10,3 @@ logs:
 
 test:
 	pnpm test
-
-trap-pack:
-	pnpm test:adversarial

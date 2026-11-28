@@ -1,17 +1,17 @@
-import type { InboxCalendarEvent, InboxIntent, InboxPolicy, InboxStage } from '@siftvane/shared';
+import type { InboxCalendarEvent, InboxStage } from '@siftvane/shared';
 
-import type { AgentConfig, AgentMode, ModelUsage } from './agentConfig.js';
+import type { AgentMode, ModelUsage } from './agentConfig.js';
 
 export type Mode = 'sandbox' | 'live' | `live:${string}`;
 export type Tier = 0 | 1 | 2;
 export type Decision = 'AUTONOMOUS' | 'APPROVAL_REQUIRED' | 'BLOCKED';
-export type ActionKind = 'calendar' | 'send' | 'draft' | 'mail' | 'bill' | 'delivery' | 'commitment' | 'newsletter' | 'review' | 'handoff' | 'workspace';
+export type ActionKind = 'calendar' | 'send' | 'draft' | 'mail' | 'review' | 'handoff' | 'workspace';
 export type RunStatus = 'RUNNING' | 'COMPLETED' | 'HALTED' | 'FAILED';
 export type Snapshot = Record<string, unknown> | null;
 
-export interface ProposedAction {
+/** An action an agent wants to take; every one passes policy, then is applied and read back. */
+export interface SafeAction {
   playbook: string;
-  intent: InboxIntent;
   kind: ActionKind;
   target: string;
   version: string;
@@ -24,6 +24,11 @@ export interface ProposedAction {
   expectedBefore?: Snapshot;
   relatedPlaybooks?: string[];
   workspaceOwner?: { userId: string; agentId: string | null; runId?: string | null };
+  sourceId: string;
+  confidence: number;
+  effectiveContact?: string;
+  bodyOnlyRecipient?: boolean;
+  threadId?: string;
 }
 
 export interface PolicyVerdict {
@@ -32,14 +37,6 @@ export interface PolicyVerdict {
   ruleId: string;
   reason: string;
 }
-
-export type SafeAction = Omit<ProposedAction, 'intent'> & {
-  sourceId: string;
-  confidence: number;
-  effectiveContact?: string;
-  bodyOnlyRecipient?: boolean;
-  threadId?: string;
-};
 
 export interface Claim {
   id: string;
@@ -117,35 +114,6 @@ export interface RunTrace {
   steps: TraceStep[];
   mode?: AgentMode;
   model_usage?: ModelUsage;
-}
-
-export interface ThreadSource {
-  id: string;
-  threadId: string;
-  sender: string;
-  subjectKey: string;
-  receivedAt: string;
-  sent: boolean;
-  verified: boolean;
-  internetId?: string;
-  references?: string[];
-}
-
-export interface ReadOptions {
-  agent?: AgentConfig;
-  signal?: AbortSignal;
-  onUsage?: (usage: ModelUsage, error?: string) => void;
-}
-
-export type ReadResult = {
-  emailCount: number;
-  intents: InboxIntent[];
-  mailStates: Record<string, Snapshot>;
-  threadSources: ThreadSource[];
-};
-
-export interface Reader {
-  read(now: Date, scope: 'inbox' | 'trap', policy: InboxPolicy, options?: ReadOptions): Promise<ReadResult>;
 }
 
 export interface InboxTarget {

@@ -1,5 +1,5 @@
 import { scanOutboundSecrets, scanPromptInjection, type InboxPolicy } from '@siftvane/shared';
-import type { PolicyVerdict, ProposedAction, SafeAction, Tier } from './contracts.js';
+import type { PolicyVerdict, SafeAction, Tier } from './contracts.js';
 import { address } from './reader.js';
 import { evaluateWorkspaceAction } from '../workspace/policy.js';
 
@@ -7,17 +7,7 @@ function verdict(decision: PolicyVerdict['decision'], tier: Tier, ruleId: string
   return { decision, tier, ruleId, reason };
 }
 
-export function evaluateAction(action: ProposedAction, policy: InboxPolicy): PolicyVerdict {
-  return evaluateSafeAction(safeAction(action), policy, action.intent.taintedTargets);
-}
-
-export function safeAction(action: ProposedAction): SafeAction {
-  const { intent, ...rest } = action;
-  const effectiveContact = address(action.contact ?? '');
-  return { ...rest, sourceId: intent.messageId, threadId: intent.threadId, confidence: intent.confidence, effectiveContact,
-    bodyOnlyRecipient: intent.taintedTargets.includes(effectiveContact) };
-}
-
+/** Decides whether an agent's action runs on its own, waits for the user's approval, or is blocked. */
 export function evaluateSafeAction(action: SafeAction, policy: InboxPolicy, tainted: string[] = []): PolicyVerdict {
   const trusted = new Set([...policy.contacts, ...policy.allowlist].map((item) => item.toLowerCase()));
   const allowed = new Set(policy.allowlist.map((item) => item.toLowerCase()));
@@ -40,9 +30,6 @@ export function evaluateSafeAction(action: SafeAction, policy: InboxPolicy, tain
     const text = `${action.after?.subject ?? ''}\n${action.after?.text ?? ''}`;
     if (scanOutboundSecrets(text) || scanPromptInjection(text).detected) {
       return verdict('BLOCKED', 2, 'OUTBOUND_CONTENT_BLOCKED', 'Outbound content contains a secret or rejected instruction.');
-    }
-    if (action.requestedTier === 2 && action.reason === 'FINANCIAL_COMMITMENT_APPROVAL') {
-      return verdict('APPROVAL_REQUIRED', 2, 'FINANCIAL_COMMITMENT_APPROVAL', 'Bookings, purchases, and payment confirmations always require operator approval.');
     }
     if (action.kind === 'send' && (!allowed.has(target) || vip.has(target))) {
       return verdict('APPROVAL_REQUIRED', 2, vip.has(target) ? 'VIP_RECIPIENT' : 'RECIPIENT_NOT_ALLOWLISTED', 'This recipient requires explicit review.');

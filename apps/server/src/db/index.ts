@@ -16,48 +16,6 @@ const CREATE_TABLES_SQL = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS agents (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT NOT NULL,
-  raw_rules TEXT NOT NULL,
-  policy_ir_json TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active',
-  rate_limit_per_min INTEGER NOT NULL DEFAULT 60,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS agent_tokens (
-  id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  label TEXT NOT NULL,
-  token_prefix TEXT NOT NULL,
-  token_hash TEXT NOT NULL,
-  last_used_at TEXT,
-  revoked_at TEXT,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash);
-
-CREATE TABLE IF NOT EXISTS approval_requests (
-  id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL,
-  agent_name TEXT NOT NULL,
-  mcp_tool TEXT NOT NULL,
-  matched_rule_id TEXT,
-  rule_citation TEXT NOT NULL,
-  status TEXT NOT NULL,
-  delivery_status_json TEXT NOT NULL,
-  payload_hash TEXT NOT NULL,
-  payload_wiped INTEGER NOT NULL DEFAULT 0,
-  resolved_by TEXT,
-  created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL,
-  resolved_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status);
-
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
   trace_id TEXT NOT NULL DEFAULT '',
@@ -90,14 +48,6 @@ CREATE TABLE IF NOT EXISTS kill_switch_state (
   halted_agents_json TEXT NOT NULL DEFAULT '[]',
   aborted_inflight_count INTEGER NOT NULL DEFAULT 0,
   circuit_breaker_json TEXT NOT NULL DEFAULT '{}',
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS vault_secrets (
-  key TEXT PRIMARY KEY,
-  ciphertext TEXT NOT NULL,
-  iv TEXT NOT NULL,
-  auth_tag TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 

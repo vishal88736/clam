@@ -127,86 +127,6 @@ export const opCatalogForPrompt = [
   'Templates may use {{field}} for row fields, {{count}}, {{date}}, {{rows}} (bulleted list), {{summary}} (latest summarize step).',
 ].join('\n');
 
-const stop = new Set(['please', 'every', 'email', 'emails', 'mail', 'inbox', 'with', 'from', 'that', 'this', 'into', 'make', 'create', 'google',
-  'about', 'them', 'their', 'what', 'have', 'sheet', 'sheets', 'spreadsheet', 'summary', 'summarize', 'track', 'tracker', 'document', 'docs', 'drive',
-  'folder', 'calendar', 'remind', 'reminder', 'reminders', 'label', 'labels', 'draft', 'drafts', 'reply', 'replies', 'find', 'list', 'save', 'keep',
-  'messages', 'message', 'anything', 'everything', 'everyone', 'someone', 'should', 'would', 'could', 'then', 'also', 'when', 'were', 'there', 'which',
-  'those', 'these', 'other', 'some', 'only', 'just', 'mine', 'need', 'want', 'like', 'more', 'most', 'last', 'past', 'week', 'days', 'today', 'table',
-  'report', 'notes', 'note', 'write', 'writes', 'up', 'put', 'add', 'log', 'logs', 'deadline', 'deadlines', 'dates', 'date', 'attachments', 'attachment',
-  'pdfs', 'send', 'sent', 'tell', 'give', 'show', 'each', 'all', 'and', 'the', 'for', 'any', 'via', 'who', 'whom', 'emailed', 'doc', 'digest', 'overview',
-  'polite', 'politely', 'asked', 'asking', 'summarizing', 'summarising', 'summarise', 'tracking', 'quick', 'short', 'brief', 'nice', 'kindly', 'thank',
-  'thanks', 'reply', 'responding', 'everybody', 'anyone', 'people', 'person', 'thing', 'things', 'stuff', 'whatever', 'related', 'regarding', 'mailbox',
-  'gmail', 'spreadsheets', 'documents', 'files', 'file', 'items', 'item', 'using', 'based', 'make', 'build', 'prepare', 'help', 'look', 'check', 'through',
-  'photo', 'photos', 'receipt', 'receipts', 'screenshot', 'screenshots', 'image', 'images', 'picture', 'pictures', 'before', 'after', 'anything', 'is', 'due']);
-const fieldWords: Record<string, string> = {
-  amount: 'Amount', amounts: 'Amount', total: 'Amount', price: 'Amount', prices: 'Amount', cost: 'Amount', costs: 'Amount',
-  due: 'Due', deadline: 'Deadline', deadlines: 'Deadline', invoice: 'Invoice', order: 'Order', tracking: 'Tracking',
-  status: 'Status', vendor: 'Vendor', project: 'Project',
-};
-
-/** Offline composer: turns any request into a generic program using sources and sinks named in the text. */
-export function composeProgram(instruction: string, requested: Set<string>): { program: GenericStep[]; title: string } {
-  const text = instruction.toLowerCase();
-  // Words inside email addresses ("team" in sam@team.example) are recipients, not topics.
-  const words = [...new Set(text.replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, ' ').match(/\b[a-z][a-z0-9-]{3,}\b/g) ?? [])];
-  const quoted = [...instruction.matchAll(/"([^"]{2,40})"/g)].map((match) => match[1].toLowerCase());
-  // Light stemming so "meetings" also matches "Meeting request".
-  const stem = (word: string) => word.length > 4 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
-  const keywords = (quoted.length ? quoted : [...new Set(words.filter((word) => !stop.has(word) && !fieldWords[word] && !/^\d/.test(word)).map(stem))]).slice(0, 3);
-  const sender = requestedMailSender(instruction) ??
-    /\bfrom\s+(@?[\w-]{3,})\b/.exec(text)?.[1]?.replace(/^@/, '');
-  const days = requestedMailDays(text);
-  const subject = requestedMailSubject(instruction);
-  const title = 'Siftvane - ' + (keywords.length ? keywords.map((word) => word.replace(/^\w/, (char) => char.toUpperCase())).join(' ') : 'Inbox');
-  const photos = requested.has('photos') || /\b(?:photo|photos|picture|pictures|screenshot|screenshots|image|images)\b/.test(text);
-  const program: GenericStep[] = [];
-  const source = photos ? 'photos' : 'mail';
-  if (photos) program.push(genericStepSchema.parse({ id: 'photos', op: 'photos.extract', category: /screenshot/.test(text) ? 'SCREENSHOTS' : /document/.test(text) ? 'DOCUMENTS' : 'RECEIPTS' }));
-  else program.push(genericStepSchema.parse({ id: 'mail', op: 'mail.search', keywords: subject ? [] : keywords.filter((word) => word !== sender),
-    from_contains: sender, subject_contains: subject, newer_than_days: days, include_attachments: /\b(?:attachment|attachments|pdf|pdfs|files?)\b/.test(text) }));
-  // Field words include short ones such as "due", which the 4+ letter topic words above never contain.
-  const fields = [...new Set((text.match(/\b[a-z]{3,}\b/g) ?? []).map((word) => fieldWords[word]).filter(Boolean))];
-  const wantsFolder = requested.has('drive') || /\b(?:drive|folder|save|attachments?|pdfs?)\b/.test(text);
-  const folder = ['Siftvane', title.replace(/^Siftvane - /, '')];
-  if (wantsFolder && !photos && /\b(?:attachment|attachments|pdf|pdfs|files?|save)\b/.test(text)) {
-    program.push(genericStepSchema.parse({ id: 'files', op: 'drive.save_attachments', from: source, folder }));
-  } else if (wantsFolder) program.push(genericStepSchema.parse({ id: 'folder', op: 'drive.folder', path: folder }));
-  if (requested.has('sheets') || /\b(?:sheet|spreadsheet|tracker|table|log|track|list)\b/.test(text)) {
-    const columns = photos ? ['Date', 'Merchant', 'Amount', 'Currency', 'Due', 'Reference'] : ['Date', 'From', 'Subject', ...fields];
-    program.push(genericStepSchema.parse({ id: 'sheet', op: 'sheets.append', from: source, title, columns: [...new Set(columns)].slice(0, 12),
-      folder: wantsFolder ? folder : undefined }));
-  }
-  if (/\b(?:label|tag|mark|flag|categori[sz]e)\b/.test(text) && !photos) {
-    program.push(genericStepSchema.parse({ id: 'label', op: 'mail.label', from: source,
-      label: ('SIFTVANE_' + (keywords[0] ?? 'AGENT').toUpperCase().replace(/[^A-Z0-9]+/g, '_')).slice(0, 40) }));
-  }
-  if (requested.has('calendar') || /\b(?:remind|reminder|reminders|calendar|schedule)\b/.test(text)) {
-    const dateField = /\bdeadline/.test(text) ? 'deadline' : /\bdue\b/.test(text) || photos ? 'due' : 'date';
-    program.push(genericStepSchema.parse({ id: 'reminders', op: 'calendar.reminders', from: source, date_field: dateField,
-      title: photos ? 'Pay {{merchant}} {{amount}} {{currency}}' : '{{subject}}' }));
-  }
-  if (/\b(?:reply|replies|respond|draft|drafts|answer)\b/.test(text) && !photos) {
-    program.push(genericStepSchema.parse({ id: 'drafts', op: 'mail.draft_replies', from: source, subject: 'Re: {{subject}}',
-      body: 'Hello,\n\nThank you for your message about "{{subject}}". I will follow up shortly.\n\nBest regards' }));
-  }
-  const recipients = [...new Set([...instruction.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)].map((match) => match[0].toLowerCase()))]
-    .filter((address) => address !== sender && new RegExp('\\b(?:to|email|send|forward|share)\\b[^.]{0,40}' + address.replace(/[.+]/g, '\\$&')).test(text));
-  const wantsDoc = requested.has('docs') || /\b(?:doc|document|summary|summarize|summarise|report|digest|notes|overview|write up|brief)\b/.test(text);
-  const hasSink = program.length > 1;
-  if (wantsDoc || recipients.length || !hasSink) {
-    program.push(genericStepSchema.parse({ id: 'summary', op: 'summarize', from: source, heading: title.replace(/^Siftvane - /, '') }));
-  }
-  if (wantsDoc || !hasSink) {
-    program.push(genericStepSchema.parse({ id: 'doc', op: 'docs.write', title, heading: 'Summary - {{date}}', content: '{{summary}}',
-      folder: wantsFolder ? folder : undefined }));
-  }
-  if (recipients.length) {
-    program.push(genericStepSchema.parse({ id: 'send', op: 'mail.send', to: recipients.slice(0, 5), subject: title.replace(/^Siftvane - /, 'Update: '),
-      body: 'Hello,\n\nHere is the summary you asked for ({{count}} items):\n\n{{summary}}\n\nBest regards' }));
-  }
-  return { program: genericProgramSchema.parse(program), title };
-}
-
 const modeAliases: Record<string, 'append' | 'replace_section'> = {
   append: 'append', add: 'append', insert: 'append', replace: 'replace_section', replace_section: 'replace_section', overwrite: 'replace_section',
   update: 'replace_section', write: 'replace_section',
@@ -324,6 +244,11 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
       step.limit = clamp(source.limit, 1, 20) ?? 10;
       const category = String(source.category ?? 'RECEIPTS').toUpperCase();
       step.category = ['RECEIPTS', 'DOCUMENTS', 'SCREENSHOTS'].includes(category) ? category : 'RECEIPTS';
+    }
+    // Models often point "folder" at an earlier drive.folder step by its id: use that step's path, never a folder named after the id.
+    if (typeof step.folder === 'string') {
+      const named = steps.find((entry) => entry.op === 'drive.folder' && entry.id === step.folder) as { path?: string[] } | undefined;
+      if (named?.path) step.folder = [...named.path];
     }
     for (const name of ['folder', 'path']) if (step[name] !== undefined) step[name] = asFolder(step[name]);
     if (step.mode !== undefined) step.mode = modeAliases[String(step.mode).toLowerCase()] ?? 'replace_section';

@@ -2,9 +2,6 @@ import { existsSync, rmSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { AutonomousRunnerService } from './agents/runnerService.js';
-import { AgentService } from './agents/service.js';
-import { ApprovalService } from './approvals/service.js';
 import { AuditLogger, RealtimeEventHub } from './audit/logger.js';
 import { GoogleAccounts, validateGoogleConfig } from './auth/google.js';
 import { registerGoogleAuthRoutes } from './auth/routes.js';
@@ -15,15 +12,9 @@ import { InboxEngine } from './inbox/engine.js';
 import { registerInboxRoutes } from './inbox/routes.js';
 import { LiveTarget } from './inbox/targets.js';
 import { KillSwitchService } from './killswitch/service.js';
-import { MailService } from './mail/service.js';
 import { GmailLiveAdapter } from './mail/gmail.js';
-import { CryptoVault } from './mail/vault.js';
 import { registerMcpRoutes } from './mcp/server.js';
 import { verificationRedirects } from './mcp/verification.js';
-import type { SemanticClassifierFn } from './policy/classifier.js';
-import { PolicyEngine } from './policy/engine.js';
-import { registerApiRoutes, type StoredLlmSettings } from './routes/api.js';
-import { registerWebhookRoutes } from './routes/webhooks.js';
 import { MissionRunner } from './platform/runner.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { AiSettings } from './platform/aiSettings.js';
@@ -34,13 +25,8 @@ export interface SiftvaneRuntime {
   app: FastifyInstance;
   config: SiftvaneConfig;
   dbHandle: DbHandle;
-  agentService: AgentService;
-  policyEngine: PolicyEngine;
-  mailService: MailService;
-  approvalService: ApprovalService;
   auditLogger: AuditLogger;
   killSwitchService: KillSwitchService;
-  runnerService: AutonomousRunnerService;
   hub: RealtimeEventHub;
   inbox: InboxEngine;
   accounts: GoogleAccounts;
@@ -52,7 +38,6 @@ export interface SiftvaneRuntime {
 export async function createSiftvaneApp(overrides?: {
   databasePath?: string;
   config?: Partial<SiftvaneConfig>;
-  customClassifier?: SemanticClassifierFn;
   agent?: AgentConfig;
   google?: ConstructorParameters<typeof GoogleAccounts>[2];
 }): Promise<SiftvaneRuntime> {
@@ -66,27 +51,7 @@ export async function createSiftvaneApp(overrides?: {
   validateGoogleConfig(config);
   const dbHandle = createDatabase(config.databasePath);
   const accounts = new GoogleAccounts(dbHandle.sqlite, config, overrides?.google);
-  const vault = new CryptoVault(config.encryptionKey);
   const hub = new RealtimeEventHub();
-  const mailService = new MailService(dbHandle.db, vault, config);
-
-  const getLlmConfig = async () => {
-    const stored = await mailService.getVaultJson<StoredLlmSettings>('llm_provider_config');
-    return {
-      provider: stored?.provider ?? 'local_heuristic' as const,
-      model: stored?.model ?? config.llmModel,
-      openaiApiKey: stored?.openaiApiKey ?? config.openaiApiKey,
-      anthropicApiKey: stored?.anthropicApiKey ?? config.anthropicApiKey,
-      geminiApiKey: stored?.geminiApiKey ?? config.geminiApiKey,
-      ollamaBaseUrl: stored?.ollamaBaseUrl ?? config.ollamaBaseUrl,
-      timeoutMs: config.classifierTimeoutMs,
-    };
-  };
-
-  const agentService = new AgentService(dbHandle.db, getLlmConfig, hub);
-  await agentService.seedDefaultsIfEmpty();
-
-  const policyEngine = new PolicyEngine(getLlmConfig, overrides?.customClassifier);
   const auditLogger = new AuditLogger(dbHandle.db, hub);
   const killSwitchService = new KillSwitchService(dbHandle.db, auditLogger, hub, {
     violation_threshold: config.circuitBreaker.violationThreshold,
@@ -95,16 +60,6 @@ export async function createSiftvaneApp(overrides?: {
     trip_on_critical_injection: config.circuitBreaker.tripOnCriticalInjection,
   });
   await killSwitchService.init();
-
-  const approvalService = new ApprovalService(
-    dbHandle.db,
-    mailService,
-    auditLogger,
-    hub,
-    config,
-    killSwitchService
-  );
-  approvalService.startExpirySweeper();
 
   const app = Fastify({ logger: false });
   await app.register(cors, {
@@ -127,29 +82,7 @@ export async function createSiftvaneApp(overrides?: {
     exposedHeaders: ['Mcp-Session-Id'],
   });
 
-  const runnerService = new AutonomousRunnerService(
-    app,
-    config,
-    agentService,
-    mailService,
-    auditLogger,
-    killSwitchService,
-    hub,
-    getLlmConfig
-  );
-
-  registerApiRoutes(app, {
-    config,
-    agentService,
-    policyEngine,
-    mailService,
-    approvalService,
-    auditLogger,
-    killSwitchService,
-    runnerService,
-    hub,
-    getLlmConfig,
-  });
+  app.get('/api/health', async () => ({ status: 'ok', halted: killSwitchService.getState().status === 'HALTED' }));
 
   const lockfile = config.databasePath === ':memory:' ? undefined : config.lockfile;
   const inbox: InboxEngine = new InboxEngine({
@@ -202,23 +135,13 @@ export async function createSiftvaneApp(overrides?: {
   registerGoogleAuthRoutes(app, accounts, config, inbox);
   registerInboxRoutes(app, inbox, config, killSwitchService, accounts, lockfile, platform);
 
-  registerWebhookRoutes(app, approvalService);
-
   registerMcpRoutes(app, {
-    agentService,
-    policyEngine,
-    mailService,
-    approvalService,
-    auditLogger,
-    killSwitchService,
-    artifactsDir: config.artifactsDir,
     accounts,
     inbox,
     platform,
     missions,
     calendarId: config.calendarId,
     stagingDir: config.mailAttachmentsDir,
-    tracesDir: config.tracesDir,
     verificationRedirects: verificationRedirects(process.env.SIFTVANE_VERIFICATION_REDIRECTS),
   });
 
@@ -226,20 +149,14 @@ export async function createSiftvaneApp(overrides?: {
     app,
     config,
     dbHandle,
-    agentService,
-    policyEngine,
-    mailService,
-    approvalService,
     auditLogger,
     killSwitchService,
-    runnerService,
     hub,
     inbox,
     accounts,
     platform,
     missions,
     close: async () => {
-      approvalService.stopExpirySweeper();
       app.server.closeAllConnections?.();
       await missions.close();
       await app.close();

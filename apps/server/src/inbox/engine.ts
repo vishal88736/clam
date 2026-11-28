@@ -3,16 +3,13 @@ import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { inboxCalendarSchema, inboxPolicySchema, inboxScheduleSchema, type HandoffInput, type InboxPolicy, type InboxStage } from '@siftvane/shared';
+import { inboxCalendarSchema, type HandoffInput, type InboxPolicy, type InboxStage } from '@siftvane/shared';
 import { HandoffService, type HandoffResult } from '../handoffs/service.js';
 import { isPodCaseThread, podCase } from '../handoffs/sample.js';
 import type { ReaderMessage } from '../sandbox/seed.js';
-import { sandboxClock } from '../sandbox/seed.js';
 import type { ActionKind, Attention, Change, Claim, Decision, InboxTarget, MailSearch, McpCaller, Mode, RunRecord, SafeAction, Snapshot, Tier, TraceStep } from './contracts.js';
 import { addUsage, emptyUsage, resolveAgentConfig, type AgentConfig, type ModelUsage } from './agentConfig.js';
-import { buildPlan, playbooks } from './playbooks/index.js';
-import { evaluateAction, evaluateSafeAction, safeAction } from './policy.js';
-import { liveReader, sandboxReader } from './reader.js';
+import { evaluateSafeAction } from './policy.js';
 import { InboxStore } from './store.js';
 import { expectedAfter, matches, SandboxTarget } from './targets.js';
 import { canonicalJson, genesisHash, hashStep, sha256 } from './trace.js';
@@ -325,131 +322,6 @@ export class InboxEngine extends EventEmitter {
 
   stopMission(runId: string, reason: 'AGENT_RUN_PAUSED' | 'AGENT_RUN_CANCELLED') {
     this.active.get(runId)?.session.controller.abort(new Error(reason));
-  }
-
-  start(trigger = 'manual', scope: 'inbox' | 'trap' = 'inbox', mode = this.activeMode()) {
-    return this.launch(trigger, mode, (session) => this.execute(session, scope));
-  }
-
-  private async readPlan(mode: Mode, scope: 'inbox' | 'trap', policy: InboxPolicy, session?: Session) {
-    this.guard();
-    const now = mode === 'sandbox' ? new Date(sandboxClock) : new Date();
-    const reader = mode === 'sandbox' ? sandboxReader(this.store.filename) : liveReader(() => this.config.live!.reader(mode, undefined, session?.controller.signal));
-    const read = await reader.read(now, scope, policy, session ? {
-      agent: this.agent, signal: session.controller.signal,
-      onUsage: (usage, error) => this.recordModel(session, { event: 'MODEL_ANALYSIS', status: error ?? 'VALIDATED' }, usage),
-    } : undefined);
-    this.guard();
-    const target = this.target(mode);
-    const plan = buildPlan({
-      intents: read.intents, calendar: await target.calendar(), mailStates: read.mailStates, now, policy,
-      bills: target.all('bill'), agentMode: session ? this.agent.mode : 'offline-smoke',
-      threadSources: read.threadSources,
-    });
-    return { ...plan, ...read };
-  }
-
-  private async execute(session: Session, scope: 'inbox' | 'trap') {
-    await this.charge(session);
-    const { run, policy } = session;
-    const plan = await this.readPlan(run.mode, scope, policy, session);
-    run.emails = plan.emailCount;
-    run.conflicts = plan.conflicts.length;
-    const threats = plan.intents.filter((intent) => intent.kind === 'hostile_suspected');
-    run.threats = threats.length;
-    const blockedIds = new Set(threats.map((threat) => threat.messageId));
-    for (const change of plan.conflicts) this.store.addChange(run.id, change);
-
-    this.emitStep(session, 'PLAN', {
-      sources: plan.intents.map((intent) => ({
-        msg_id: intent.messageId, thread_id: intent.threadId, sender: intent.sender, received_at: intent.receivedAt,
-        kind: intent.kind, confidence: intent.confidence,
-        priority: intent.priority ?? 'normal', context_ids: intent.contextIds ?? [], agent_guidance: intent.guidance ?? null,
-        evidence: run.mode === 'sandbox' && intent.kind !== 'hostile_suspected' ? intent.evidence : null,
-        evidence_hash: sha256(intent.evidence), rule_ids: intent.ruleIds,
-      })),
-      actions: plan.actions.length, conflicts: plan.conflicts.length,
-      blocked_and_quarantined: threats.map((intent) => ({
-        msg_id: intent.messageId, sender: intent.sender, threat_type: intent.ruleIds.join(', '),
-        policy_rule_id: intent.ruleIds[0], snippet_redacted: '[redacted]',
-      })),
-    });
-
-    if (threats.filter((intent) => !intent.ruleIds.every((id) => id.startsWith('INPUT_'))).length >= 2) {
-      this.emitStep(session, 'POLICY', { rule_id: 'ACTIVE_ATTACK_HALT', detected: threats.length, decision: 'BLOCKED' });
-      await this.trip(session, 'ACTIVE_ATTACK_HALT');
-    }
-
-    if (scope !== 'trap') await this.reconcile(session);
-    const repeats = new Map<string, number>();
-    let violations = 0;
-    for (const proposal of plan.actions) {
-      this.checkout(session);
-      const id = actionId(safeAction(proposal), run.mode);
-      const verdict = scope === 'trap' && !(proposal.playbook === 'hostile_input_quarantine' &&
-        proposal.kind === 'mail' && proposal.target === proposal.intent.messageId) ? {
-        decision: 'BLOCKED' as const, tier: 2 as const, ruleId: 'TRAP_ISOLATION',
-        reason: 'Trap Pack execution permits quarantine only.',
-      } : evaluateAction(proposal, policy);
-      if (verdict.decision !== 'BLOCKED') {
-        try {
-          this.requireMutationScope(run.mode, proposal.kind);
-          this.requireSafePayload(run.mode, proposal);
-        } catch (failure) {
-          const reason = errorCode(failure);
-          if (!['SCOPE_UPGRADE_REQUIRED','OUTBOUND_CONTENT_BLOCKED'].includes(reason)) throw failure;
-          this.emitStep(session, 'POLICY', { action: proposal.kind, source_msg_id: proposal.intent.messageId, thread_id: proposal.intent.threadId,
-            rule_id: reason, decision: 'BLOCKED' });
-          continue;
-        }
-      }
-      this.emitStep(session, 'POLICY', {
-        action: proposal.kind, target: proposal.target, playbook_id: proposal.playbook, source_msg_id: proposal.intent.messageId,
-        thread_id: proposal.intent.threadId, confidence: proposal.intent.confidence,
-        rule_id: verdict.ruleId, reason: verdict.reason, decision: verdict.decision, tier: verdict.tier,
-        planned: run.mode !== 'sandbox' && ['send','draft'].includes(proposal.kind) ? null : proposal.after,
-      });
-      if (verdict.decision === 'BLOCKED') {
-        blockedIds.add(proposal.intent.messageId);
-        run.autonomy = { autonomous_verified: 0, gated_for_approval: 0, blocked_quarantined: blockedIds.size };
-        if (++violations >= 2) await this.trip(session, 'POLICY_VIOLATION_BURST');
-        continue;
-      }
-      if (verdict.decision === 'APPROVAL_REQUIRED') {
-        const action = { ...safeAction(proposal) };
-        const approval: Attention = {
-          approval_id: `approval_${id.slice(0, 24)}_v${run.policyVersion}`, run_id: run.id, mode: run.mode,
-          priority: proposal.externalGuests || ['urgent', 'high'].includes(proposal.intent.priority ?? '') || /SPOOF|VIP|CONFLICT/.test(verdict.ruleId) ? 'high' : 'medium',
-          expires_at: new Date(Date.now() + 86_400_000).toISOString(), triggered_rule_id: verdict.ruleId,
-          reason: verdict.reason, proposed_action: action, editable_payload: ['send', 'draft', 'calendar'].includes(action.kind) ? action.after : null,
-          status: 'PENDING',
-        };
-        this.store.addApproval(approval);
-        continue;
-      }
-      const repeated = (repeats.get(id) ?? 0) + 1;
-      repeats.set(id, repeated);
-      if (repeated >= 3) await this.trip(session, 'IDENTICAL_TOOL_LOOP');
-      await this.apply(session, safeAction(proposal), verdict.tier, verdict.ruleId);
-    }
-  }
-
-  private async reconcile(session: Session) {
-    const target = this.target(session.run.mode);
-    for (const entry of this.store.unreconciled(session.run.mode)) {
-      await this.charge(session);
-      const current = await target.read(entry, entry.providerId ?? entry.id);
-      this.checkout(session);
-      const verified = matches(current, entry.after);
-      const check = this.emitStep(session, 'CHECK', {
-        action_id: entry.id, outcome: verified ? 'RECONCILED' : 'MANUAL_RECONCILIATION_REQUIRED',
-      });
-      if (verified) {
-        this.store.updateAction({ ...entry, status: 'VERIFIED', traceId: check.id, creationPending: false });
-        if (entry.kind === 'handoff') this.handoffs.saveTrace(entry.target, check.id);
-        this.store.addChange(entry.runId, toChange(entry));
-      }
-    }
   }
 
   async recordMcpRead(mode: Mode, caller: McpCaller, detail: Record<string, unknown> = {}, failure?: string) {
@@ -1013,15 +885,6 @@ export class InboxEngine extends EventEmitter {
     }
   }
 
-  setSchedule(value: unknown, mode = this.activeMode()) {
-    const schedule = inboxScheduleSchema.parse(value);
-    const nextAt = schedule.enabled ? schedule.nextAt ?? new Date(Date.now() + scheduleDelay(schedule)).toISOString() : undefined;
-    const saved = { ...schedule, nextAt };
-    this.store.saveSchedule(mode, saved);
-    this.emit('state', { schedule: saved });
-    return saved;
-  }
-
   startScheduler() {
     if (this.store.acquireLease(this.leaseOwner)) {
       try { this.recoverInterrupted(); }
@@ -1038,22 +901,6 @@ export class InboxEngine extends EventEmitter {
         try { this.recoverInterrupted(); }
         finally { this.store.releaseLease(this.leaseOwner); }
       }
-      if (this.halted() || this.active.size) return;
-      const due = (['sandbox', ...(this.config.live?.modes() ?? [])] as Mode[]).map((mode) => ({
-        mode, schedule: this.store.schedule(mode),
-      })).filter(({ schedule }) => schedule.enabled && schedule.nextAt && Date.parse(schedule.nextAt) <= Date.now())
-        .sort((a, b) => Date.parse(a.schedule.nextAt!) - Date.parse(b.schedule.nextAt!))[0];
-      if (!due) return;
-      const { mode, schedule } = due;
-      const claimed = this.store.transaction(() => {
-        if (this.store.schedule(mode).nextAt !== schedule.nextAt) return false;
-        this.store.saveSchedule(mode, { ...schedule, nextAt: new Date(Date.now() + scheduleDelay(schedule)).toISOString() });
-        return true;
-      });
-      if (claimed) {
-        try { this.start('scheduled', 'inbox', mode); }
-        catch (error) { this.emit('state', { schedule_error: errorCode(error) }); }
-      }
     }, 1000);
     this.scheduler.unref();
   }
@@ -1066,46 +913,10 @@ export class InboxEngine extends EventEmitter {
     this.store.close();
   }
 
-  async preview(candidate: unknown, mode = this.activeMode()) {
-    const draft = inboxPolicySchema.parse(candidate);
-    const { version, policy } = this.store.policy(mode);
-    const [current, updated] = await Promise.all([this.readPlan('sandbox', 'inbox', policy), this.readPlan('sandbox', 'inbox', draft)]);
-    // Compare the disposition of a hostile source separately from permission to write its quarantine label.
-    const hostileSources = new Set([...current.intents, ...updated.intents]
-      .filter((intent) => intent.kind === 'hostile_suspected').map((intent) => intent.messageId));
-    const decisions = (plan: typeof current, config: InboxPolicy) => {
-      const rows = new Map(plan.actions.map((action) => [
-        [action.intent.messageId, action.playbook, action.kind, action.target].join('/'),
-        { source_msg_id: action.intent.messageId, action: String(action.kind), target: action.target, ...evaluateAction(action, config) },
-      ]));
-      for (const intent of plan.intents) {
-        if (!hostileSources.has(intent.messageId)) continue;
-        const blocked = intent.kind === 'hostile_suspected';
-        rows.set(intent.messageId + '/ingress', {
-          source_msg_id: intent.messageId, action: 'ingress', target: intent.messageId,
-          decision: blocked ? 'BLOCKED' : 'AUTONOMOUS', tier: blocked ? 2 : 0,
-          ruleId: blocked ? intent.ruleIds[0] ?? 'HOSTILE_INPUT' : 'INGRESS_ACCEPTED',
-          reason: blocked ? 'The source is isolated before action planning.' : 'The source may enter policy evaluation.',
-        });
-      }
-      return rows;
-    };
-    const before = decisions(current, policy);
-    const after = decisions(updated, draft);
-    return {
-      mode: 'offline-smoke', current_version: version, draft_version: version + 1, messages_scanned: current.emailCount,
-      rows: [...new Set([...before.keys(), ...after.keys()])].map((id) => ({
-        id, before: before.get(id) ?? null, after: after.get(id) ?? null,
-        changed: canonicalJson(before.get(id)) !== canonicalJson(after.get(id)),
-      })),
-    };
-  }
-
   briefing(id?: string, mode = this.activeMode()) {
     const selected = id ? this.store.run(id) : null;
     if (selected) mode = selected.mode;
     const pending = this.store.approvals(mode);
-    const billFlags = pending.filter((item) => item.proposed_action.playbook === 'bills_trials_spoof_guard');
     const runs = this.store.runs(mode, false);
     const run = id ? selected : runs.find((item) => !/^(?:rollback|approval):/.test(item.trigger) &&
       (item.trigger !== 'mcp' || this.store.countChanges(item.id) > 0)) ?? null;
@@ -1115,7 +926,7 @@ export class InboxEngine extends EventEmitter {
     return {
       mode: mode === 'sandbox' ? 'sandbox' : 'live', agent_mode: this.agent.mode, agent_model: this.agent.model,
       halted: this.halted(), last_success: runs.find((item) => item.status === 'COMPLETED') ?? null,
-      schedule: this.store.schedule(mode), run_meta: run ? {
+      run_meta: run ? {
         ...run, run_id: run.id, started_at: run.startedAt, completed_at: run.completedAt,
         kill_switch_tripped: run.killSwitchTripped, rollback_available: this.hasRollback(run.id),
         metrics: { emails: run.emails, conflicts: run.conflicts, threats: run.threats, steps: run.steps, calendar: run.calendar, outbound: run.outbound, tokens: run.tokens, usd: run.usd },
@@ -1128,17 +939,6 @@ export class InboxEngine extends EventEmitter {
       })),
       needs_attention: (id ? pending.filter((item) => item.run_id === id) : pending).filter((item) => item.status === 'PENDING'),
       blocked_and_quarantined: trace?.steps.find((step) => Array.isArray(step.detail.blocked_and_quarantined))?.detail.blocked_and_quarantined ?? [],
-      digest: {
-        upcoming_bills_summary: this.store.entities(mode, 'bill').filter((entry) => entry?.type !== 'history').map<Record<string, unknown>>((entry) => ({
-          ...entry, duplicateOrSpoofed: billFlags.some((item) => item.triggered_rule_id === 'DUPLICATE_OR_SPOOFED_INVOICE' &&
-            item.proposed_action.after?.invoice === entry?.invoice),
-        })),
-        bill_flags: billFlags,
-        active_deliveries: this.store.entities(mode, 'delivery'),
-        waiting_on_commitments: this.store.entities(mode, 'commitment').filter((entry) => !entry?.replied),
-        newsletter_rollup: this.store.entities(mode, 'newsletter'),
-      },
-      playbooks,
     };
   }
 
@@ -1154,25 +954,12 @@ export class InboxEngine extends EventEmitter {
     };
   }
 
-  async ics(mode = this.activeMode()) {
-    const data = await this.calendar(mode);
-    const escape = (text: string) => text.replace(/\\/g, '\\\\').replace(/[\r\n]+/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
-    const date = (value: string) => new Date(value).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Siftvane//Inbox Briefing//EN',
-      ...data.events.flatMap((row) => {
-        const event = inboxCalendarSchema.parse(row);
-        return ['BEGIN:VEVENT', `UID:${escape(event.id)}@siftvane.local`, `DTSTAMP:${date(new Date().toISOString())}`,
-          `DTSTART:${date(event.start)}`, `DTEND:${date(event.end)}`, `SUMMARY:${escape(event.title)}`, 'END:VEVENT'];
-      }), 'END:VCALENDAR', ''].join('\r\n');
-  }
 }
 
 const actionId = (action: SafeAction, mode: Mode) => sha256([
   mode, action.sourceId, action.playbook, action.kind, action.target, action.version,
 ].join('\0'));
 
-const scheduleDelay = (schedule: { frequency: string; intervalMinutes: number }) =>
-  (schedule.frequency === 'daily' ? 1440 : schedule.frequency === 'weekly' ? 10080 : schedule.intervalMinutes) * 60_000;
 
 function toChange(action: Claim): Change {
   const before = action.before ?? {};

@@ -5,7 +5,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@siftvane/shared': path.resolve(__dirname, 'packages/shared/src/index.ts'),
-      '@siftvane/agent': path.resolve(__dirname, 'apps/agent/src/index.ts'),
       '@siftvane/server': path.resolve(__dirname, 'apps/server/src'),
     },
   },

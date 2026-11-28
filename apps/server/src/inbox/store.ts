@@ -3,15 +3,14 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { inboxPolicySchema, type InboxPolicy, type InboxSchedule } from '@siftvane/shared';
-import { livePolicy, sandboxDriveFiles, sandboxReplyHistory, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
+import { inboxPolicySchema, type InboxPolicy } from '@siftvane/shared';
+import { livePolicy, sandboxDriveFiles, sandboxReplyHistory, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy } from '../sandbox/seed.js';
 import type { ActionKind, Attention, Claim, Mode, RunRecord, RunTrace, Snapshot, TraceStep } from './contracts.js';
 import { genesisHash } from './trace.js';
 import { handoffSchema } from '../handoffs/schema.js';
 import { platformSchema } from '../platform/schema.js';
-import { sandboxPhotos, vendorQuoteReplies, workspaceMessages } from '../sandbox/seed.js';
+import { sandboxPhotos, workspaceMessages } from '../sandbox/seed.js';
 
-const latestSchedule: InboxSchedule = { enabled: false, frequency: 'daily', intervalMinutes: 1440 };
 const ddl = `
 BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS system_state (
@@ -100,16 +99,13 @@ export class InboxStore {
         this.sqlite.prepare('INSERT OR IGNORE INTO inbox_policies VALUES (?, 1, ?, ?)').run(mode, JSON.stringify(policy), at);
       }
       if (!this.state('seed-v1')) {
-        for (const [scope, fixtures] of [['inbox', sandboxMessages], ['trap', trapMessages]] as const) {
+        for (const [scope, fixtures] of [['inbox', sandboxMessages]] as const) {
           for (const message of fixtures) {
             this.sqlite.prepare('INSERT INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(message.id, scope, JSON.stringify(message));
             this.setEntity('sandbox', 'mail', message.id, { labels: message.labels });
           }
         }
         for (const event of sandboxEvents) this.setEntity('sandbox', 'calendar', event.id, event);
-        this.setEntity('sandbox', 'bill', 'studio:studio-2025', {
-          vendor: 'Studio', invoice: 'STUDIO-2025', amount: 25, currency: 'USD', due: '2025-12-09', type: 'history',
-        });
         this.setState('seed-v1', true);
       }
       if (!this.state('seed-v2')) {
@@ -125,7 +121,7 @@ export class InboxStore {
         this.setState('seed-v2', true);
       }
       if (!this.state('seed-v3-workspace')) {
-        for (const [scope, fixtures] of [['workspace', workspaceMessages], ['vendor_pending', vendorQuoteReplies]] as const) {
+        for (const [scope, fixtures] of [['workspace', workspaceMessages]] as const) {
           for (const message of fixtures) {
             this.sqlite.prepare('INSERT OR IGNORE INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(message.id, scope, JSON.stringify(message));
           }
@@ -204,13 +200,6 @@ export class InboxStore {
     this.sqlite.prepare('INSERT INTO inbox_state VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body').run(key, JSON.stringify(data));
   }
 
-  schedule(mode: Mode = 'sandbox'): InboxSchedule {
-    return this.state<InboxSchedule>(mode === 'sandbox' ? 'schedule' : 'schedule:' + mode) ?? latestSchedule;
-  }
-
-  saveSchedule(mode: Mode, schedule: InboxSchedule) {
-    this.setState(mode === 'sandbox' ? 'schedule' : 'schedule:' + mode, schedule);
-  }
 
   acquireLease(owner: string, now = Date.now()): boolean {
     return Number(this.sqlite.prepare(`

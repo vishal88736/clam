@@ -1,5 +1,4 @@
 import { createServer } from 'node:http';
-import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -12,8 +11,7 @@ import { SandboxTarget, LiveTarget } from '../apps/server/src/inbox/targets.js';
 import { InboxStore } from '../apps/server/src/inbox/store.js';
 import type { SafeAction } from '../apps/server/src/inbox/contracts.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
-import { sandboxReader } from '../apps/server/src/inbox/reader.js';
-import { sandboxPolicy } from '../apps/server/src/sandbox/seed.js';
+import { callModel } from '../apps/server/src/platform/llmPlanner.js';
 
 const runProcess = promisify(execFile);
 const footer = 'This email was sent automatically by Siftvane on behalf of the account owner.';
@@ -65,7 +63,7 @@ it('selects LLM defaults from credentials or an Ollama endpoint and respects exp
   expect(() => resolveAgentConfig({ SIFTVANE_AGENT_MODE: 'llm', SIFTVANE_LLM_PROVIDER: 'gemini' })).toThrow('Missing GEMINI_API_KEY');
 });
 
-it('uses the actual CLI to halt a run while its read-only model request is still open', async () => {
+it('uses the actual CLI to halt an agent run while its AI request is still open', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'siftvane-halt-cli-'));
   let signalStart!: () => void;
   const requested = new Promise<void>((resolve) => { signalStart = resolve; });
@@ -91,12 +89,14 @@ it('uses the actual CLI to halt a run while its read-only model request is still
   await writeFile(compiler, JSON.stringify({ compilerOptions: {
     baseUrl: process.cwd(), paths: {
       '@siftvane/shared': ['packages/shared/src/index.ts'],
-      '@siftvane/agent': ['apps/agent/src/index.ts'],
     },
   } }));
   try {
     const base = await runtime.app.listen({ port: 0, host: '127.0.0.1' });
-    const run = runtime.inbox.start('mid-flight-test');
+    // An agent step waiting on the AI (the request never answers) must stop as soon as the operator halts.
+    const run = runtime.inbox.mission('mid-flight-test', 'sandbox', async (context) => {
+      await callModel(runtime.inbox.agent, 'Return JSON only: {"ok": true}', undefined, 50, { cancel: context.signal });
+    });
     await requested;
     expect(wire).toHaveProperty('format');
     expect(wire).not.toHaveProperty('tools');
@@ -105,11 +105,10 @@ it('uses the actual CLI to halt a run while its read-only model request is still
     await runProcess(process.execPath, ['--import', 'tsx', 'scripts/inbox-agent.ts', 'halt', 'mid-flight test'],
       { env: { ...process.env, TSX_TSCONFIG_PATH: compiler, SIFTVANE_PUBLIC_URL: base, DATABASE_PATH: ':memory:' }, timeout: 7000 });
     const outcome = await run.done;
-    expect(outcome).toMatchObject({ status: 'HALTED', agent_mode: 'llm', outbound: 0, calendar: 0 });
+    expect(outcome).toMatchObject({ status: 'HALTED', outbound: 0, calendar: 0 });
     expect(runtime.inbox.store.actions(outcome.id)).toEqual([]);
     const trace = JSON.parse(await readFile(path.join(directory, outcome.id + '.json'), 'utf8'));
     expect(verifyTrace(trace)).toBe(true);
-    expect(trace.steps.at(-1).budgets).toMatchObject({ tokens: null, usd: null });
   } finally {
     await runtime.close();
     provider.closeAllConnections();
@@ -118,39 +117,18 @@ it('uses the actual CLI to halt a run while its read-only model request is still
   }
 }, 12_000);
 
-it('holds the actual Plane A SQLite connection read-only during a sandbox read', async () => {
-  const store = new InboxStore(':memory:');
-  let observed = false;
-  const prepare = DatabaseSync.prototype.prepare;
-  const observer = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function (this: DatabaseSync, sql: string) {
-    if (sql.includes('SELECT m.body, m.scope')) {
-      observed = true;
-      expect(() => this.exec('UPDATE inbox_sandbox_messages SET scope=scope')).toThrow(/readonly/i);
-    }
-    return prepare.call(this, sql);
-  });
-  try {
-    const read = await sandboxReader(store.filename).read(new Date(), 'inbox', sandboxPolicy);
-    expect(observed).toBe(true);
-    expect(read.emailCount).toBe(20);
-  } finally {
-    observer.mockRestore();
-    store.close();
-  }
-});
-
 it('exits nonzero from the trace CLI after modifying exactly one byte', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'siftvane-tamper-cli-'));
   const runtime = await createSiftvaneApp({
     databasePath: ':memory:', config: { tracesDir: directory }, agent: resolveAgentConfig({ SIFTVANE_AGENT_MODE: 'offline-smoke' }),
   });
   try {
-    const result = await runtime.inbox.start('cli-proof').done;
+    const result = await runtime.inbox.mission('cli-proof', 'sandbox', async () => undefined).done;
     const trace = path.join(directory, result.id + '.json');
     const compiler = path.join(directory, 'tsconfig.json');
     await writeFile(compiler, JSON.stringify({ compilerOptions: {
       baseUrl: process.cwd(),
-      paths: { '@siftvane/shared': ['packages/shared/src/index.ts'], '@siftvane/agent': ['apps/agent/src/index.ts'] },
+      paths: { '@siftvane/shared': ['packages/shared/src/index.ts'] },
     } }));
     const cli = (filename: string) => runProcess(process.execPath, ['--import', 'tsx', 'scripts/inbox-agent.ts', 'verify-trace', filename],
       { env: { ...process.env, TSX_TSCONFIG_PATH: compiler, DATABASE_PATH: ':memory:' }, timeout: 7000 });

@@ -72,6 +72,8 @@ export const time = (value: string | null | undefined) => value && !Number.isNaN
 const friendly: Record<string, string> = {
   AI_MODEL_UNAVAILABLE: 'The AI model could not be reached, so no agent was created. Start your model (for Ollama: run "ollama serve") or check the API key, then try again.',
   AI_PLAN_UNUSABLE: 'The AI model could not turn this request into a workable plan. Try rephrasing it, or use a larger model.',
+  AI_PROVIDER_REQUIRED: 'Choose an AI provider in Profile first. The AI plans every agent, so none can be made without one.',
+  AGENT_PLAN_RETIRED: 'This agent was made with an older built-in workflow that no longer exists. Remove it and describe the job again.',
 };
 export const nice = (value: string) => friendly[value] ?? value.replace(/_/g, ' ').replace(/^./, (char) => char.toUpperCase());
 

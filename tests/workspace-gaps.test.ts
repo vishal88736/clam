@@ -12,6 +12,7 @@ import type { AgentConfig } from '../apps/server/src/inbox/agentConfig.js';
 import { planFromProgram } from '../apps/server/src/platform/planner.js';
 import { genericStepSchema } from '../apps/server/src/platform/generic.js';
 import { extractPhotoDetails, parseReceiptText } from '../apps/server/src/workspace/photos.js';
+import { fakeModel } from './support/fakeModel.js';
 import type { WorkspaceAdapter } from '../apps/server/src/workspace/types.js';
 
 type Runtime = Awaited<ReturnType<typeof createSiftvaneApp>>;
@@ -127,42 +128,18 @@ it('restores an overwritten Drive file from its verified backup on rollback', ()
   await client.close();
 }), 60_000);
 
-it('treats an expired approval as declined so a waiting agent never hangs', () => runtimeTest(async (runtime) => {
-  const { agent_id } = await createAgent(runtime, 'Email these 4 vendors for quotes on 500 custom boxes and compare them in a Sheet.');
+it('treats an expired approval as declined so a waiting agent never hangs', () => withPlan({"reasoning": "Draft replies to meeting emails.", "name": "Meeting Replies", "schedule_mode": "one_shot", "program": [{"id": "meet", "op": "mail.search", "keywords": ["meeting"]}, {"id": "reply", "op": "mail.draft_replies", "from": "meet", "subject": "Re: {{subject}}", "body": "Thanks, I will get back to you."}]}, async (runtime) => {
+  const { agent_id } = await createAgent(runtime, 'Draft replies to everyone who emailed me about meetings.');
   const waiting = await until(() => runtime.platform.agent(agent_id)!, (agent) => agent.status === 'input_required');
-  const approval = runtime.inbox.store.approval(waiting.state.pending_approvals[0])!;
-  runtime.inbox.store.updateApproval({ ...approval, expires_at: new Date(Date.now() - 1000).toISOString() });
+  for (const id of waiting.state.pending_approvals) {
+    const approval = runtime.inbox.store.approval(id)!;
+    runtime.inbox.store.updateApproval({ ...approval, expires_at: new Date(Date.now() - 1000).toISOString() });
+  }
+  await runtime.missions.tick();
   await until(() => runtime.platform.agent(agent_id)!, (agent) => agent.status === 'completed');
-  expect(runtime.inbox.store.approval(approval.approval_id)!.status).toBe('EXPIRED');
-  expect(runtime.platform.logs(user, { agentId: agent_id }).find((entry) => entry.action_name === 'rfq_batch_declined')!.output_summary).toContain('expired');
-  expect(runtime.inbox.store.sqlite.prepare("SELECT count(*) AS n FROM inbox_actions WHERE kind='send'").get()).toEqual({ n: 0 });
-}), 60_000);
-
-it('waits for missing vendor replies until the requested quote window closes', () => runtimeTest(async (runtime) => {
-  const { agent_id } = await createAgent(runtime, 'Email these 4 vendors for quotes on 500 custom boxes, wait up to 2 hours for replies, and compare them in a Sheet.');
-  expect(runtime.platform.agent(agent_id)!.workflow_plan.params.quote_wait_hours).toBe(2);
-  const waiting = await until(() => runtime.platform.agent(agent_id)!, (agent) => agent.status === 'input_required');
-  await runtime.app.inject({ method: 'POST', url: '/api/inbox/approvals/' + waiting.state.pending_approvals[0], payload: { approve: true } });
-  const pending = await until(() => runtime.platform.agent(agent_id)!, (agent) => agent.state.phase === 'awaiting_quotes' && (agent.state.notes ?? []).length > 0);
-  expect(pending.state.notes![0]).toMatch(/^Waiting for 1 of 4 vendor replies until /);
-  expect(Date.parse(pending.next_run_at!)).toBeGreaterThan(Date.now() + 60_000);
-  expect(runtime.platform.artifacts(user, agent_id)).toHaveLength(0);
-  // Close the window: the agent proceeds with the three replies it has.
-  runtime.platform.updateAgent(agent_id, { next_run_at: new Date().toISOString(),
-    state: { ...pending.state, phase_started_at: new Date(Date.now() - 3 * 3_600_000).toISOString() } });
-  await until(() => runtime.platform.agent(agent_id)!, (agent) => agent.status === 'completed');
-  expect(runtime.platform.artifacts(user, agent_id).map((row) => row.service).sort()).toEqual(['google_doc', 'google_sheet']);
-}), 60_000);
-
-it('closes a quote window with no usable replies and leaves booking untouched', () => runtimeTest(async (runtime) => {
-  const { agent_id } = await createAgent(runtime, 'Email 4 vendors for quotes on 500 custom boxes, compare them, and book the cheapest.');
-  const waiting = await until(() => runtime.platform.agent(agent_id)!, (agent) => agent.status === 'input_required');
-  runtime.inbox.store.sqlite.prepare("DELETE FROM inbox_sandbox_messages WHERE scope='vendor_pending'").run();
-  await runtime.app.inject({ method: 'POST', url: '/api/inbox/approvals/' + waiting.state.pending_approvals[0], payload: { approve: true } });
-  const agent = await until(() => runtime.platform.agent(agent_id)!, (entry) => entry.status === 'completed');
-  expect(agent).toMatchObject({ next_run_at: null, state: { phase: 'no_usable_quotes', pending_approvals: [] } });
-  expect(agent.state.notes).toContain('The quote window closed without a usable price.');
-  expect(runtime.platform.artifacts(user, agent_id)).toHaveLength(0);
+  expect(waiting.state.pending_approvals.map((id) => runtime.inbox.store.approval(id)!.status)).toEqual(waiting.state.pending_approvals.map(() => 'EXPIRED'));
+  expect(runtime.platform.logs(user, { agentId: agent_id }).find((entry) => entry.action_name === 'review_resolved')!.output_summary).toContain('expired');
+  expect(runtime.inbox.store.sqlite.prepare("SELECT count(*) AS n FROM inbox_actions WHERE kind='draft'").get()).toEqual({ n: 0 });
 }), 60_000);
 
 it('keeps an agent paused when a required workspace action is blocked', () => runtimeTest(async (runtime) => {
@@ -180,7 +157,7 @@ it('keeps an agent paused when a required workspace action is blocked', () => ru
   expect(runtime.platform.artifacts(user, agent.id)).toHaveLength(0);
 }));
 
-it('keeps pause and cancel decisions after a worker finishes and cancels pending approvals', () => runtimeTest(async (runtime) => {
+it('keeps pause and cancel decisions after a worker finishes and cancels pending approvals', () => withPlan([{"reasoning": "Draft replies to meeting emails.", "name": "Meeting Replies", "schedule_mode": "one_shot", "program": [{"id": "meet", "op": "mail.search", "keywords": ["meeting"]}, {"id": "reply", "op": "mail.draft_replies", "from": "meet", "subject": "Re: {{subject}}", "body": "Thanks, I will get back to you."}]}, {"reasoning": "Summarize order mail.", "name": "Order Summary", "schedule_mode": "one_shot", "program": [{"id": "orders", "op": "mail.search", "keywords": ["order"]}, {"id": "sum", "op": "summarize", "from": "orders"}, {"id": "doc", "op": "docs.write", "title": "Order Summary", "content": "{{summary}}"}]}], async (runtime) => {
   const { agent_id: draftId } = await createAgent(runtime, 'Draft replies to everyone who emailed me about meetings.');
   const waiting = await until(() => runtime.platform.agent(draftId)!, (entry) => entry.status === 'input_required');
   const cancelled = await runtime.app.inject({ method: 'POST', url: `/api/inbox/platform/agents/${draftId}/cancel` });
@@ -211,7 +188,7 @@ it('keeps pause and cancel decisions after a worker finishes and cancels pending
   }
 }));
 
-it('keeps a due agent scheduled when another worker holds the lease and surfaces abandoned claims', () => runtimeTest(async (runtime) => {
+it('keeps a due agent scheduled when another worker holds the lease and surfaces abandoned claims', () => withPlan([{"reasoning": "Summarize order mail.", "name": "Order Summary", "schedule_mode": "one_shot", "program": [{"id": "orders", "op": "mail.search", "keywords": ["order"]}, {"id": "sum", "op": "summarize", "from": "orders"}, {"id": "doc", "op": "docs.write", "title": "Order Summary", "content": "{{summary}}"}]}, {"reasoning": "Summarize order mail.", "name": "Order Summary", "schedule_mode": "one_shot", "program": [{"id": "orders", "op": "mail.search", "keywords": ["order"]}, {"id": "sum", "op": "summarize", "from": "orders"}, {"id": "doc", "op": "docs.write", "title": "Order Summary", "content": "{{summary}}"}]}], async (runtime) => {
   expect(runtime.inbox.store.acquireLease('other-worker')).toBe(true);
   const { agent_id } = await createAgent(runtime, 'Summarize order emails in a Doc.');
   try {
@@ -263,25 +240,7 @@ const sheetRows = (runtime: Runtime, title: string) => {
   return (runtime.inbox.store.entity('sandbox', 'workspace', row.logical_key) as { tabs: { headers: string[]; rows: unknown[][] }[] }).tabs[0];
 };
 
-it('composes any request offline into a general program across Gmail, Sheets, labels, and Calendar', () => runtimeTest(async (runtime) => {
-  const { agent_id, plan_summary } = await createAgent(runtime,
-    'Find emails about the launch, put them in a tracker sheet, label them, and remind me of any deadlines on my calendar.');
-  expect(plan_summary).toMatchObject({ template: 'generic', planner: 'deterministic-intent-compiler' });
-  const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
-  expect(agent.workflow_plan.params.program!.map((entry) => entry.op)).toEqual(['mail.search', 'sheets.append', 'mail.label', 'calendar.reminders']);
-  const tab = sheetRows(runtime, 'Siftvane - Launch');
-  expect(tab.headers).toEqual(['Date', 'From', 'Subject', 'Deadline', 'Source ID']);
-  expect(tab.rows.map((row) => row[3]).sort()).toEqual(['2026-12-10', '2026-12-11']);
-  for (const id of ['deadline-a', 'deadline-b']) {
-    expect((runtime.inbox.store.entity('sandbox', 'mail', id) as { labels: string[] }).labels).toContain('SIFTVANE_LAUNCH');
-  }
-  const reminders = runtime.inbox.store.entities<{ id: string; start: string }>('sandbox', 'calendar').filter((event) => event.id.startsWith('siftvane-reminder-'));
-  expect(reminders.map((event) => event.start).sort()).toEqual(['2026-12-10T09:00:00.000Z', '2026-12-11T09:00:00.000Z']);
-  const logs = runtime.platform.logs(user, { agentId: agent_id });
-  expect(new Set(logs.map((entry) => entry.service))).toEqual(new Set(['system', 'gmail', 'sheets', 'calendar']));
-}), 60_000);
-
-it('drafts replies for a free-form request and holds every draft for approval', () => runtimeTest(async (runtime) => {
+it('drafts replies for a free-form request and holds every draft for approval', () => withPlan({"reasoning": "Draft replies to meeting emails.", "name": "Meeting Replies", "schedule_mode": "one_shot", "program": [{"id": "meet", "op": "mail.search", "keywords": ["meeting"]}, {"id": "reply", "op": "mail.draft_replies", "from": "meet", "subject": "Re: {{subject}}", "body": "Thanks, I will get back to you."}]}, async (runtime) => {
   const { agent_id } = await createAgent(runtime, 'Draft replies to everyone who emailed me about meetings.');
   const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'input_required');
   const drafts = agent.state.pending_approvals.map((id) => runtime.inbox.store.approval(id)!);
@@ -461,23 +420,6 @@ it('repairs data flow: recipients are not senders, attachments come from mail, a
     'Track invoices from billing@aws.example').steps[0]).toMatchObject({ from_contains: 'billing@aws.example' });
 });
 
-it('reads invoice fields written in prose, not only "Label: value" lines', async () => {
-  const { inferMailFields, lookup } = await import('../apps/server/src/platform/programExecutor.js');
-  const read = (from: string, text: string) => {
-    const fields: Record<string, string | number> = {};
-    for (const match of text.matchAll(/(?:^|[.;!?]\s+)([A-Za-z][A-Za-z #/-]{1,30}?)\s*:\s*([^\n;]{1,200}?)(?=\.\s|\.?$|;)/gm)) fields[match[1].toLowerCase().replace(/[^a-z0-9]+/g, '_')] = match[2].trim();
-    inferMailFields(fields, text, from);
-    const row = { fields } as Parameters<typeof lookup>[0];
-    return { vendor: lookup(row, 'Vendor'), amount: String(lookup(row, 'Amount')), due: lookup(row, 'Due Date') };
-  };
-  expect(read('billing@acme-cloud.example', 'Please find invoice ACME-7781. Vendor: Acme Cloud. Amount due: $612.00. Due date: 2026-12-22. Thanks'))
-    .toEqual({ vendor: 'Acme Cloud', amount: '$612.00', due: '2026-12-22' });
-  expect(read('"Stripe Billing" <invoices@stripe.com>', 'Your invoice total is $1,249.99 and is payable by December 3rd, 2026.'))
-    .toEqual({ vendor: 'Stripe', amount: '1,249.99', due: '2026-12-03' });
-  // Free-mail senders never become a "vendor"; nothing is invented when the email states nothing.
-  expect(read('someone@gmail.com', 'Lunch next week?')).toEqual({ vendor: '', amount: '', due: '' });
-});
-
 it('drops ungrounded LLM steps: unrequested Photos access and invented filter addresses', async () => {
   const { repairProgram } = await import('../apps/server/src/platform/generic.js');
   const photos = repairProgram([
@@ -501,18 +443,16 @@ it('drops ungrounded LLM steps: unrequested Photos access and invented filter ad
     'Label my order emails').steps[1]).toMatchObject({ label: 'SIFTVANE_ORDER' });
 });
 
-it('routes simple prompts to the right workflow and honors stated recurrence', async () => {
-  const { deterministicChoice } = await import('../apps/server/src/platform/planner.js');
-  const pick = (text: string) => { const choice = deterministicChoice(text, { mode: 'sandbox' }); return choice.template + ':' + choice.schedule_mode; };
-  // "vendor" inside an invoice is bookkeeping, not a request to email vendors for quotes.
-  expect(pick('Every time I get an invoice email, add the vendor, amount and due date to a Google Sheet')).toBe('invoice_ledger:continuous');
-  expect(pick('Email 3 vendors asking for quotes on 500 custom boxes')).toBe('vendor_rfq:continuous');
-  expect(pick('Keep a log of every meeting request I receive in a spreadsheet')).toBe('inbox_digest:continuous');
-  expect(pick('Keep a log of all newsletters in a sheet')).toBe('inbox_digest:continuous');
-  expect(pick('Make a doc summarizing emails from my team this week')).toBe('inbox_digest:one_shot');
+it('reads how often to run only from time words in the request, never from the task', async () => {
+  const { statedSchedule } = await import('../apps/server/src/platform/planner.js');
+  expect(statedSchedule('Every time I get an invoice email, add the vendor, amount and due date to a Google Sheet')).toBe('continuous');
+  expect(statedSchedule('Keep a log of every meeting request I receive in a spreadsheet')).toBe('continuous');
+  expect(statedSchedule('Every morning, list my unread urgent emails')).toBe('daily');
+  expect(statedSchedule('Each week summarize what my team sent')).toBe('weekly');
+  expect(statedSchedule('Make a doc summarizing emails from my team this week')).toBe('one_shot');
 });
 
-it('aligns appended rows to an existing sheet whose headers differ (no shifted columns)', () => runtimeTest(async (runtime) => {
+it('aligns appended rows to an existing sheet whose headers differ (no shifted columns)', () => withPlan([{"reasoning": "Track launch mail.", "name": "Launch A", "schedule_mode": "one_shot", "program": [{"id": "launch", "op": "mail.search", "keywords": ["launch"]}, {"id": "sheet", "op": "sheets.append", "from": "launch", "title": "Launch Tracker", "columns": ["From", "Subject"]}]}, {"reasoning": "Track launch mail.", "name": "Launch B", "schedule_mode": "one_shot", "program": [{"id": "launch", "op": "mail.search", "keywords": ["launch"]}, {"id": "sheet", "op": "sheets.append", "from": "launch", "title": "Launch Tracker", "columns": ["Date", "Deadline", "Subject", "From"]}]}], async (runtime) => {
   const first = await createAgent(runtime, 'Find emails about the launch and put them in a sheet called Launch Tracker with from and subject');
   await until(() => generic(runtime, first.agent_id), (entry) => entry.status === 'completed');
   const second = await createAgent(runtime, 'Find emails about the launch and put them in a sheet called Launch Tracker with date, deadline, subject and from');
@@ -594,28 +534,11 @@ it('works on the user\'s own Drive: finds and reads Sheets, PDFs and Docs, and t
   }
 }, 60_000);
 
-/** Runs work against a fake model that returns `plan` for planning and `answer(prompt)` for everything else. */
-async function withPlan(plan: unknown, work: (runtime: Runtime, prompts: string[]) => Promise<void>, answer: (prompt: string) => unknown = () => ({ reasoning: 'Done.', done: true })) {
-  const prompts: string[] = [];
-  let planned = false;
-  const model: Server = createServer((request, response) => {
-    let body = '';
-    request.on('data', (chunk) => { body += chunk; });
-    request.on('end', () => {
-      const prompt = JSON.parse(body).prompt as string;
-      prompts.push(prompt);
-      const isPlan = !planned && prompt.startsWith('You are the planner');
-      if (isPlan) planned = true;
-      response.end(JSON.stringify({ response: JSON.stringify(isPlan ? plan : answer(prompt)) }));
-    });
-  });
-  await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
-  try {
-    await runtimeTest((runtime) => work(runtime, prompts), { mode: 'llm', provider: 'ollama', model: 'fake-planner',
-      endpoint: 'http://127.0.0.1:' + (model.address() as { port: number }).port, timeoutMs: 5000, rates: { input: 0, output: 0 } });
-  } finally {
-    model.close();
-  }
+/** Runs work against a fake AI: planner prompts get `plan` (or the next of several plans), everything else `answer(prompt)`. */
+async function withPlan(plan: unknown, work: (runtime: Runtime, prompts: string[]) => Promise<void>, answer?: (prompt: string) => unknown) {
+  const model = await fakeModel(plan, answer);
+  try { await runtimeTest((runtime) => work(runtime, model.prompts), model.agent); }
+  finally { await model.close(); }
 }
 
 it('withholds Drive files that carry instructions aimed at AI agents', () => withPlan({ reasoning: 'Read the notes and digest them.', name: 'Notes', program: [

@@ -4,7 +4,10 @@ import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { AuditDecision, AuditLogEntry } from '@siftvane/shared';
 import type { SiftvaneDatabase } from '../db/index.js';
 import { auditLogs } from '../db/schema.js';
-import { hashOpaqueId } from '../mail/vault.js';
+
+/** Stable, non-reversible id for audit rows (keeps the original salt so existing rows still match). */
+const hashOpaqueId = (value: string, salt = 'clam-zero-retention') =>
+  crypto.createHmac('sha256', salt).update(value, 'utf8').digest('hex').slice(0, 24);
 
 export type RealtimeEventType =
   | 'audit.entry'

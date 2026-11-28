@@ -21,20 +21,11 @@ async function main() {
   const agentId = getArg('--agent');
 
   try {
-    const endpoint = isResume ? '/api/killswitch/resume' : '/api/killswitch/engage';
-    const body = isResume
-      ? { reason, resumed_by: 'cli_operator', agent_id: agentId }
-      : {
-          reason,
-          engaged_by: 'cli_operator',
-          trigger_mode: 'manual_cli',
-          agent_id: agentId,
-        };
-
-    const res = await fetch(`${DEFAULT_BASE_URL}${endpoint}`, {
+    const token = process.env.SIFTVANE_OPERATOR_TOKEN?.trim();
+    const res = await fetch(`${DEFAULT_BASE_URL}/api/inbox/kill-switch`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Siftvane-Operator-Token': token } : {}) },
+      body: JSON.stringify({ active: !isResume, reason }),
       signal: AbortSignal.timeout(2000),
     });
 

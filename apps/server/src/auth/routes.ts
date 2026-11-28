@@ -80,7 +80,6 @@ export function registerGoogleAuthRoutes(app: FastifyInstance, accounts: GoogleA
       const { inboxId } = z.object({ inboxId: id }).parse(request.params);
       const { revoke_mcp } = z.object({ revoke_mcp: z.boolean().default(true) }).strict().parse(request.body ?? {});
       const remoteRevoked = await accounts.disconnect(requireOperator(request), inboxId, revoke_mcp);
-      inbox.setSchedule({ enabled: false, frequency: 'daily', intervalMinutes: 1440 }, `live:${inboxId}`);
       const auditId = await writeControlTrace(config.tracesDir, 'google.disconnect', inboxId, {
         status: 'COMPLETED', remote_revoked: remoteRevoked, mcp_tokens_revoked: revoke_mcp,
       });

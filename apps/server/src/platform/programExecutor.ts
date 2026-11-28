@@ -71,40 +71,6 @@ export const asNumber = (value: string) => {
 };
 export const money = (text: string) => /(-?[0-9]{1,9}(?:\.[0-9]{1,2})?)/.exec(text.replace(/(\d),(?=\d{3}(?:\D|$))/g, '$1'))?.[1];
 
-const currency = String.raw`(?:[$€£₹]|\b(?:USD|EUR|GBP|INR|Rs\.?)\s?)\s?(\d[\d,]*(?:\.\d{1,2})?)`;
-const datePattern = String.raw`(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?,?\s+\d{4})`;
-const freeMail = /^(?:gmail|googlemail|outlook|hotmail|yahoo|icloud|proton|protonmail|live|aol|mail)$/;
-const isoDate = (value: string) => {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const parsed = Date.parse(value.replace(/(\d)(?:st|nd|rd|th)/, '$1') + ' UTC');
-  return Number.isNaN(parsed) ? value : new Date(parsed).toISOString().slice(0, 10);
-};
-// A field counts when it starts with the name ("due_date"); amounts also match a suffix ("total_amount") but "amount_due" is not a due date.
-const has = (fields: Record<string, Value>, names: string[], suffix = false) => Object.keys(fields).some((field) =>
-  names.some((name) => field === name || field.startsWith(name + '_') || suffix && field.endsWith('_' + name)));
-/**
- * Fills common invoice fields from free text when the email has no "Label: value" for them: the amount near
- * "total/amount/balance/due" (else the first currency amount), a date after "due/pay by", and the vendor from the
- * sender's display name or domain. Inferred values never overwrite labeled ones.
- */
-export function inferMailFields(fields: Record<string, Value>, text: string, from: string) {
-  if (!has(fields, ['amount', 'total', 'price', 'cost', 'balance'], true)) {
-    const near = new RegExp(String.raw`\b(?:total|amount|balance|due|pay)\b[^\d$€£₹\n]{0,30}` + currency, 'i').exec(text) ?? new RegExp(currency, 'i').exec(text);
-    if (near) fields.amount = near[1];
-  }
-  if (!has(fields, ['due', 'deadline', 'pay_by'])) {
-    const due = new RegExp(String.raw`\b(?:due|pay(?:ment)?\s+by|payable\s+by|deadline)\b(?:\s+(?:date|on|by))?\s*[:\-]?\s*` + datePattern, 'i').exec(text);
-    if (due) fields.due_date = isoDate(due[1]);
-  }
-  if (!has(fields, ['vendor', 'merchant', 'company', 'supplier'])) {
-    const display = /^\s*"?([^"<@]{2,60}?)"?\s*</.exec(from)?.[1]?.replace(/\b(?:billing|invoices?|accounts?|payments?|no-?reply|team|support)\b/gi, '').trim();
-    const domain = /@([\w.-]+)/.exec(from)?.[1]?.split('.') ?? [];
-    const label = domain.length >= 2 ? domain[domain.length - 2] : '';
-    const name = display && display.length > 1 ? display : label && !freeMail.test(label) ? label.split(/[-_]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') : '';
-    if (name) fields.vendor = name;
-  }
-}
-
 /** A greeting that addresses someone by their email address reads as a bot: "Dear a@b.com," becomes "Dear,"→"Hi,". */
 export const plainGreeting = (text: string) =>
   text.replace(/^(\s*)(?:hi|hello|dear|hey)\s+[^\s,]+@[^\s,]+\s*,/i, (_match, space: string) => space + 'Hi,');
@@ -494,8 +460,6 @@ export class ProgramExecutor {
             const name = key(match[1]);
             if (name && fields[name] === undefined) fields[name] = match[2].trim();
           }
-          // Offline/recipe fallback only; with a model the AI reads the email itself (ensureFields / extract).
-          if (!this.modelEnabled) inferMailFields(fields, text, message.from);
           // A value that is just a number or an amount of money ("$1,249.99", "612") becomes a number, whatever the field is called.
           for (const name of Object.keys(fields)) {
             const number = typeof fields[name] === 'string' ? asNumber(String(fields[name])) : undefined;

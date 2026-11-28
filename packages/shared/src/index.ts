@@ -1,5 +1,5 @@
 export * from './types.js';
-export * from './deterministic.js';
+export * from './outbound.js';
 export * from './injection.js';
 
 export * from './inbox.js';

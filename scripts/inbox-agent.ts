@@ -1,24 +1,20 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createSiftvaneApp } from '../apps/server/src/app.js';
-import { loadConfig, workspaceRoot } from '../apps/server/src/config.js';
-import { renderTrapReport, runInboxTrapPack } from '../apps/server/src/inbox/trapHarness.js';
-import { resolveAgentConfig } from '../apps/server/src/inbox/agentConfig.js';
-import { runOfficialPack } from '../apps/server/src/inbox/officialPack.js';
+import { loadConfig } from '../apps/server/src/config.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 
 const [command, value, ...rest] = process.argv.slice(2);
 const config = loadConfig();
-const base = config.publicUrl.replace(/\/$/, '');
+const base = (process.env.SIFTVANE_PUBLIC_URL?.trim() || `http://localhost:${config.port}`).replace(/\/$/, '');
 const headers = {
   'Content-Type': 'application/json',
   ...(config.operatorToken ? { 'X-Siftvane-Operator-Token': config.operatorToken } : {}),
   ...(process.env.SIFTVANE_INBOX_ID ? { 'X-Siftvane-Inbox-Id': process.env.SIFTVANE_INBOX_ID } : {}),
 };
 
-async function api(url: string, payload?: unknown) {
+async function api(url: string, payload?: unknown, method = payload === undefined ? 'GET' : 'POST') {
   const response = await fetch(base + url, {
-    method: payload === undefined ? 'GET' : 'POST', headers,
+    method, headers,
     body: payload === undefined ? undefined : JSON.stringify(payload),
   });
   const parsed = await response.json() as Record<string, unknown>;
@@ -44,19 +40,6 @@ async function watch() {
   }
 }
 
-async function sandboxRun() {
-  const runtime = await createSiftvaneApp();
-  try {
-    if (runtime.inbox.activeMode() !== 'sandbox') throw new Error('Use agent run for the connected live mode.');
-    console.error('[agent] mode: ' + runtime.inbox.agent.mode + ' · ' + runtime.inbox.agent.model);
-    const run = await runtime.inbox.start('cli').done;
-    console.log(JSON.stringify({ run, briefing: runtime.inbox.briefing(run.id) }, null, 2));
-    if (run.status !== 'COMPLETED') process.exitCode = 1;
-  } finally {
-    await runtime.close();
-  }
-}
-
 async function main() {
   switch (command) {
     case 'verify-trace': {
@@ -66,36 +49,21 @@ async function main() {
       console.log(`Verified ${trace.step_count} steps · ${trace.head_hash}`);
       return;
     }
-    case 'test-adversarial': {
-      const report = await runInboxTrapPack();
-      const formatted = renderTrapReport(report);
-      await writeFile(path.join(workspaceRoot, 'tests', 'adversarial_regression_report.md'), formatted, 'utf8');
-      console.log(formatted);
-      if (!report.passed) process.exitCode = 1;
+    case 'create': {
+      const instruction = [value, ...rest].join(' ').trim();
+      if (instruction.length < 4) throw new Error('Usage: pnpm agent create "<what the agent should do>"');
+      console.log(JSON.stringify(await api('/api/inbox/platform/agents', { instruction }), null, 2));
       return;
     }
-    case 'run-official-trap-pack': {
-      if (!value) throw new Error('Usage: pnpm run-official-trap-pack <directory-or-manifest>');
-      const agent = resolveAgentConfig({ ...process.env, SIFTVANE_AGENT_MODE: process.env.SIFTVANE_AGENT_MODE === 'llm' ? 'llm' : 'offline-smoke' });
-      console.error('[agent] official pack mode: ' + agent.mode);
-      const result = await runOfficialPack(value, {
-        agent, report: path.join(workspaceRoot, 'tests', 'official_trap_pack_report.md'),
-        traces: path.join(config.tracesDir, 'official'),
-      });
-      console.log(result.report);
-      if (!result.passed) process.exitCode = 1;
+    case 'agents': {
+      const { agents } = await api('/api/inbox/platform/agents') as { agents: Array<{ id: string; name: string; status: string; schedule_mode: string }> };
+      for (const agent of agents.filter((entry) => entry.status !== 'archived')) console.log(`${agent.id}  ${agent.status.padEnd(14)} ${agent.schedule_mode.padEnd(10)} ${agent.name}`);
       return;
     }
     case 'watch': return watch();
-    case 'sandbox': return sandboxRun();
-    case 'run':
     case 'rollback': {
-      if (command === 'rollback' && !value) throw new Error('Usage: pnpm agent rollback <run_id>');
-      const endpoint = command === 'run' ? '/api/inbox/runs' :
-        '/api/inbox/runs/' + encodeURIComponent(value) + '/rollback';
-      const result = await api(endpoint, { wait: true }) as { run: { status: string } } | never;
-      const run = result.run as { agent_mode?: string };
-      console.error('[agent] mode: ' + (run.agent_mode ?? 'offline-smoke'));
+      if (!value) throw new Error('Usage: pnpm agent rollback <run_id>');
+      const result = await api('/api/inbox/runs/' + encodeURIComponent(value) + '/rollback', { wait: true }) as { run: { status: string } };
       console.log(JSON.stringify(result, null, 2));
       if (result.run.status !== 'COMPLETED') process.exitCode = 1;
       return;
@@ -105,7 +73,7 @@ async function main() {
       const reason = [value, ...rest].filter(Boolean).join(' ').trim();
       if (!reason) throw new Error('Provide an operator reason.');
       try {
-        console.log(JSON.stringify(await api('/api/kill-switch', { active: command === 'halt', reason }), null, 2));
+        console.log(JSON.stringify(await api('/api/inbox/kill-switch', { active: command === 'halt', reason }), null, 2));
       } catch (error) {
         if (!(error instanceof TypeError) || command !== 'halt' || config.databasePath === ':memory:') throw error;
         await mkdir(path.dirname(config.lockfile), { recursive: true });
@@ -114,7 +82,7 @@ async function main() {
       }
       return;
     }
-    default: throw new Error('Usage: pnpm agent <sandbox|run|watch|halt|resume|rollback|verify-trace|test-adversarial|run-official-trap-pack>');
+    default: throw new Error('Usage: pnpm agent <create "request"|agents|watch|halt|resume|rollback <run_id>|verify-trace <path>>');
   }
 }
 

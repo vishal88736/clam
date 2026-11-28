@@ -487,7 +487,8 @@ it('links a second Google account and keeps policy, history, and scoped MCP requ
   await test.login();
   await test.connect('readonly');
   const first = await test.getInbox();
-  const firstRun = (await test.api('/api/inbox/runs', { wait: true })).json().run;
+  // A run recorded against the first mailbox (any agent mission) must stay private to that mailbox.
+  const firstRun = await test.runtime.inbox.mission('probe', `live:${first}`, async () => undefined).done;
   expect(firstRun).toMatchObject({ status: 'COMPLETED', mode: 'live:' + first });
   test.useSubject('secondary-address');
   const nextIdentity = await test.begin('login?link=true');

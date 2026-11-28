@@ -8,9 +8,8 @@
     "dev": "pnpm --parallel --filter @siftvane/server --filter @siftvane/web dev",
     "dev:server": "pnpm --filter @siftvane/server dev",
     "dev:web": "pnpm --filter @siftvane/web dev",
-    "build": "pnpm --filter @siftvane/shared build && pnpm --filter @siftvane/agent build && pnpm --filter @siftvane/server build && pnpm --filter @siftvane/web build",
-    "typecheck": "pnpm --filter @siftvane/shared typecheck && pnpm --filter @siftvane/agent typecheck && pnpm --filter @siftvane/server typecheck && pnpm --filter @siftvane/web typecheck",
-    "agent:run": "tsx scripts/run-demo.ts",
+    "build": "pnpm --filter @siftvane/shared build && pnpm --filter @siftvane/server build && pnpm --filter @siftvane/web build",
+    "typecheck": "pnpm --filter @siftvane/shared typecheck && pnpm --filter @siftvane/server typecheck && pnpm --filter @siftvane/web typecheck",
     "kill": "tsx scripts/kill.ts",
     "resume": "tsx scripts/kill.ts --resume",
     "verify:zero-retention": "tsx scripts/verify-zero-retention.ts",
@@ -19,9 +18,6 @@
     "agent": "tsx scripts/inbox-agent.ts",
     "siftvane-mcp": "tsx apps/server/src/mcp/stdio.ts",
     "clam-mcp": "tsx apps/server/src/mcp/stdio.ts",
-    "run-trap-pack": "tsx scripts/inbox-agent.ts run-official-trap-pack",
-    "test:adversarial": "tsx scripts/inbox-agent.ts test-adversarial",
-    "run-official-trap-pack": "tsx scripts/inbox-agent.ts run-official-trap-pack",
     "workspace:smoke": "tsx scripts/workspace-live-smoke.ts"
   },
   "devDependencies": {

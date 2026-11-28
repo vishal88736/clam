@@ -5,6 +5,20 @@ import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/di
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { expect, it } from 'vitest';
 import { createSiftvaneApp } from '../apps/server/src/app.js';
+import type { AgentConfig } from '../apps/server/src/inbox/agentConfig.js';
+import { fakeModel } from './support/fakeModel.js';
+
+/** The program an AI writes for "track billing emails with amount and due date in a sheet, and label them". */
+const billingPlan = { reasoning: 'Find billing mail, log amount and due date, and label it.', name: 'Billing Tracker', schedule_mode: 'one_shot', program: [
+  { id: 'mail', op: 'mail.search', keywords: ['billing'] },
+  { id: 'sheet', op: 'sheets.append', from: 'mail', title: 'Billing Tracker', columns: ['Date', 'From', 'Subject', 'Amount', 'Due'] },
+  { id: 'label', op: 'mail.label', from: 'mail', label: 'SIFTVANE_BILLING' },
+] };
+
+async function withAi(plan: unknown, work: (runtime: Runtime, base: string) => Promise<void>) {
+  const model = await fakeModel(plan);
+  try { await runtimeTest(work, model.agent); } finally { await model.close(); }
+}
 import { sandboxMcpOwner as user } from '../apps/server/src/auth/google.js';
 import { genericProgramSchema } from '../apps/server/src/platform/generic.js';
 import { analyzeBindings, decide, evaluateFormula, parseFormula } from '../apps/server/src/platform/recipes.js';
@@ -12,9 +26,9 @@ import { analyzeBindings, decide, evaluateFormula, parseFormula } from '../apps/
 type Runtime = Awaited<ReturnType<typeof createSiftvaneApp>>;
 const payload = (result: { content: unknown }) => JSON.parse((result.content as { text: string }[])[0].text);
 
-async function runtimeTest(work: (runtime: Runtime, base: string) => Promise<void>) {
+async function runtimeTest(work: (runtime: Runtime, base: string) => Promise<void>, agent?: AgentConfig) {
   const dir = await mkdtemp(path.join(tmpdir(), 'siftvane-recipes-'));
-  const runtime = await createSiftvaneApp({ databasePath: ':memory:', config: {
+  const runtime = await createSiftvaneApp({ databasePath: ':memory:', agent, config: {
     inboxLive: false, tracesDir: path.join(dir, 'traces'), mailAttachmentsDir: path.join(dir, 'workspace', 'mail-attachments'),
   } });
   try { await work(runtime, await runtime.app.listen({ port: 0, host: '127.0.0.1' })); }
@@ -78,7 +92,7 @@ it('traces every argument and turns what it cannot prove into a question', () =>
   expect(after.find((binding) => binding.name === 'refund')).toMatchObject({ kind: 'formula', detail: 'Refund = price * 0.5' });
 });
 
-it('learns a recipe from an agent, backtests it, gates risky mail for approval, and replays new mail with zero model calls', () => runtimeTest(async (runtime, base) => {
+it('learns a recipe from an agent, backtests it, gates risky mail for approval, and replays new mail with zero model calls', () => withAi(billingPlan, async (runtime, base) => {
   const created = await api(runtime, 'POST', 'agents', { instruction: 'Find billing emails, put them in a tracker sheet with the amount and due date, and label them.' });
   expect(created.status).toBe(200);
   const agentId = created.body.agent_id as string;

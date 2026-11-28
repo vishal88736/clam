@@ -1,35 +1,30 @@
 'use client';
 
-import { Gauge, Plus, RotateCcw, Users, Clock3, X } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { Gauge, Plus, RotateCcw, Users, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import type { InboxPolicy } from '@siftvane/shared';
 
-type ListKey = 'allowlist' | 'blocklist' | 'contacts' | 'vips' | 'trustedAirlines';
-type NumberKey = 'confidenceThreshold' | 'outboundBudget' | 'calendarBudget' | 'toolBudget' | 'workStart' | 'workEnd' | 'maxMeetingMinutes';
+type ListKey = 'allowlist' | 'blocklist' | 'contacts' | 'vips';
+type NumberKey = 'confidenceThreshold' | 'outboundBudget' | 'calendarBudget' | 'toolBudget';
 
 const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const domain = /^[a-z\d.-]+\.[a-z]+$/i;
 
-const lists: Array<{ key: ListKey; title: string; help: string; placeholder: string; kind: 'email' | 'domain' }> = [
-  { key: 'allowlist', title: 'Trusted senders', help: 'Agents may reply to these people without asking you first.', placeholder: 'name@company.com', kind: 'email' },
-  { key: 'vips', title: 'VIPs', help: 'Mail from these people is always flagged as a priority.', placeholder: 'boss@company.com', kind: 'email' },
-  { key: 'contacts', title: 'Known contacts', help: 'People you know. Mail from strangers is treated with more care.', placeholder: 'friend@example.com', kind: 'email' },
-  { key: 'blocklist', title: 'Blocked senders', help: 'Agents never act on mail from these addresses.', placeholder: 'spam@example.com', kind: 'email' },
-  { key: 'trustedAirlines', title: 'Trusted airline domains', help: 'Flight emails from these domains can update your calendar.', placeholder: 'airline.com', kind: 'domain' },
+const lists: Array<{ key: ListKey; title: string; help: string; placeholder: string }> = [
+  { key: 'allowlist', title: 'Trusted senders', help: 'Agents may reply to these people without asking you first.', placeholder: 'name@company.com' },
+  { key: 'vips', title: 'VIPs', help: 'Mail from these people is always flagged as a priority.', placeholder: 'boss@company.com' },
+  { key: 'contacts', title: 'Known contacts', help: 'People you know. Mail from strangers is treated with more care.', placeholder: 'friend@example.com' },
+  { key: 'blocklist', title: 'Blocked senders', help: 'Agents never act on mail from these addresses.', placeholder: 'spam@example.com' },
 ];
 
 const names: Record<keyof InboxPolicy, string> = {
-  allowlist: 'Trusted senders', vips: 'VIPs', contacts: 'Known contacts', blocklist: 'Blocked senders', trustedAirlines: 'Trusted airline domains',
+  allowlist: 'Trusted senders', vips: 'VIPs', contacts: 'Known contacts', blocklist: 'Blocked senders',
   confidenceThreshold: 'Confidence needed to act', outboundBudget: 'Emails sent per run', calendarBudget: 'Calendar changes per run',
-  toolBudget: 'Tool calls per run', timeZone: 'Time zone', workStart: 'Workday starts', workEnd: 'Workday ends', maxMeetingMinutes: 'Longest meeting',
+  toolBudget: 'Tool calls per run',
 };
 
-const hour = (value: number) => value === 24 ? 'Midnight' : new Date(2000, 0, 1, value).toLocaleTimeString([], { hour: 'numeric' });
 const show = (key: keyof InboxPolicy, value: unknown) => {
   if (Array.isArray(value)) return value.length ? value.join(', ') : 'none';
   if (key === 'confidenceThreshold') return Math.round(Number(value) * 100) + '%';
-  if (key === 'workStart' || key === 'workEnd') return hour(Number(value));
-  if (key === 'maxMeetingMinutes') return value + ' min';
   return String(value);
 };
 
@@ -60,7 +55,7 @@ function ListField({ spec, value, original, onChange }: {
   const add = () => {
     const item = entry.trim().toLowerCase();
     if (!item) return;
-    if (!(spec.kind === 'email' ? email : domain).test(item)) { setError(spec.kind === 'email' ? 'Enter a full email address.' : 'Enter a domain like airline.com.'); return; }
+    if (!email.test(item)) { setError('Enter a full email address.'); return; }
     if (value.includes(item)) { setError('Already on the list.'); return; }
     onChange([...value, item]);
     setEntry('');
@@ -100,25 +95,10 @@ function NumberField({ label, help, value, original, min, max, unit, onChange }:
   </label>;
 }
 
-function HourField({ label, value, original, from, to, onChange }: {
-  label: string; value: number; original: number; from: number; to: number; onChange: (next: number) => void;
-}) {
-  return <label className="policy-field">
-    <div className="policy-field-head"><strong>{label}</strong>{value !== original && <span className="inbox-tag" data-tone="amber">was {hour(original)}</span>}</div>
-    <select value={value} onChange={(event) => onChange(Number(event.target.value))}>
-      {Array.from({ length: to - from + 1 }, (_, index) => from + index).map((item) => <option key={item} value={item}>{hour(item)}</option>)}
-    </select>
-  </label>;
-}
-
 /** Form-based policy editor: every setting in plain words, with what changed against the installed version. */
 export function PolicyEditor({ current, draft, onChange }: { current: InboxPolicy; draft: InboxPolicy; onChange: (next: InboxPolicy) => void }) {
   const set = <K extends keyof InboxPolicy>(key: K, value: InboxPolicy[K]) => onChange({ ...draft, [key]: value });
   const num = (key: NumberKey) => ({ value: draft[key], original: current[key], onChange: (next: number) => set(key, next) });
-  const zones = useMemo(() => {
-    try { return (Intl as unknown as { supportedValuesOf?: (kind: string) => string[] }).supportedValuesOf?.('timeZone') ?? []; }
-    catch { return []; }
-  }, []);
   const changes = policyChanges(current, draft);
   return <div className="policy-editor">
     <Section icon={<Users size={16} />} title="People">
@@ -143,26 +123,12 @@ export function PolicyEditor({ current, draft, onChange }: { current: InboxPolic
         <NumberField label="Tool calls per run" help="A run stops after this many steps." min={1} max={200} unit="calls" {...num('toolBudget')} />
       </div>
     </Section>
-    <Section icon={<Clock3 size={16} />} title="Working hours">
-      <div className="policy-grid">
-        <label className="policy-field">
-          <div className="policy-field-head"><strong>Time zone</strong>{draft.timeZone !== current.timeZone && <span className="inbox-tag" data-tone="amber">was {current.timeZone}</span>}</div>
-          {zones.length ? <select value={draft.timeZone} onChange={(event) => set('timeZone', event.target.value)}>
-            {(zones.includes(draft.timeZone) ? zones : [draft.timeZone, ...zones]).map((zone) => <option key={zone}>{zone}</option>)}
-          </select> : <input value={draft.timeZone} onChange={(event) => set('timeZone', event.target.value)} />}
-        </label>
-        <HourField label="Workday starts" from={0} to={23} {...num('workStart')} />
-        <HourField label="Workday ends" from={1} to={24} {...num('workEnd')} />
-        <NumberField label="Longest meeting" help="Agents won't book or accept anything longer." min={15} max={480} unit="minutes" {...num('maxMeetingMinutes')} />
-      </div>
-      {draft.workStart >= draft.workEnd && <p className="inbox-error" role="alert">The workday must start before it ends.</p>}
-    </Section>
     <div className="policy-summary" aria-live="polite">
       {changes.length ? <>
         <div className="policy-field-head"><strong>{changes.length} change{changes.length === 1 ? '' : 's'} in this draft</strong>
           <button type="button" className="inbox-text-link" onClick={() => onChange(current)}><RotateCcw size={13} /> Undo all</button></div>
         <ul>{changes.map((change) => <li key={change.key}><strong>{names[change.key]}:</strong> {change.text}</li>)}</ul>
-      </> : <p>No changes yet. Edit any setting above, then preview how it would treat your mail.</p>}
+      </> : <p>No changes yet. Edit any setting above, then save it as a new version.</p>}
     </div>
   </div>;
 }
