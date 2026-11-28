@@ -15,7 +15,7 @@ const text = (max: number) => z.string().trim().min(1).max(max);
 const template = z.string().max(1500);
 
 export const genericStepSchema = z.discriminatedUnion('op', [
-  z.object({ id, op: z.literal('mail.search'), keywords: z.array(z.string().trim().min(2).max(40)).max(6).default([]),
+  z.object({ id, op: z.literal('mail.search'), keywords: z.array(z.string().trim().min(2).max(40)).max(6).default([]), about: z.string().trim().min(3).max(200).optional(),
     from_contains: z.string().trim().min(1).max(80).optional(), subject_contains: z.string().trim().min(1).max(80).optional(),
     newer_than_days: z.number().int().min(1).max(365).optional(),
     include_attachments: z.boolean().default(false), limit: z.number().int().min(1).max(50).default(25) }).strict(),
@@ -84,7 +84,7 @@ export function genericStepScopes(step: GenericStep): (typeof mcpScopes)[number]
 
 export function describeStep(step: GenericStep): string {
   switch (step.op) {
-    case 'mail.search': return `Search mail${step.keywords.length ? ' for ' + step.keywords.join(', ') : ''}${step.from_contains ? ' from ' + step.from_contains : ''}`;
+    case 'mail.search': return `Search mail${step.about ? ` about "${step.about}"` : step.keywords.length ? ' for ' + step.keywords.join(', ') : ''}${step.from_contains ? ' from ' + step.from_contains : ''}`;
     case 'photos.extract': return `Read ${step.category.toLowerCase()} photos and extract details`;
     case 'filter': return `Keep rows where ${step.field}${step.contains ? ' contains "' + step.contains + '"' : ' is present'}`;
     case 'summarize': return step.instructions ? `Summarize: ${step.instructions}` : 'Summarize the matching items';
@@ -107,14 +107,14 @@ export function describeStep(step: GenericStep): string {
 
 export const opCatalogForPrompt = [
   'SOURCES',
-  'mail.search {keywords[], from_contains?, subject_contains?, newer_than_days?, include_attachments?, limit?} -> one row per email (date, from, subject, message_id, plus any "Label: value" fields); include_attachments also reads PDF/text attachments',
+  'mail.search {about?, keywords[], from_contains?, subject_contains?, newer_than_days?, include_attachments?, limit?} -> one row per email (date, from, subject, message_id, plus any "Label: value" fields). about = what the emails are about in plain words: the AI reads recent mail and keeps the matching ones (prefer it whenever exact words are uncertain). include_attachments also reads PDF/text attachments',
   'drive.find {query?, kind?: any|doc|sheet|pdf|text|folder|file, limit?} -> one row per file in the user\'s Drive (name, kind, modified, link)',
   'drive.read {from: a drive.find step} -> the same rows with each file\'s text loaded (Docs, PDFs, text files, Sheets as text)',
-  'sheets.read {title? | from: a drive.find step, tab?, limit?} -> one row per spreadsheet row, fields named after the header row',
+  'sheets.read {title? | from: a drive.find step, tab?, limit?} -> one row per spreadsheet row of the best-matching sheet, fields named after the header row (snake_case)',
   'photos.extract {category: RECEIPTS|DOCUMENTS|SCREENSHOTS, limit?} -> one row per photo (merchant, date, amount, currency, due, reference)',
   'UNDERSTANDING (the AI reads each row\'s email/file/row text)',
-  'extract {from, fields[], instructions?} -> adds the named fields to every row (any field you need: "Vendor", "Total", "Renewal date", "Action items", "Sentiment"...)',
-  'classify {from, condition} -> keeps only rows matching a plain-language condition ("asks for a meeting", "is a complaint", "is overdue")',
+  'extract {from, fields[], instructions?} -> adds the named fields to every row (whatever the request needs, named in the user\'s own words)',
+  'classify {from, condition} -> keeps only rows matching a plain-language condition written from the user\'s request',
   'filter {from, field, contains? | exists?} -> exact text match on a field',
   'summarize {from, heading?, instructions?} -> a written summary usable as {{summary}} later',
   'ACTIONS',
@@ -214,7 +214,7 @@ const modeAliases: Record<string, 'append' | 'replace_section'> = {
 const opAliases: Record<string, GenericStep['op']> = Object.fromEntries((Object.keys(opService) as GenericStep['op'][])
   .flatMap((op) => [[op, op], [op.replace('.', '_'), op], [op.replace('.', ''), op]]));
 const allowedKeys: Record<GenericStep['op'], string[]> = {
-  'mail.search': ['keywords', 'from_contains', 'subject_contains', 'newer_than_days', 'include_attachments', 'limit'], 'photos.extract': ['category', 'limit'],
+  'mail.search': ['about', 'keywords', 'from_contains', 'subject_contains', 'newer_than_days', 'include_attachments', 'limit'], 'photos.extract': ['category', 'limit'],
   filter: ['from', 'field', 'contains', 'exists'], summarize: ['from', 'heading', 'instructions'],
   extract: ['from', 'fields', 'instructions'], classify: ['from', 'condition'], 'drive.find': ['query', 'kind', 'limit'], 'drive.read': ['from'],
   'sheets.read': ['title', 'from', 'tab', 'limit'], 'drive.folder': ['path'], 'drive.save_attachments': ['from', 'folder'],
@@ -265,6 +265,8 @@ const grounding: Record<string, RegExp> = {
   'drive.save_attachments': /\b(?:drive|folders?|save|saves|store|backup|back up|archive|attachments?|pdfs?|files?|download)\b/,
   'drive.save_text': /\b(?:drive|folders?|save|saves|store|backup|back up|archive|files?|export|txt|csv|markdown)\b/,
   'mail.label': /\b(?:label\w*|tag\w*|mark\w*|organi[sz]\w*|categori[sz]\w*|sort\w*|file them|move them)\b/,
+  'mail.draft_replies': /\b(?:repl\w*|respond\w*|answer\w*|drafts?|write back|get back|follow[- ]?up)\b/,
+  'calendar.reminders': /\b(?:remind\w*|calendar|schedul\w*|alert\w*|notify|notification|don'?t (?:let me )?(?:forget|miss)|before it|ahead of)\b/,
 };
 
 export function repairProgram(raw: unknown[], instruction: string, knownIds: string[] = [], knownKinds: Record<string, RowKind> = {}) {
@@ -293,6 +295,7 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
     step.id = id;
     if (typeof step.from === 'string') step.from = String(step.from).toLowerCase().replace(/[^a-z0-9_]+/g, '_');
     if (op === 'mail.search') {
+      if (typeof source.about !== 'string' || source.about.trim().length < 3) delete step.about;
       step.keywords = (Array.isArray(source.keywords) ? source.keywords : typeof source.keywords === 'string' ? [source.keywords] : [])
         .map((word) => String(word).trim().slice(0, 40)).filter((word) => word.length >= 2).slice(0, 6);
       step.limit = clamp(source.limit, 1, 50) ?? 25;
@@ -327,6 +330,8 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
       if (typeof step.date_field === 'string') step.date_field = step.date_field.toLowerCase().replace(/[^a-z0-9]+/g, '_');
     }
     if (op === 'filter' && typeof step.field === 'string') step.field = step.field.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    // A doc without a heading uses its title rather than being dropped.
+    if (op === 'docs.write' && typeof step.heading !== 'string' && typeof step.title === 'string') step.heading = step.title;
     if (op === 'extract') {
       step.fields = (Array.isArray(source.fields) ? source.fields : typeof source.fields === 'string' ? source.fields.split(',') : [])
         .map((field) => String(field).trim().slice(0, 40)).filter(Boolean).slice(0, 12);
@@ -336,6 +341,12 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
       step.kind = ['any', 'doc', 'sheet', 'pdf', 'text', 'folder', 'file'].includes(kind) ? kind : 'any';
     }
     if (op === 'drive.find' && step.limit !== undefined) step.limit = clamp(step.limit, 1, 25);
+    // Models sometimes write Drive API syntax ("mimeType='application/pdf' and 'contract' in name"); keep only the words.
+    if (op === 'drive.find' && typeof step.query === 'string') {
+      step.query = step.query.replace(/mimetype\s*=\s*'[^']*'/gi, ' ').replace(/[='":()]/g, ' ').split(/\s+/)
+        .filter((word) => word && !/^(?:and|or|not|in|contains|name|title|filename|fulltext|mimetype|type|kind|file|files|trashed|true|false|application\/\S+)$/i.test(word))
+        .join(' ').slice(0, 80) || undefined;
+    }
     if (op === 'sheets.read' && step.limit !== undefined) step.limit = clamp(step.limit, 1, 200);
     // File reads need Drive file rows; point them at the latest drive.find when the model wired them elsewhere.
     if ((op === 'drive.read' || op === 'sheets.read' && step.title === undefined) && kinds.get(String(step.from)) !== 'file') {

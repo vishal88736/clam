@@ -136,14 +136,14 @@ export class InboxStore {
         }
         this.setState('seed-v3-workspace', true);
       }
-      if (!this.state('seed-v4-drive')) {
+      if (!this.state('seed-v5-drive')) {
         this.sqlite.exec('CREATE TABLE IF NOT EXISTS workspace_sandbox_blobs (key TEXT PRIMARY KEY, mime TEXT NOT NULL, data BLOB NOT NULL)');
         for (const file of sandboxDriveFiles) {
           const bytes = file.blob?.data.length ?? 0;
           if (!this.entity('sandbox', 'workspace', file.key)) this.setEntity('sandbox', 'workspace', file.key, { ...file.state, ...(file.blob ? { bytes } : {}) } as Snapshot);
-          if (file.blob) this.sqlite.prepare('INSERT OR IGNORE INTO workspace_sandbox_blobs VALUES (?, ?, ?)').run(file.key, file.blob.mime, file.blob.data);
+          if (file.blob) this.sqlite.prepare('INSERT OR REPLACE INTO workspace_sandbox_blobs VALUES (?, ?, ?)').run(file.key, file.blob.mime, file.blob.data);
         }
-        this.setState('seed-v4-drive', true);
+        this.setState('seed-v5-drive', true);
       }
     });
   }

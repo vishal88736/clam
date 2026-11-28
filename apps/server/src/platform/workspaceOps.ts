@@ -62,7 +62,15 @@ export class WorkspaceOps {
 
   /** Read-only: a file's text (Docs, PDFs, text) or tabs (Sheets). Content carrying injected instructions or secrets is withheld. */
   async readFile(id: string) {
-    const content = await this.adapter.readFile(id, maxFileBytes);
+    let content: Awaited<ReturnType<WorkspaceAdapter['readFile']>>;
+    try {
+      content = await this.adapter.readFile(id, maxFileBytes);
+    } catch (error) {
+      const code = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : 'READ_FAILED';
+      if (code === 'INBOX_HALTED' || code === 'GOOGLE_REAUTH_REQUIRED') throw error;
+      this.readLog('drive', 'read_file', id.split('/').pop() ?? id, 'unreadable (' + code + '); skipped');
+      return null;
+    }
     if (!content) return null;
     let note = `${content.text.length.toLocaleString()} characters`;
     if (content.text && (scanPromptInjection(content.text).detected || scanOutboundSecrets(content.text))) {

@@ -93,22 +93,26 @@ Mint a sandbox MCP token with `agent:manage`, `workspace:write`, `photos:read`, 
 
 The CLI calls `provision_and_run_agent`. Siftvane compiles the request into a validated step DAG, stores a persistent agent (`user_agents`), switches your active agent (`agent_switch_history`), and runs it in the backend. Every step goes through the policy engine, Tier 0/1/2 gate, kill switch, and read-back `CHECK`. The **Agents & Activity** page streams the agent list, switch timeline, per-step logs (`agent_execution_logs`), and Sheet/Doc/Drive artifacts (`workspace_artifacts`) over SSE. In `$0` sandbox mode you can open an in-browser preview of each artifact.
 
-| Built-in workflow | What runs autonomously (Tier 0) | What waits for you (Tier 2) |
+**No fixed tasks.** With `SIFTVANE_AGENT_MODE=llm` (the default way to run Siftvane), the model plans every request itself; there are no hard-coded workflows on this path. It writes its reasoning and composes a program from Siftvane's step library:
+- read anything: `mail.search` (emails and their PDF/text attachments), `drive.find` + `drive.read` (your existing Drive files, Docs and PDFs), `sheets.read` (rows of any spreadsheet), `photos.extract`;
+- understand it with the AI: `extract` (pull *any* named fields out of emails or files: no fixed schema), `classify` (keep items matching a plain-language condition), `summarize` (a written summary), `filter` (exact matches);
+- write: `drive.folder`, `drive.save_attachments`, `drive.save_text`, `sheets.append`, `docs.write`, `calendar.reminders` and `mail.label`;
+- outbound: `mail.draft_replies` and `mail.send` (each distinct email is sent once per agent, even when a continuous agent re-runs).
+
+Any column, filter or reminder date the email or file does not state as `Label: value` is read by the AI automatically. After the program runs, the model reviews sanitized results (counts, field names, short redacted samples) and can add up to two rounds of follow-up steps. Siftvane executes every step itself under the policy engine. A model can never call an unlisted tool or add a recipient you didn't write, replies always wait for approval, and labels, Drive copies, reply drafts and calendar reminders are only added when your request asks for them. If the model is unreachable or cannot produce a usable plan, Siftvane says so (`AI_MODEL_UNAVAILABLE` / `AI_PLAN_UNUSABLE`) instead of quietly building a different agent.
+
+**Offline mode (no model configured)** can't understand free-form requests, so it falls back to a keyword composer plus three built-in workflows:
+
+| Offline workflow | What runs autonomously (Tier 0) | What waits for you (Tier 2) |
 | --- | --- | --- |
 | Invoices & recurring bills | Drive `Siftvane / Invoices / YYYY-MM`, screened PDF upload, deduplicated ledger rows, summary Doc | Duplicate or spoofed invoices |
 | Vendor RFQ → comparison | Quote parsing (body and PDF), sanitized comparison Sheet, winner flag, memo Doc | The RFQ batch to non-allowlisted vendors, and the final booking (`FINANCIAL_COMMITMENT_APPROVAL`) |
 | Receipt photos | Read-only Photos search, bounded extraction, receipt Sheet, Calendar payment reminders | — |
 | Anything else | A sanitized digest Doc, plus an optional tracker Sheet and Drive folder | Any outbound email |
 
-**Any task, not only the built-in workflows.** With `SIFTVANE_AGENT_MODE=llm`, the configured model plans every request. It writes its reasoning and composes a program from Siftvane's step library:
-- read: `mail.search` and `photos.extract`;
-- shape the data: `filter` and `summarize`;
-- write: `drive.folder`, `drive.save_attachments`, `drive.save_text`, `sheets.append`, `docs.write`, `calendar.reminders` and `mail.label`;
-- outbound: `mail.draft_replies` and `mail.send`.
+**Reading your Drive.** Agents can always find and read files Siftvane created. To let them read your *existing* files, click **Let agents read my Drive (read-only)** on the Connections page; this adds `drive.readonly`, so agents can read, but never change or delete, your Drive, Docs, Sheets and PDFs. File content is untrusted data: a file carrying instructions aimed at AI agents, or secrets, is withheld from the model. In the sandbox, a small seeded Drive (a marketing plan Doc, Vendor Contacts and Team Budget Sheets, a signed contract PDF, standup notes) lets you try this without Google.
 
-The model may also pick one of the ready-made workflows when one fits better. After the program runs, the model reviews sanitized results (counts, field names, short redacted samples) and can add up to two rounds of follow-up steps. Siftvane executes every step itself under the policy engine. A model can never call an unlisted tool or add a recipient you didn't write, and replies always wait for approval. Without a model, an offline composer builds a general program from the sources and outputs your request names, and the log records that fallback.
-
-For MCP-created agents, grant `mail:label` for labeling, `mail:draft` for drafts, `mail:send` for outbound mail, and `attachment:extract` when a program reads or saves attachments.
+For MCP-created agents, grant `mail:label` for labeling, `mail:draft` for drafts, `mail:send` for outbound mail, `attachment:extract` when a program reads or saves attachments, and `workspace:read` to find and read Drive files (also available directly as the `drive_find_files` and `drive_read_file` tools).
 
 Add phrases like "wait up to 48 hours for replies" to set the quote window; the default is 24 hours live and immediate in the sandbox. Raster receipt photos are OCR'd with Tesseract when it is installed.
 
@@ -159,7 +163,7 @@ For the live version, stop the sandbox server and start Siftvane with your norma
 Safety:
 - **Formula injection:** untrusted text is neutralized before it reaches a Sheet (for example `=IMPORTXML(...)` is stored as `'=IMPORTXML (...)`). Live writes also use `valueInputOption=RAW`.
 - **Secret scanner:** covers Drive file contents as well as Sheet and Doc text.
-- **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photospicker.mediaitems.readonly`. For Photos, Siftvane opens a Google Photos Picker session and reads only the receipts you choose (call `photos_start_picker`, or open the link on the agent card). `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*. Full `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
+- **Least-privilege Google scopes:** the Workspace grant requests only `drive.file` and `photospicker.mediaitems.readonly`. For Photos, Siftvane opens a Google Photos Picker session and reads only the receipts you choose (call `photos_start_picker`, or open the link on the agent card). `documents` and `spreadsheets` are requested only through *Allow editing existing Docs & Sheets*, and read-only `drive.readonly` only through *Let agents read my Drive (read-only)*. Full read-write `drive` access and every Photos write or share scope are hard-banned (`GOOGLE_SCOPE_BANNED`).
 - **Rollback:** rolling back a run deletes only artifacts Siftvane created in that run, using the id recorded in its own registry.
 
 ## Recipes: teach once, run with zero model calls

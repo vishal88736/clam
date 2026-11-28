@@ -309,7 +309,7 @@ it('lets the LLM think: it composes its own program, reviews sanitized results, 
   await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
   try {
     await runtimeTest(async (runtime) => {
-      const { agent_id, plan_summary } = await createAgent(runtime, 'Keep an eye on my orders in a sheet and email sam@team.example an update.');
+      const { agent_id, plan_summary } = await createAgent(runtime, 'Keep an eye on my orders in a sheet, remind me of any return deadline, and email sam@team.example an update.');
       expect(plan_summary).toMatchObject({ template: 'generic', planner: 'llm-planner' });
       const agent = await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
       // The model-injected recipient never reaches the plan.
@@ -420,7 +420,7 @@ it('repairs real model mistakes and drops ungrounded senders, time windows, and 
     { id: 'send_email', op: 'mail.send', to: ['sam@team.example', 'user_email'], subject: 'Summary', body: 'Done', from: 'siftvane@example.com' },
     { id: 'approval', op: 'mail.send', to: ['user_email'], subject: 'x', body: 'y' },
     { id: 'mystery', op: 'shell.exec', command: 'rm -rf /' },
-  ], 'Summarize my order and delivery emails into a doc, track them, and email sam@team.example');
+  ], 'Summarize my order and delivery emails into a doc, track them, remind me of deadlines, and email sam@team.example');
   expect(steps.find((step) => step.op === 'mail.search')).toEqual({ id: 'search_emails', op: 'mail.search', keywords: ['order', 'delivery'],
     include_attachments: false, limit: 50 });
   expect(steps.find((step) => step.op === 'sheets.append')).toMatchObject({ tab: 'Rows' });
@@ -483,6 +483,9 @@ it('drops ungrounded LLM steps: unrequested Photos access and invented filter ad
   ], 'Summarize all emails from my team this week');
   expect(invented.steps.map((step) => step.id + '<' + ('from' in step ? step.from ?? '' : ''))).toEqual(['search<', 'sum<search']);
   expect(invented.issues[0]).toMatch(/not in the user's request/);
+  // Calendar events are only created when the user asks to be reminded.
+  expect(repairProgram([{ id: 's', op: 'mail.search', keywords: ['meeting'] }, { id: 'r', op: 'calendar.reminders', from: 's', date_field: 'when', title: 'Meet' }],
+    'Put meeting requests in a sheet').steps.map((step) => step.op)).toEqual(['mail.search']);
   // When the user does ask for labels, the model's placeholder label name is still repaired.
   expect(repairProgram([{ id: 's', op: 'mail.search', keywords: ['order'] }, { id: 'l', op: 'mail.label', from: 's', label: 'SIFTVANE_UPPER_SNAKE' }],
     'Label my order emails').steps[1]).toMatchObject({ label: 'SIFTVANE_ORDER' });
@@ -651,4 +654,16 @@ it('CLI agents can find and read the user\'s Drive over MCP only with workspace:
   const read = payload(await reader.callTool({ name: 'drive_read_file', arguments: { file_id: found.files[0].id } })) as { tabs: Array<{ rows: unknown[][] }> };
   expect(read.tabs[0].rows).toContainEqual(['Design', 5000, 5350]);
   await reader.close();
+}), 60_000);
+
+it('writes one line per row when the model uses row fields in doc text, and reads only the best-matching sheet', () => withPlan({ reasoning: 'List vendor terms.', name: 'Vendor Terms', program: [
+  { id: 'find', op: 'drive.find', query: 'Vendor Contacts', kind: 'sheet' },
+  { id: 'rows', op: 'sheets.read', from: 'find', tab: 'Sheet1' },
+  { id: 'doc', op: 'docs.write', title: 'Vendor Payment Terms', heading: 'Vendors', content: 'Payment terms by vendor:\n{{vendor}} – {{payment_terms}}' }] },
+async (runtime) => {
+  const { agent_id } = await createAgent(runtime, 'Read my Vendor Contacts sheet and make a doc listing each vendor with their payment terms');
+  await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
+  const doc = runtime.platform.artifacts(user).find((item) => item.title === 'Vendor Payment Terms')!;
+  const state = runtime.inbox.store.entity('sandbox', 'workspace', doc.logical_key) as { sections: Array<{ text: string }> };
+  expect(state.sections[0].text).toBe('Payment terms by vendor:\nPrintCo – Net 30\nAcme Cloud – Net 15\nNorthwind Design – Net 30');
 }), 60_000);

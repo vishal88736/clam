@@ -48,10 +48,14 @@ const sectionsText = (sections: DocSection[]) => sections.map((section) => (sect
 /** Sheet tabs as readable text (header row, then rows), for summaries and extraction. */
 export const tabsText = (tabs: SheetTab[]) => tabs.map((tab) => [tab.name + ':', tab.headers.join(' | '),
   ...tab.rows.slice(0, 200).map((row) => row.map((cell) => String(cell ?? '')).join(' | '))].join('\n')).join('\n\n');
-const matchesQuery = (query: string | undefined, ...texts: string[]) => {
-  const words = (query ?? '').toLowerCase().split(/\s+/).filter((word) => word.length > 1);
-  const haystack = texts.join('\n').toLowerCase();
-  return !words.length || words.every((word) => haystack.includes(word));
+/** How many query words a file mentions (name counts double); 0 means no match. No query matches everything. */
+const queryScore = (query: string | undefined, name: string, body: string) => {
+  const words = (query ?? '').toLowerCase().split(/\s+/).map((word) => word.replace(/s$/, '')).filter((word) => word.length > 2);
+  if (!words.length) return 1;
+  const title = name.toLowerCase();
+  const text = body.toLowerCase();
+  const exact = title.replace(/\.[a-z0-9]{2,4}$/, '') === (query ?? '').toLowerCase().trim() ? 100 : 0;
+  return exact + words.reduce((score, word) => score + (title.includes(word) ? 2 : text.includes(word) ? 1 : 0), 0);
 };
 
 /* ----------------------------------------------------------------------------------------------
@@ -156,7 +160,7 @@ export class SandboxWorkspaceAdapter implements WorkspaceAdapter {
   async searchFiles(filter: { query?: string; kind?: FoundFile['kind'] | 'any'; limit: number; namespaces?: string[] }) {
     this.guard();
     const all = this.store.sqlite.prepare("SELECT id, body FROM inbox_entities WHERE mode=? AND kind='workspace' ORDER BY id").all(this.mode) as { id: string; body: string }[];
-    const results: FoundFile[] = [];
+    const results: Array<FoundFile & { score: number }> = [];
     for (const row of all) {
       if (filter.namespaces && !filter.namespaces.some((prefix) => row.id.startsWith(prefix + '/'))) continue;
       const state = JSON.parse(row.body) as Record<string, unknown> | null;
@@ -164,11 +168,10 @@ export class SandboxWorkspaceAdapter implements WorkspaceAdapter {
       const file = this.found(row.id, state);
       if (filter.kind && filter.kind !== 'any' && file.kind !== filter.kind) continue;
       const body = state.type === 'google_doc' ? sectionsText(state.sections as DocSection[]) : state.type === 'google_sheet' ? tabsText(state.tabs as SheetTab[]) : '';
-      if (!matchesQuery(filter.query, file.name, body)) continue;
-      results.push(file);
-      if (results.length >= filter.limit) break;
+      const score = queryScore(filter.query, file.name, body);
+      if (score) results.push({ ...file, score });
     }
-    return results;
+    return results.sort((left, right) => right.score - left.score).slice(0, filter.limit).map(({ score: _score, ...file }) => file);
   }
 
   async readFile(id: string, maxBytes: number): Promise<FileContent | null> {
@@ -182,7 +185,7 @@ export class SandboxWorkspaceAdapter implements WorkspaceAdapter {
     const blob = this.blob(id);
     if (!blob || blob.data.length > maxBytes) return { file, text: '' };
     const bytes = Buffer.from(blob.data);
-    return { file, text: file.kind === 'pdf' ? await pdfText(bytes) : file.kind === 'text' ? bytes.toString('utf8') : '' };
+    return { file, text: file.kind === 'pdf' ? await pdfText(bytes).catch(() => '') : file.kind === 'text' ? bytes.toString('utf8') : '' };
   }
 
   blob(key: string) {
@@ -405,7 +408,8 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     this.guard();
     const terms = ['trashed = false'];
     const words = (filter.query ?? '').replace(/['\\]/g, ' ').split(/\s+/).filter((word) => word.length > 1).slice(0, 6);
-    for (const word of words) terms.push(`(name contains '${word}' or fullText contains '${word}')`);
+    // Any of the words (Drive ranks by relevance); a model's over-specific query still finds the file.
+    if (words.length) terms.push('(' + words.map((word) => `name contains '${word}' or fullText contains '${word}'`).join(' or ') + ')');
     const mimes = filter.kind && filter.kind !== 'any' ? kindMimes[filter.kind] : undefined;
     if (mimes) terms.push('(' + mimes.map((mime) => `mimeType = '${mime}'`).join(' or ') + ')');
     const list = await this.call<{ files?: Array<DriveFile & { modifiedTime?: string; webViewLink?: string }> }>('drive:read',
@@ -428,7 +432,7 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     if (!response.ok) return { file, text: '' };
     const data = Buffer.from(await response.arrayBuffer());
     if (data.length > maxBytes) return { file, text: '' };
-    return { file, text: file.kind === 'pdf' ? await pdfText(data) : data.toString('utf8') };
+    return { file, text: file.kind === 'pdf' ? await pdfText(data).catch(() => '') : data.toString('utf8') };
   }
 
   private usesPicker() {

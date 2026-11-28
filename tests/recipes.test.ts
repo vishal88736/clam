@@ -68,10 +68,12 @@ it('traces every argument and turns what it cannot prove into a question', () =>
   ]);
   const observed = ['date', 'from', 'subject', 'message_id', 'merchant', 'price'];
   const before = analyzeBindings(program, 'mail', observed, []);
-  expect(before.find((binding) => binding.name === 'vendor')).toMatchObject({ kind: 'request', field: 'merchant' });
-  expect(before.filter((binding) => binding.kind === 'ask').map((binding) => binding.name).sort()).toEqual(['refund', 'refund', 'status']);
+  // No business vocabulary is built in: "Vendor" is not assumed to be the "merchant" field, so the recipe asks.
+  expect(before.find((binding) => binding.name === 'vendor')).toMatchObject({ kind: 'ask' });
+  expect(before.filter((binding) => binding.kind === 'ask').map((binding) => binding.name).sort()).toEqual(['refund', 'refund', 'status', 'vendor']);
   expect(before.find((binding) => binding.arg === 'to')).toMatchObject({ kind: 'request', field: 'from' });
-  const after = analyzeBindings(program, 'mail', observed, [{ name: 'refund', expr: 'price * 0.5' }, { name: 'status', expr: '"Refunded"' }]);
+  const after = analyzeBindings(program, 'mail', observed, [{ name: 'refund', expr: 'price * 0.5' }, { name: 'status', expr: '"Refunded"' },
+    { name: 'vendor', expr: 'merchant' }]);
   expect(after.filter((binding) => binding.kind === 'ask')).toEqual([]);
   expect(after.find((binding) => binding.name === 'refund')).toMatchObject({ kind: 'formula', detail: 'Refund = price * 0.5' });
 });

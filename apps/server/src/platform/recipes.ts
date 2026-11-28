@@ -458,7 +458,7 @@ export class RecipeService {
       const program = agent.workflow_plan.params.program;
       const reason = agent.workflow_plan.template !== 'generic' || !program ? 'Only agents with a step-by-step plan can be taught as recipes.' :
         program[0]?.op !== 'mail.search' ? 'Recipes start from incoming email; this agent starts from photos or Drive files.' :
-        program.some((step) => step.op === 'extract' || step.op === 'classify') ?
+        program.some((step) => step.op === 'extract' || step.op === 'classify' || step.op === 'mail.search' && step.about) ?
           'This agent relies on AI reading (extract/classify); a recipe runs with zero model calls, so it cannot repeat that exactly.' :
         !agent.state.last_run_id ? 'Let the agent finish one run first.' :
         this.engine.store.run(agent.state.last_run_id)?.status !== 'COMPLETED' ? 'The last run did not complete; fix it before teaching.' : null;
