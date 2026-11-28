@@ -667,3 +667,57 @@ async (runtime) => {
   const state = runtime.inbox.store.entity('sandbox', 'workspace', doc.logical_key) as { sections: Array<{ text: string }> };
   expect(state.sections[0].text).toBe('Payment terms by vendor:\nPrintCo – Net 30\nAcme Cloud – Net 15\nNorthwind Design – Net 30');
 }), 60_000);
+
+it('matches columns by whole words, never substrings ("Candidate Name" is not "date")', async () => {
+  const { lookup } = await import('../apps/server/src/platform/programExecutor.js');
+  const row = { fields: { date: '2026-12-07', candidate_name: 'Maria', amount_due: 612, due_date: '2026-12-22' } } as Parameters<typeof lookup>[0];
+  expect(lookup(row, 'Candidate Name')).toBe('Maria');
+  expect(lookup(row, 'Name')).toBe('Maria');
+  expect(lookup(row, 'Due')).toBe('2026-12-22');
+  expect(lookup(row, 'Amount')).toBe(612);
+  expect(lookup({ fields: { date: '2026-12-07' } } as Parameters<typeof lookup>[0], 'Candidate Name')).toBe('');
+});
+
+it('finds emails by meaning with "about" when no keyword would match', () => withPlan({ reasoning: 'Find complaints by meaning.', name: 'Complaints',
+  program: [{ id: 'mail', op: 'mail.search', about: 'a customer complaining about an order or a charge' },
+    { id: 'what', op: 'extract', from: 'mail', fields: ['problem', 'wants'] },
+    { id: 'doc', op: 'docs.write', title: 'Complaints Digest', content: '{{from}}: {{problem}} (wants {{wants}})' }] },
+async (runtime, prompts) => {
+  for (const [from, subject, text] of [['a@shop.example', 'Order #1 arrived broken', 'The lamp arrived shattered. Send a replacement.'],
+    ['b@shop.example', 'Charged twice', 'I was billed twice; refund the duplicate.']]) {
+    await runtime.app.inject({ method: 'POST', url: '/api/inbox/platform/sandbox/messages', payload: { from, subject, text } });
+  }
+  const { agent_id } = await createAgent(runtime, 'Write a doc of customer complaints with what each customer wants');
+  await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
+  // The AI was asked about recent mail by meaning; neither email contains the word "complaint".
+  expect(prompts.some((prompt) => prompt.includes('a customer complaining about an order or a charge') && prompt.includes('arrived broken'))).toBe(true);
+  const doc = runtime.platform.artifacts(user).find((item) => item.title === 'Complaints Digest')!;
+  const text = (runtime.inbox.store.entity('sandbox', 'workspace', doc.logical_key) as { sections: Array<{ heading: string; text: string }> }).sections[0];
+  expect(text.heading).toBe('Complaints Digest');
+  expect(text.text.split('\n').sort()).toEqual(['a@shop.example: broken lamp (wants replacement)', 'b@shop.example: double charge (wants refund)']);
+}, (prompt) => {
+  const items = prompt.split('\n').filter((line) => line.startsWith('{"index"')).map((line) => JSON.parse(line) as { index: number; content: string });
+  if (prompt.includes('matches this condition')) return { matches: items.filter((item) => /broken|billed twice/.test(item.content)).map((item) => item.index) };
+  if (prompt.startsWith('Extract these fields')) return { items: items.map((item) => ({ index: item.index, values: /broken/.test(item.content)
+    ? { problem: 'broken lamp', wants: 'replacement' } : { problem: 'double charge', wants: 'refund' } })) };
+  return { reasoning: 'Done.', done: true };
+}), 60_000);
+
+it('never confuses a requested "date" with when the email arrived', async () => {
+  const { repairProgram } = await import('../apps/server/src/platform/generic.js');
+  const { steps } = repairProgram([
+    { id: 'mail', op: 'mail.search', about: 'school events' },
+    { id: 'x', op: 'extract', from: 'mail', fields: ['date', 'subject'] },
+    { id: 'f', op: 'filter', from: 'x', field: 'date', exists: true },
+    { id: 'r', op: 'calendar.reminders', from: 'f', date_field: 'date', title: '{{subject}}' },
+  ], 'Put the school dates on my calendar');
+  expect(steps.slice(1).map((step) => ('fields' in step ? step.fields : 'field' in step ? step.field : 'date_field' in step ? step.date_field : ''))).toEqual([
+    ['mentioned_date'], 'mentioned_date', 'mentioned_date']);
+  // An exact-text filter on AI-written text becomes a meaning-based check.
+  const fuzzy = repairProgram([
+    { id: 'mail', op: 'mail.search', about: 'school events' },
+    { id: 'x', op: 'extract', from: 'mail', fields: ['date', 'topic'] },
+    { id: 'f', op: 'filter', from: 'x', field: 'topic', contains: 'date' },
+  ], 'Put the school dates on my calendar').steps;
+  expect(fuzzy[2]).toEqual({ id: 'f', op: 'classify', from: 'x', condition: 'its topic is about "date"' });
+});

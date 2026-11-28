@@ -278,6 +278,12 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
   const issues: string[] = [];
   const kinds = new Map<string, RowKind>(Object.entries(knownKinds));
   let summarized = Object.keys(knownKinds).some((name) => name.startsWith('summary'));
+  // Extracted values whose name collides with a source's own field ("date" is when the email arrived) get a distinct name;
+  // later steps reading through that step use the new name. stepId -> { requested: renamed }.
+  const renamed = new Map<string, Record<string, string>>();
+  const owned: Record<string, string> = { date: 'mentioned_date' };
+  // Fields the AI writes (free text): exact-text filters on them are converted into meaning-based classify steps.
+  const aiFields = new Map<string, Set<string>>();
   // Steps dropped as ungrounded; later steps reading from them read from the dropped step's input instead.
   const skipped = new Map<string, string | undefined>();
   const wantsPhotos = /\b(?:photos?|pictures?|pics?|images?|screenshots?|scans?|scanned|camera|google photos)\b/.test(text);
@@ -333,8 +339,21 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
     // A doc without a heading uses its title rather than being dropped.
     if (op === 'docs.write' && typeof step.heading !== 'string' && typeof step.title === 'string') step.heading = step.title;
     if (op === 'extract') {
+      const map: Record<string, string> = { ...(typeof step.from === 'string' ? renamed.get(step.from) : undefined) };
       step.fields = (Array.isArray(source.fields) ? source.fields : typeof source.fields === 'string' ? source.fields.split(',') : [])
-        .map((field) => String(field).trim().slice(0, 40)).filter(Boolean).slice(0, 12);
+        .map((field) => String(field).trim().slice(0, 40)).filter(Boolean)
+        // The email's own sender and subject are already on every row; asking the AI for them would only rewrite them.
+        .filter((field) => !['from', 'sender', 'subject'].includes(field.toLowerCase().replace(/[^a-z0-9]+/g, '_'))).slice(0, 12)
+        .map((field) => { const name = field.toLowerCase().replace(/[^a-z0-9]+/g, '_'); if (owned[name]) { map[name] = owned[name]; return owned[name]; } return field; });
+      if (Object.keys(map).length) renamed.set(id, map);
+      const inherited = typeof step.from === 'string' ? aiFields.get(step.from) : undefined;
+      aiFields.set(id, new Set([...(inherited ?? []), ...(step.fields as string[]).map((field) => field.toLowerCase().replace(/[^a-z0-9]+/g, '_'))]));
+    } else if (typeof step.from === 'string' && aiFields.has(step.from)) aiFields.set(id, aiFields.get(step.from)!);
+    if (op !== 'extract' && typeof step.from === 'string' && renamed.has(step.from)) {
+      const map = renamed.get(step.from)!;
+      renamed.set(id, map);
+      if (op === 'filter' && typeof step.field === 'string' && map[step.field]) step.field = map[step.field];
+      if (op === 'calendar.reminders' && typeof step.date_field === 'string' && map[step.date_field.toLowerCase()]) step.date_field = map[step.date_field.toLowerCase()];
     }
     if (op === 'drive.find' && step.kind !== undefined) {
       const kind = String(step.kind).toLowerCase().replace(/s$/, '').replace(/^(?:document|google_doc)$/, 'doc').replace(/^(?:spreadsheet|google_sheet)$/, 'sheet');
@@ -386,6 +405,12 @@ export function repairProgram(raw: unknown[], instruction: string, knownIds: str
       return;
     }
     if (typeof step.from === 'string' && !ids.has(step.from)) { issues.push(`step "${id}": "from" must name an earlier step`); return; }
+    // Exact text matching on what the AI wrote is meaningless (its wording varies): judge by meaning instead.
+    if (op === 'filter' && typeof step.contains === 'string' && typeof step.field === 'string' && aiFields.get(String(step.from))?.has(step.field)) {
+      const condition = `its ${step.field.replace(/_/g, ' ')} is about "${step.contains}"`;
+      for (const name of Object.keys(step)) if (!['id', 'from'].includes(name)) delete step[name];
+      Object.assign(step, { op: 'classify', condition });
+    }
     // Data-flow repair: attachment saving, labels, and replies need email rows, not photo or empty rows.
     if (['drive.save_attachments', 'mail.label', 'mail.draft_replies'].includes(op) && kinds.get(String(step.from)) !== 'mail') {
       const mail = [...kinds.entries()].reverse().find(([, kind]) => kind === 'mail')?.[0];

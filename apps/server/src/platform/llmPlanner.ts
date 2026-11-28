@@ -74,6 +74,7 @@ const guidance = [
   '  classify to keep rows by meaning, and summarize to write prose. Use filter only for exact field matches.',
   '- mail.search rows carry date, from, subject, message_id; other values come from extract (or "Label: value" lines in the email).',
   '  Use the same field names in sheets.append.columns, filter.field, calendar.reminders.date_field, and {{field}} (snake_case).',
+  '  date, from and subject are the email\'s own (when it arrived, who sent it): name extracted values differently (event_date, due_date, organizer).',
   '- To use the user\'s existing Drive files, Docs or Sheets: drive.find, then drive.read (text) or sheets.read (rows), then extract/summarize.',
   '- Continuous agents run again every few minutes: searches see new mail, sheet appends skip rows already written, and mail.send sends each',
   '  distinct message only once. So "ask these people X and collect their answers" is: mail.send to the named people, mail.search for',
