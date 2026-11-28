@@ -3,7 +3,7 @@ import { handoffDefaults, handoffId, scanOutboundSecrets, scanPromptInjection, t
 import { canonicalJson, sha256 } from '../inbox/trace.js';
 import type { InboxStore } from '../inbox/store.js';
 import type { Snapshot } from '../inbox/contracts.js';
-import { isPodCaseThread, podCase } from './sample.js';
+import { caseAttachmentId, caseForThread } from './cases.js';
 
 export const podScopes = ['handoff:send', 'handoff:read', 'attachment:extract'] as const;
 export type PodGrant = { tokenId: string; inboxId: string; scopes: string[] };
@@ -137,7 +137,9 @@ export class HandoffService {
       .get(from.pod_id, thread, Number(reset?.marker ?? 0));
     const last = history.at(-1);
     const owner = last ?? this.rows(from.pod_id, thread).at(-1);
-    if ((owner && owner.to_inbox_id !== from.id) || (!owner && isPodCaseThread(thread) && from.id !== 'triage')) {
+    // A case thread is started only by the inbox its email was addressed to; after that, by whoever holds it.
+    const source = caseForThread(this.store, thread);
+    if ((owner && owner.to_inbox_id !== from.id) || (!owner && source && from.id !== source.toInbox)) {
       throw new Error('HANDOFF_THREAD_NOT_AUTHORIZED');
     }
     const budget = last ? Math.min(last.max_hops, input.max_hops ?? last.max_hops) : input.max_hops ?? handoffDefaults.maxHops;
@@ -154,7 +156,7 @@ export class HandoffService {
       throw new Error('OUTBOUND_CONTENT_BLOCKED');
     }
     for (const id of payload.attachment_ids) {
-      const seeded = id === podCase.attachmentId && isPodCaseThread(thread) && from.id === 'triage' &&
+      const seeded = source && from.id === source.toInbox && (source.attachments ?? []).some((_, index) => caseAttachmentId(source, index) === id) &&
         this.store.sqlite.prepare('SELECT 1 FROM inbox_capability_events WHERE id=?').get('pod:' + thread + ':' + id);
       const forwarded = Boolean(owner && (JSON.parse(owner.payload_json) as { payload?: SignedHandoff['payload'] })
         .payload?.attachment_ids.includes(id));

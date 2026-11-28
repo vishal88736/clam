@@ -7,11 +7,16 @@ services:
     command: [node, apps/server/dist/index.js]
     environment:
       SIFTVANE_BIND_HOST: 0.0.0.0
-      SIFTVANE_MAIL_MODE: sandbox
-      SIFTVANE_AGENT_MODE: offline-smoke
+      # The AI provider: set it here from your shell, or choose it later on the Profile page.
+      SIFTVANE_LLM_PROVIDER: ${SIFTVANE_LLM_PROVIDER:-}
+      SIFTVANE_LLM_MODEL: ${SIFTVANE_LLM_MODEL:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       SIFTVANE_INBOX_LIVE: "false"
       DATABASE_PATH: /app/data/siftvane.db
-      SIFTVANE_ARTIFACTS_DIR: /app/data/artifacts
       SIFTVANE_TRACES_DIR: /app/data/traces
       SIFTVANE_KILLSWITCH_FILE: /app/data/.killswitch
       SIFTVANE_KEY_FILE: /app/data/.siftvane.key

@@ -9,7 +9,7 @@ import type { ActionKind, Attention, Claim, Mode, RunRecord, RunTrace, Snapshot,
 import { genesisHash } from './trace.js';
 import { handoffSchema } from '../handoffs/schema.js';
 import { platformSchema } from '../platform/schema.js';
-import { sandboxPhotos, workspaceMessages } from '../sandbox/seed.js';
+import { podMessages, sandboxPhotos, workspaceMessages } from '../sandbox/seed.js';
 
 const ddl = `
 BEGIN IMMEDIATE;
@@ -139,6 +139,12 @@ export class InboxStore {
           if (file.blob) this.sqlite.prepare('INSERT OR REPLACE INTO workspace_sandbox_blobs VALUES (?, ?, ?)').run(file.key, file.blob.mime, file.blob.data);
         }
         this.setState('seed-v5-drive', true);
+      }
+      if (!this.state('seed-v7-pod')) {
+        for (const message of podMessages) {
+          this.sqlite.prepare('INSERT OR IGNORE INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(message.id, 'pod', JSON.stringify(message));
+        }
+        this.setState('seed-v7-pod', true);
       }
       if (!this.state('seed-v6-replies')) {
         for (const message of sandboxReplyHistory) {

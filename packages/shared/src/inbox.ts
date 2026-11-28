@@ -16,17 +16,15 @@ export const inboxPolicySchema = z.object({
 });  // unknown keys from older policy versions are dropped, not rejected
 export type InboxPolicy = z.infer<typeof inboxPolicySchema>;
 
+/** A calendar event. Fields from older versions (flight booking refs, dossiers) are dropped on read, not rejected. */
 export const inboxCalendarSchema = z.object({
   id: z.string().min(1),
   title: z.string().max(140),
   start: z.string().datetime({ offset: true }),
   end: z.string().datetime({ offset: true }),
-  kind: z.enum(['flight', 'focus', 'meeting', 'reminder', 'buffer']),
+  kind: z.string().trim().min(1).max(40).default('event'),
   guests: z.array(z.string()),
-  flexible: z.boolean(),
-  bookingRef: z.string().optional(),
-  domain: z.string().optional(),
-  dossier: z.array(z.string()).optional(),
+  flexible: z.boolean().default(false),
   etag: z.string().optional(),
-}).strict();
+});
 export type InboxCalendarEvent = z.infer<typeof inboxCalendarSchema>;

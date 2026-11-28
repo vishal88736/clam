@@ -292,14 +292,14 @@ export function createInboxMcpServer(args: {
     () => workflow('list_events', 'calendar:propose', async () => {
       const events = await calendar.list();
       return events.map((event) => {
-        const flags = scanPromptInjection([event.title, ...event.dossier ?? []].join('\n'));
-        return { ...event, title: flags.detected ? '[redacted]' : event.title, dossier: undefined,
+        const flags = scanPromptInjection(event.title);
+        return { ...event, title: flags.detected ? '[redacted]' : event.title,
           trust_level: 'untrusted_external', threat_signals: flags.signals, quarantined: flags.detected };
       });
     }, {}));
   server.tool('propose_calendar_change', 'Queue a calendar addition, update, or cancellation for operator approval.', {
     event_id: messageId.optional(), cancel: z.boolean().optional(),
-    event: inboxCalendarSchema.omit({ id: true, etag: true, dossier: true }).optional(),
+    event: inboxCalendarSchema.omit({ id: true, etag: true }).optional(),
   }, ({ event_id, cancel, event }) => workflow('propose_calendar_change', 'calendar:propose', async () => {
     inbox.requireMutationScope(mode, 'calendar');
     if ((cancel && (!event_id || event)) || (!cancel && !event)) throw new Error('INVALID_CALENDAR_CHANGE');

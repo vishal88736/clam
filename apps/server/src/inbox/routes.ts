@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -11,8 +11,6 @@ import type { Mode, TraceStep } from './contracts.js';
 import type { InboxEngine } from './engine.js';
 import { capabilityCounts, threadReplay } from './replay.js';
 import { podScopes } from '../handoffs/service.js';
-import { podCase } from '../handoffs/sample.js';
-import { completeHandoff, extractPodAttachment } from '../handoffs/workflow.js';
 import type { PlatformEvent, PlatformService } from '../platform/service.js';
 
 const equal = (left: string, right: string) =>
@@ -117,30 +115,6 @@ export function registerInboxRoutes(app: FastifyInstance, inbox: InboxEngine, co
       const { scopes } = z.object({ scopes: z.array(z.enum(podScopes)).min(1).max(3) }).strict().parse(request.body);
       reply.header('Cache-Control', 'no-store');
       return inbox.handoffs.mint(id, scopes);
-    });
-    router.post('/api/inbox/agent-inboxes/demo', async (request) => {
-      authorizePodOperator(request);
-      inbox.guard();
-      const thread = podCase.threadId + '-' + randomUUID().slice(0, 8);
-      const attachment = await extractPodAttachment(inbox, 'triage', podCase.messageId, thread);
-      const first = await inbox.handoff('triage', {
-        from_inbox_id: 'triage', to_inbox_id: 'executor', thread_id: thread,
-        task_summary: 'Reconcile the duplicate shipping charge on invoice NS-482',
-        structured_payload: { source_message: podCase.messageId, extracted_csv: attachment.text },
-        attachment_ids: [attachment.attachment_id],
-      });
-      if (first.status !== 'DELIVERED') throw new Error('HANDOFF_POST_CONDITION_FAILED');
-      const evidence = await extractPodAttachment(inbox, 'executor', podCase.messageId, thread);
-      const invoice = /^NS-482,Duplicate shipping charge,USD,18\.00$/m.test(evidence.text);
-      if (!invoice) throw new Error('HANDOFF_ARTIFACT_UNVERIFIED');
-      const second = await inbox.handoff('executor', {
-        from_inbox_id: 'executor', to_inbox_id: 'triage', thread_id: thread,
-        task_summary: 'Return the verified reply draft for the credit memo',
-        structured_payload: { draft: 'We confirmed the duplicate shipping charge on NS-482. Please apply the USD 18.00 credit.', evidence: evidence.attachment_id },
-      });
-      if (second.status !== 'DELIVERED') throw new Error('HANDOFF_POST_CONDITION_FAILED');
-      await completeHandoff(inbox, 'executor', String(first.handoff_id));
-      return { thread_id: thread, hops: [first, second] };
     });
 
     router.get('/api/inbox/connection', async (request) => {

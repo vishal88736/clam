@@ -24,13 +24,12 @@ async function request<T>(endpoint: string, body?: unknown): Promise<T> {
   return value as T;
 }
 
-export function AgentInboxes({ sandboxSelected }: { sandboxSelected: boolean }) {
+export function AgentInboxes() {
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [members, setMembers] = useState<PodInbox[]>([]);
   const [selected, setSelected] = useState('triage');
   const [scopes, setScopes] = useState(['handoff:read']);
   const [token, setToken] = useState<{ token: string; expires_at: string } | null>(null);
-  const [thread, setThread] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const refreshSequence = useRef(0);
@@ -92,14 +91,7 @@ export function AgentInboxes({ sandboxSelected }: { sandboxSelected: boolean }) 
       <button type="button" className="inbox-button" onClick={() => void navigator.clipboard.writeText(token.token)
         .catch(() => setError('Select and copy the displayed token.'))}>Copy Pod token</button>
     </div>}
-    <div className="inbox-actions">
-      <button type="button" className="inbox-button" disabled={busy || !sandboxSelected} onClick={() => void apply(async () => {
-        setThread((await request<{ thread_id: string }>('agent-inboxes/demo', {})).thread_id);
-        await refresh();
-      })}>Run sandbox handoff</button>
-      {thread && <a className="inbox-text-link" href={'/?thread=' + encodeURIComponent(thread) + '#briefing'}>Replay sandbox handoff</a>}
-    </div>
-    {!sandboxSelected && <p>Switch to the sandbox to replay the internal handoff demo.</p>}
+    <p>Each agent inbox receives its own case mail. Agents hand work to each other with signed handoffs; every hop is replayed under <a className="inbox-text-link" href="/#monitor">Runs &amp; traces</a>.</p>
     {error && <p className="inbox-error" role="alert">{error}</p>}
   </section>;
 }

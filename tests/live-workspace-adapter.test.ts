@@ -275,7 +275,8 @@ it('uses the Google Photos Picker: no reads before the user picks, then only pic
     picked = true;
     expect(await adapter.searchPhotos({ limit: 5 })).toEqual([expect.objectContaining({ id: 'm1', filename: 'night.svg' })]);
     const details = await extractPhotoDetails(adapter, 'm1');
-    expect(details).toMatchObject({ extraction: 'image_text_layer', fields: { merchant: 'Night Market', amount: 12.5, currency: 'USD' } });
+    expect(details).toMatchObject({ extraction: 'image_text_layer', quarantined: false });
+    expect(details.text).toContain('Night Market');
     const download = calls.find((call) => call.url.startsWith('https://lh3.googleusercontent.com/'))!;
     expect(download).toMatchObject({ capability: 'photos:read', url: 'https://lh3.googleusercontent.com/pp/m1=d' });
     expect(calls.every((call) => call.capability === 'photos:read')).toBe(true);

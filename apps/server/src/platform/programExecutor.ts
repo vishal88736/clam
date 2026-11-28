@@ -497,9 +497,9 @@ export class ProgramExecutor {
         for (const item of items) {
           const details = await extractPhotoDetails(adapter, item.id);
           if (details.quarantined) { notes.push('quarantined ' + item.filename); continue; }
-          const fields: Record<string, Value> = { media_item_id: item.id, filename: item.filename, date: details.fields.date ?? '' };
-          for (const [name, value] of Object.entries(details.fields)) if (value !== undefined) fields[name] = value;
-          result.rows.push({ fields });
+          // A photo row is its name, date and text; any field the request needs is read from the text by the AI.
+          result.rows.push({ fields: { media_item_id: item.id, filename: item.filename, date: details.date ?? '', category: item.category ?? '' },
+            text: details.text });
         }
         this.log('photos', 'photos_extract', describeStep(step), `${result.rows.length} photos extracted`);
         break;

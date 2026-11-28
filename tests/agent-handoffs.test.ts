@@ -6,7 +6,11 @@ import { Client } from '../apps/server/node_modules/@modelcontextprotocol/sdk/di
 import { StreamableHTTPClientTransport } from '../apps/server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js';
 import { expect, it } from 'vitest';
 import { createSiftvaneApp } from '../apps/server/src/app.js';
-import { podCase } from '../apps/server/src/handoffs/sample.js';
+import { podMessages } from '../apps/server/src/sandbox/seed.js';
+
+// The case email the sandbox Pod's triage inbox received (seeded mail, not code).
+const podCase = { messageId: podMessages[0].id, threadId: podMessages[0].threadId, attachmentId: podMessages[0].attachmentIds[0],
+  attachment: podMessages[0].attachments[0] };
 import { handoffPayloadHash } from '../apps/server/src/handoffs/service.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 

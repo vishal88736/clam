@@ -131,7 +131,7 @@ const event = (id: string, title: string, start: string, end: string, options: P
 
 export const sandboxEvents = [
   event('flight-siftvane42', 'Flight AC402', '2026-12-07T14:20:00Z', '2026-12-07T16:15:00Z',
-    { kind: 'flight', bookingRef: 'SIFTVANE42', domain: 'airline.example' }),
+    { kind: 'flight' }),
   event('focus-flexible', 'Solo focus block', '2026-12-07T16:30:00Z', '2026-12-07T17:00:00Z',
     { kind: 'focus', flexible: true }),
   event('vip-review', 'Partner review', '2026-12-07T17:00:00Z', '2026-12-07T17:30:00Z',
@@ -245,3 +245,13 @@ export const sandboxDriveFiles: Array<{ key: string; state: Record<string, unkno
     modified: '2026-12-06T09:30:00.000Z' },
     blob: { mime: 'text/plain', data: Buffer.from('Standup Dec 6\n- Sam: demo rehearsal moved to Thursday\n- Priya: launch handoff blocked on legal review, due Dec 10\n- Action: renew Northwind contract before March\n') } },
 ];
+
+/** Mail delivered to the sandbox agent Pod: each message belongs to the agent inbox it was addressed to. */
+export const podMessages = [{
+  id: 'vendor-credit-case', threadId: 'vendor-credit-thread', toInbox: 'triage', from: 'billing@northstar.example',
+  subject: 'Northstar credit memo needs review', receivedAt: '2026-12-07T10:45:00.000Z', labels: ['INBOX'], verifiedSender: true,
+  text: 'Our credit memo for invoice NS-482 is attached. Can you confirm the line item before we post it?',
+  attachmentIds: ['credit-memo-csv'],
+  attachments: [{ name: 'credit-memo.csv', mime: 'text/csv',
+    data: Buffer.from('invoice,item,currency,credit\nNS-482,Duplicate shipping charge,USD,18.00\n').toString('base64url') }],
+}];

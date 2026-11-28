@@ -17,18 +17,13 @@ interface GoogleEvent {
 function fromGoogle(event: GoogleEvent): InboxCalendarEvent | null {
   if (event.status === 'cancelled' || !event.start?.dateTime || !event.end?.dateTime) return null;
   const tags = event.extendedProperties?.private ?? {};
-  const kinds = ['flight', 'focus', 'meeting', 'reminder', 'buffer'] as const;
-  const dossier = tags.siftvaneDossier ?? tags.clamDossier;
   return {
     id: event.id, etag: event.etag, title: event.summary ?? 'Calendar event',
     start: new Date(event.start.dateTime).toISOString(), end: new Date(event.end.dateTime).toISOString(),
     guests: (event.attendees ?? []).filter((guest) => guest.email && !guest.self)
       .map((guest) => guest.email!.toLowerCase()).sort(),
-    kind: kinds.find((kind) => kind === (tags.siftvaneKind ?? tags.clamKind)) ?? 'meeting',
+    kind: ((tags.siftvaneKind ?? tags.clamKind) || 'event').slice(0, 40),
     flexible: (tags.siftvaneFlexible ?? tags.clamFlexible) === 'true',
-    bookingRef: (tags.siftvaneBooking ?? tags.clamBooking) || undefined,
-    domain: (tags.siftvaneDomain ?? tags.clamDomain) || undefined,
-    dossier: dossier ? dossier.split('\n') : undefined,
   };
 }
 
@@ -53,7 +48,7 @@ export class GoogleCalendar implements CalendarAdapter {
   private normalize(event: GoogleEvent) {
     const result = fromGoogle(event);
     if (!result || !this.redact) return result;
-    return { ...result, title: this.redact(result.title), dossier: result.dossier?.map(this.redact) };
+    return { ...result, title: this.redact(result.title) };
   }
 
   async list(): Promise<InboxCalendarEvent[]> {
@@ -95,7 +90,6 @@ export class GoogleCalendar implements CalendarAdapter {
         ? { attendees: target.guests.map((email) => ({ email })) } : {}),
       extendedProperties: { private: {
         siftvaneKind: target.kind, siftvaneFlexible: String(target.flexible),
-        siftvaneBooking: target.bookingRef ?? '', siftvaneDomain: target.domain ?? '', siftvaneDossier: target.dossier?.join('\n') ?? '',
       } },
     } : null;
     const response = await this.request(suffix, {

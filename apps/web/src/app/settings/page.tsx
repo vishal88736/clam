@@ -144,7 +144,7 @@ export default function SettingsPage() {
           </article>)}
         </>}
     </section>
-    <AgentInboxes sandboxSelected={!session || session.active_inbox_id === 'sandbox'} />
+    <AgentInboxes />
     {session && (!session.live_enabled || session.user) && <section className="inbox-panel">
       <h2>Sandbox mailbox tokens</h2>
       <InboxTokenList inboxId="sandbox" revision={0} canMint choices={choices} />

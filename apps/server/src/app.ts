@@ -126,7 +126,8 @@ export async function createSiftvaneApp(overrides?: {
   if (inbox.halted()) inbox.latch(true);
   inbox.startScheduler();
   // The AI provider can be picked in the website; tests that inject a model keep it.
-  const ai = new AiSettings(inbox.store.sqlite, config.googleTokenKey, inbox.agent, (choice) => inbox.useAgent(choice));
+  // API keys saved on Profile are encrypted with the Google token key, or the server's own local key when Google isn't configured.
+  const ai = new AiSettings(inbox.store.sqlite, config.googleTokenKey || config.encryptionKey.toString('hex'), inbox.agent, (choice) => inbox.useAgent(choice));
   if (!overrides?.agent) ai.load();
   const platform = new PlatformService(inbox.store, dbHandle.sqlite, inbox.registry);
   const missions = new MissionRunner(inbox, platform, { webOrigin: config.webOrigin });

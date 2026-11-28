@@ -12,7 +12,10 @@ export interface PhotoDetails {
   category: string | null;
   created_at: string;
   extraction: 'image_text_layer' | 'ocr' | 'metadata_only';
-  fields: { merchant?: string; date?: string; amount?: number; currency?: string; due?: string; reference?: string };
+  /** When the photo was taken (YYYY-MM-DD). */
+  date?: string;
+  /** The photo's screened text (OCR or text layer), for the AI to read; empty when quarantined or no text was found. */
+  text: string;
   content_sha256: string;
   bytes: number;
   trust_level: 'untrusted_external';
@@ -46,41 +49,11 @@ export function ocrImage(bytes: Buffer, binary = process.env.SIFTVANE_TESSERACT_
   });
 }
 
-const iso = (value: string | undefined) => {
-  if (!value) return undefined;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
-  return us ? `${us[3]}-${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}` : undefined;
-};
-const datePattern = '(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{4})';
-
-/** Parses labelled receipts ("Total: 32.00 USD") and typical OCR output ("TOTAL $32.00", "Pay by 12/20/2026"). */
-export function parseReceiptText(text: string) {
-  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
-  const labelled = (name: string) => new RegExp('^' + name + '\\s*:\\s*(.+)$', 'im').exec(text)?.[1]?.trim();
-  const totalMatch = /\b(?:grand\s+total|total|amount\s+due|amount|fine|balance)\b[^0-9\n$€£]{0,12}([$€£])?\s*([0-9]{1,7}(?:[.,][0-9]{2})?)\s*([A-Z]{3})?/i.exec(text);
-  // OCR often garbles the label ("JOTAL"); fall back to the largest currency-marked amount on the receipt.
-  const marked = [...text.matchAll(/([$€£])\s*([0-9]{1,7}[.,][0-9]{2})\b/g)].sort((left, right) => Number(right[2].replace(',', '.')) - Number(left[2].replace(',', '.')))[0];
-  const amountText = totalMatch?.[2] ?? marked?.[2];
-  const symbol = totalMatch?.[1] ?? marked?.[1];
-  const currency = totalMatch?.[3]?.toUpperCase() ?? (symbol === '€' ? 'EUR' : symbol === '£' ? 'GBP' : amountText ? 'USD' : undefined);
-  const due = iso(new RegExp('\\b(?:pay\\s+by|due(?:\\s+date)?|payment\\s+due)\\b\\s*:?\\s*' + datePattern, 'i').exec(text)?.[1]);
-  const anyDate = [...text.matchAll(new RegExp(datePattern, 'g'))].map((match) => iso(match[1])).filter(Boolean) as string[];
-  const merchant = labelled('Merchant') ?? lines.find((line) => /[A-Za-z]{3}/.test(line) && !/\b(?:total|date|receipt|invoice|amount|card|tax)\b/i.test(line));
-  return {
-    merchant: merchant?.replace(/[^\w &'.,-]/g, '').slice(0, 120) || undefined,
-    date: iso(labelled('Date')) ?? anyDate.find((value) => value !== due),
-    amount: amountText ? Number(amountText.replace(',', '.')) : undefined,
-    currency,
-    due,
-    reference: /\b(?:ticket|receipt|invoice|ref(?:erence)?)\s*(?:#|no\.?|number)?\s*:?\s*([A-Z0-9-]*\d[A-Z0-9-]*)\b/i.exec(text)?.[1]?.toUpperCase().slice(0, 40),
-  };
-}
-
 /**
- * Plane A photo parser: bounded bytes in, a small typed record out. Raw image bytes and full extracted text
- * never leave this function, so traces, logs, and SSE events only ever carry the structured fields.
- * SVG receipts expose a text layer; raster photos are OCR'd with Tesseract when it is installed.
+ * Reads a photo's text: bounded bytes in, screened text out. SVG images expose a text layer; raster photos are OCR'd
+ * with Tesseract when it is installed. Nothing is assumed about what the photo is: agents pull whatever fields the user
+ * asked for out of the text with the AI. Raw image bytes never leave this function, and text that carries prompt
+ * injection or secrets is withheld.
  */
 export async function extractPhotoDetails(adapter: WorkspaceAdapter, id: string): Promise<PhotoDetails> {
   const { item, data } = await adapter.photoBytes(id, maxPhotoBytes);
@@ -103,10 +76,10 @@ export async function extractPhotoDetails(adapter: WorkspaceAdapter, id: string)
   const signals = scanPromptInjection(text);
   const secret = scanOutboundSecrets(text);
   const quarantined = signals.detected || Boolean(secret);
-  const parsed: Partial<ReturnType<typeof parseReceiptText>> = quarantined ? {} : parseReceiptText(text);
   return {
     media_item_id: item.id, filename: item.filename, category: item.category, created_at: item.creationTime, extraction,
-    fields: { ...parsed, date: quarantined ? undefined : parsed.date ?? (item.creationTime ? item.creationTime.slice(0, 10) : undefined) },
+    date: item.creationTime ? item.creationTime.slice(0, 10) : undefined,
+    text: quarantined ? '' : text.slice(0, 4000),
     content_sha256: createHash('sha256').update(data).digest('hex'),
     bytes: data.length,
     trust_level: 'untrusted_external',

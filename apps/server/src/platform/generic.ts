@@ -85,7 +85,7 @@ export function genericStepScopes(step: GenericStep): (typeof mcpScopes)[number]
 export function describeStep(step: GenericStep): string {
   switch (step.op) {
     case 'mail.search': return `Search mail${step.about ? ` about "${step.about}"` : step.keywords.length ? ' for ' + step.keywords.join(', ') : ''}${step.from_contains ? ' from ' + step.from_contains : ''}`;
-    case 'photos.extract': return `Read ${step.category.toLowerCase()} photos and extract details`;
+    case 'photos.extract': return `Read the text of ${step.category.toLowerCase()} photos`;
     case 'filter': return `Keep rows where ${step.field}${step.contains ? ' contains "' + step.contains + '"' : ' is present'}`;
     case 'summarize': return step.instructions ? `Summarize: ${step.instructions}` : 'Summarize the matching items';
     case 'extract': return `Read each item and extract ${step.fields.join(', ')}`;
@@ -111,7 +111,7 @@ export const opCatalogForPrompt = [
   'drive.find {query?, kind?: any|doc|sheet|pdf|text|folder|file, limit?} -> one row per file in the user\'s Drive (name, kind, modified, link)',
   'drive.read {from: a drive.find step} -> the same rows with each file\'s text loaded (Docs, PDFs, text files, Sheets as text)',
   'sheets.read {title? | from: a drive.find step, tab?, limit?} -> one row per spreadsheet row of the best-matching sheet, fields named after the header row (snake_case)',
-  'photos.extract {category: RECEIPTS|DOCUMENTS|SCREENSHOTS, limit?} -> one row per photo (merchant, date, amount, currency, due, reference)',
+  'photos.extract {category: RECEIPTS|DOCUMENTS|SCREENSHOTS, limit?} -> one row per photo (filename, date, and its text; use extract to pull fields)',
   'UNDERSTANDING (the AI reads each row\'s email/file/row text)',
   'extract {from, fields[], instructions?} -> adds the named fields to every row (whatever the request needs, named in the user\'s own words)',
   'classify {from, condition} -> keeps only rows matching a plain-language condition written from the user\'s request',

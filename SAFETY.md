@@ -2,10 +2,10 @@
 
 | Control | Enforcement |
 | --- | --- |
-| Reader boundary | `apps/server/src/inbox/reader.ts` opens SQLite with `readOnly: true` and `PRAGMA query_only=ON`. Live mode passes a read-only Gmail function. HTML, subject, and attachment text are inspected before analysis. The model is called without tool bindings and its outputs are schema- and evidence-checked. |
+| Untrusted input | Email, attachments, Drive files and photos are untrusted data. HTML is reduced to visible text (hidden text is dropped), content is scanned for prompt injection and secrets, and the AI is called without tool bindings: it returns data (a plan or answers) that Siftvane validates, never actions. |
 | Provenance and confidence | `evaluateSafeAction` in `apps/server/src/inbox/policy.ts` checks contacts and allowlists, blocks untrusted body-only destinations, blocks secret and injected outbound text, and gates low-confidence and external actions. |
 | SQLite defense in depth | `apps/server/src/inbox/store.ts` defines `system_state` plus insert/update triggers on `inbox_actions`. Triggers enforce the halt latch, per-run write budgets, and immutable action identity. |
-| Idempotency | `InboxEngine.apply` hashes source, playbook, action type, target, and target version within the mode. It reserves the claim in SQLite before dispatch. A claim with an uncertain result is reconciled by read-back. |
+| Idempotency | `InboxEngine.apply` hashes source, step, action type, target, and target version within the mode. It reserves the claim in SQLite before dispatch. A claim with an uncertain result is reconciled by read-back. |
 | Halt and circuit breakers | `InboxEngine.guard` checks the lockfile and database synchronously. `trip` latches the pipeline on a threat burst, tool loop, or budget breach. The console streams the operator latch status. |
 | Automation disclosure | Both transport implementations in `apps/server/src/inbox/targets.ts` call `outboundPayload` after draft assembly. It appends a fixed footer and `X-Agent-Automated: true`. The tests attempt to strip the disclosure from the sandbox outbox and Gmail MIME payload. |
 | Verification and compensation | `InboxEngine.apply` stores the before and expected state and checks read-back before `VERIFIED`. `rollback` checks for intervening changes, restores eligible actions in reverse order, and verifies the result. Delivered messages have a manual-correction receipt. |
@@ -15,18 +15,16 @@
 | Credentials and retention | The OAuth vault stores ciphertext. The trace keeps source IDs, decisions, hashes, structured state, and model telemetry. Raw live bodies, attachments, and draft content used by the transport are excluded from execution receipts. MCP extraction stages bounded input temporarily and removes the staged file after extraction. |
 | Trace integrity | `apps/server/src/inbox/trace.ts` recursively sorts object keys for canonical JSON, omits `step_hash` from that step’s input, and hashes `prev_hash + canonical_json(step)`. The terminal report, step count, and head hash are checked by the verifier. Keep a trusted independent copy of the head for provenance. |
 
-Run `pnpm test` for SQLite guards, taint and confidence decisions, disclosure, repeat-run deduplication, rollback, malicious-input quarantine, and post-write timeout recovery. Read the generated [adversarial regression report](tests/adversarial_regression_report.md) for the isolated test results.
+Run `pnpm test` for SQLite guards, taint and confidence decisions, disclosure, repeat-run deduplication, rollback, malicious-input quarantine, and post-write timeout recovery.
 
-`pnpm run-official-trap-pack PATH` puts each supplied case in its own SQLite database. Trap-mode policy permits the case’s quarantine write and blocks other mutations with `TRAP_ISOLATION`. The runner checks the journal and protected state independently, exits nonzero on degraded or failed cases, and links their JSON receipts in the generated report.
-
-`tests/agentware-hard-rules.test.ts` starts a run with a pending model request and invokes the real halt CLI. It also verifies that a one-byte trace edit makes the verifier CLI exit nonzero.
+`tests/core-safety.test.ts` starts an agent run with a pending AI request and invokes the real halt CLI. It also verifies that a one-byte trace edit makes the verifier CLI exit nonzero.
 
 ## Workspace agents (Drive, Docs, Sheets, Photos)
 
-Persistent agents created through `provision_and_run_agent` or the web console run as ordinary engine missions. They hold the same single-writer lease, kill-switch latch, budgets, hash-chained trace, Tier 0/1/2 gate, claim ledger, and read-back `CHECK` as inbox runs.
+Persistent agents created through `provision_and_run_agent` or the web console run as engine missions. Each holds the single-writer lease, kill-switch latch, budgets, hash-chained trace, Tier 0/1/2 gate, claim ledger, and read-back `CHECK`.
 
-- **General programs.** Free-form requests compile into a program built only from Siftvane's typed step library. In LLM mode the model composes it and may add follow-up steps after reviewing sanitized observations: counts, field names, and short samples passed through the taint firewall. Raw email bodies are never sent to the model. Added steps are validated against the same schema, recipient guard, and policy gates, then journaled with the model's reasoning.
-- **Planning cannot widen authority.** Siftvane validates every model-composed program (in LLM mode the model writes every plan; the built-in workflows are used only offline). Send and vendor recipients must appear verbatim in the user's own request. For MCP-created programs, Siftvane checks each operation against the originating token's scopes, including steps added during review. Google operations also require the corresponding OAuth grants. If the model is unreachable or cannot produce a usable plan, provisioning fails with `AI_MODEL_UNAVAILABLE` or `AI_PLAN_UNUSABLE`; Siftvane never substitutes a different, hard-coded agent. Mailbox labels, Drive copies, reply drafts and calendar reminders are dropped from a plan (or a review) unless the request asks for them, and a review cannot rewrite a sheet the program already wrote. AI `extract`/`classify`/`summarize` calls see redacted item text as untrusted data, and their answers are sanitized and scanned for injection before use.
+- **The AI plans; Siftvane executes.** Every request becomes a program built only from Siftvane's typed step library. The AI composes it and may add follow-up steps after reviewing sanitized observations: counts, field names, and short samples passed through the taint firewall. Raw email bodies are never sent to the model. Added steps are validated against the same schema, recipient guard, and policy gates, then journaled with the model's reasoning.
+- **Planning cannot widen authority.** Siftvane validates every AI-composed program; there are no built-in workflows, and with no AI provider configured no agent is created (`AI_PROVIDER_REQUIRED`). Send recipients must appear verbatim in the user's own request. For MCP-created programs, Siftvane checks each operation against the originating token's scopes, including steps added during review. Google operations also require the corresponding OAuth grants. If the model is unreachable or cannot produce a usable plan, provisioning fails with `AI_MODEL_UNAVAILABLE` or `AI_PLAN_UNUSABLE`; Siftvane never substitutes a different, hard-coded agent. Mailbox labels, Drive copies, reply drafts and calendar reminders are dropped from a plan (or a review) unless the request asks for them, and a review cannot rewrite a sheet the program already wrote. AI `extract`/`classify`/`summarize` calls see redacted item text as untrusted data, and their answers are sanitized and scanned for injection before use.
 - **Taint firewall.** Untrusted text from email, PDFs, or photos is sanitized before it reaches a Sheet or Doc:
   - formula prefixes and functions such as `IMPORTXML`, `HYPERLINK`, and `CMD|` are neutralized;
   - prompt-injection text and secrets are redacted;
@@ -35,16 +33,14 @@ Persistent agents created through `provision_and_run_agent` or the web console r
   The workspace policy then blocks any remaining live formula (`WORKSPACE_FORMULA_INJECTION`).
 - **Secret scanner.** Sheet and Doc text and Drive file contents (plain text, and PDFs through the quarantined extractor) are scanned. A detected secret blocks the write with `WORKSPACE_SECRET_BLOCKED`. Unscanned file content is also blocked.
 - **Tier 2 gates.** The following always wait in the Approval Inbox and resume the agent automatically after a decision:
-  - outbound mail to non-allowlisted recipients;
-  - vendor RFQ batches;
-  - bookings and payment confirmations (`FINANCIAL_COMMITMENT_APPROVAL`);
-  - duplicate or spoofed invoices.
+  - outbound mail to non-allowlisted recipients and VIPs;
+  - every reply draft (written in the user's style from `behavior.md`, stating only facts from the business profile);
+  - calendar changes with external guests, and anything below the confidence threshold.
   
   An expired approval counts as declined.
 - **Least-privilege Google scopes.**
-  - The Workspace grant requests only `drive.file` and the Photos Picker scope `photospicker.mediaitems.readonly`. Siftvane can read only the photos the user picks in Google's own UI.
-  - Reading the user's existing Drive is opt-in (`drive.readonly`, read-only). Read steps are journaled as `READ_ONLY_SCOPED`; files carrying prompt-injection or secrets are withheld from the model, and one unreadable file is skipped rather than failing the run.
-  - `documents` and `spreadsheets` are requested only to edit pre-existing files.
+  - One-click connect asks for `gmail.modify`, `calendar.events`, `drive.readonly`, `drive.file`, `documents`, `spreadsheets` and the Photos Picker scope. Siftvane can read only the photos the user picks in Google's own UI.
+  - Drive is readable (`drive.readonly`) but only Siftvane-created files are writable (`drive.file`). Read steps are journaled as `READ_ONLY_SCOPED`; files carrying prompt-injection or secrets are withheld from the model, and one unreadable file is skipped rather than failing the run.
   - Full `drive` access and every Photos write or share scope are rejected with `GOOGLE_SCOPE_BANNED`.
 - **Photos parsing.** Image bytes are bounded to 2 MB and parsed in-process (SVG text layer) or by a sandboxed Tesseract OCR child process (no shell, 6 s limit, 16 KB output). Only structured fields leave the parser.
 - **Rollback.** Rolling back a run deletes only the artifacts that run created, using provider ids from Siftvane's own registry. Overwritten Drive files are restored from an MD5-verified backup of the previous bytes taken before the overwrite.

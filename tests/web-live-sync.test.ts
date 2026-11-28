@@ -170,7 +170,7 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
     await until('live SSE connection', () => page.evaluate<string>('document.body.innerText'), (text) => /Status\s*Ready/.test(text), 30_000);
 
     const minted = await runtime.app.inject({ method: 'POST', url: '/api/inbox/mcp-tokens', payload: { inbox_id: 'sandbox',
-      scopes: ['mail:read', 'mail:send', 'calendar:propose', 'agent:manage', 'workspace:write', 'photos:read'] } });
+      scopes: ['mail:read', 'attachment:extract', 'mail:send', 'mail:label', 'calendar:propose', 'agent:manage', 'workspace:write', 'photos:read'] } });
     client = new Client({ name: 'claude-code', version: '1.0.0' });
     await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer ' + minted.json().token } } }));
 

@@ -11,7 +11,7 @@ import { sandboxMcpOwner as user } from '../apps/server/src/auth/google.js';
 import type { AgentConfig } from '../apps/server/src/inbox/agentConfig.js';
 import { planFromProgram } from '../apps/server/src/platform/planner.js';
 import { genericStepSchema } from '../apps/server/src/platform/generic.js';
-import { extractPhotoDetails, parseReceiptText } from '../apps/server/src/workspace/photos.js';
+import { extractPhotoDetails } from '../apps/server/src/workspace/photos.js';
 import { fakeModel } from './support/fakeModel.js';
 import type { WorkspaceAdapter } from '../apps/server/src/workspace/types.js';
 
@@ -216,21 +216,30 @@ it('keeps a due agent scheduled when another worker holds the lease and surfaces
   expect(runtime.platform.agent(legacy.agent_id)).toMatchObject({ status: 'paused', state: { last_error: 'AGENT_RUN_INTERRUPTED' } });
 }));
 
-it('parses labelled and OCR-style receipt text', () => {
-  expect(parseReceiptText('Merchant: City Parking Authority\nTicket: PK-55821\nDate: 2026-12-06\nTotal: 32.00 USD\nPay by: 2026-12-20'))
-    .toEqual({ merchant: 'City Parking Authority', reference: 'PK-55821', date: '2026-12-06', amount: 32, currency: 'USD', due: '2026-12-20' });
-  expect(parseReceiptText('CORNER PHARMACY\nReceipt # RX-7781\nDate 12/03/2026\nJOTAL $23.45\nTax $1.20\nPay by 12/18/2026'))
-    .toMatchObject({ merchant: 'CORNER PHARMACY', reference: 'RX-7781', date: '2026-12-03', amount: 23.45, currency: 'USD', due: '2026-12-18' });
-  expect(parseReceiptText('Receipt for lunch').reference).toBeUndefined();
-});
+it('reads photos as text and lets the AI pull out whatever fields the request names (no fixed receipt schema)', () => withPlan({
+  reasoning: 'Read parking and receipt photos, pull out merchant and ticket, and log them.', name: 'Photo Log', schedule_mode: 'one_shot', program: [
+    { id: 'photos', op: 'photos.extract', category: 'RECEIPTS' },
+    { id: 'fields', op: 'extract', from: 'photos', fields: ['merchant', 'ticket_number'] },
+    { id: 'log', op: 'sheets.append', from: 'fields', title: 'Photo Log', columns: ['Date', 'Merchant', 'Ticket number'] }] },
+async (runtime, prompts) => {
+  const { agent_id } = await createAgent(runtime, 'Go through my receipt photos and log the merchant and ticket number in a sheet');
+  await until(() => generic(runtime, agent_id), (entry) => entry.status === 'completed');
+  const extractPrompt = prompts.find((prompt) => prompt.startsWith('Extract these fields'))!;
+  expect(extractPrompt).toContain('City Parking Authority');
+  expect(extractPrompt).toContain('PK-55821');
+  const tab = sheetRows(runtime, 'Photo Log');
+  expect(tab.rows.map((row) => row.slice(0, 3))).toContainEqual(['2026-12-06', 'City Parking Authority', 'PK-55821']);
+}, (prompt) => prompt.startsWith('Extract these fields') ? { items: [
+  { index: 0, values: { merchant: 'Harbor Cafe', ticket_number: '' } },
+  { index: 1, values: { merchant: 'City Parking Authority', ticket_number: 'PK-55821' } }] } : { reasoning: 'Done.', done: true }), 60_000);
 
 it.skipIf(!hasTesseract)('OCRs a raster receipt photo in the bounded parser without leaking image bytes', async () => {
   const data = await readFile(path.resolve('tests/fixtures/receipt-pharmacy.png'));
   const adapter = { photoBytes: async () => ({ data, item: { id: 'p1', filename: 'IMG_9001.png', mimeType: 'image/png', category: 'RECEIPTS',
     creationTime: '2026-12-03T10:00:00Z', description: '', productUrl: null } }) } as unknown as WorkspaceAdapter;
   const details = await extractPhotoDetails(adapter, 'p1');
-  expect(details).toMatchObject({ extraction: 'ocr', quarantined: false,
-    fields: { merchant: 'CORNER PHARMACY', amount: 23.45, currency: 'USD', date: '2026-12-03', due: '2026-12-18', reference: 'RX-7781' } });
+  expect(details).toMatchObject({ extraction: 'ocr', quarantined: false, date: '2026-12-03' });
+  expect(details.text).toMatch(/PHARMACY/i);
   expect(JSON.stringify(details)).not.toContain(data.toString('base64').slice(0, 40));
 }, 30_000);
 

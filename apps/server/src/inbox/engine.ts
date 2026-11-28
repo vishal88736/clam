@@ -5,7 +5,7 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { inboxCalendarSchema, type HandoffInput, type InboxPolicy, type InboxStage } from '@siftvane/shared';
 import { HandoffService, type HandoffResult } from '../handoffs/service.js';
-import { isPodCaseThread, podCase } from '../handoffs/sample.js';
+import { caseForThread } from '../handoffs/cases.js';
 import type { ReaderMessage } from '../sandbox/seed.js';
 import type { ActionKind, Attention, Change, Claim, Decision, InboxTarget, MailSearch, McpCaller, Mode, RunRecord, SafeAction, Snapshot, Tier, TraceStep } from './contracts.js';
 import { addUsage, emptyUsage, resolveAgentConfig, type AgentConfig, type ModelUsage } from './agentConfig.js';
@@ -474,8 +474,8 @@ export class InboxEngine extends EventEmitter {
       }
       const { message, halted, reason } = prepared;
       const action: SafeAction = {
-        kind: 'handoff', target: message.id, playbook: 'agent_handoff', sourceId: isPodCaseThread(message.thread_id) && message.hop_count === 1
-          ? podCase.messageId : message.thread_id,
+        kind: 'handoff', target: message.id, playbook: 'agent_handoff', sourceId: message.hop_count === 1
+          ? caseForThread(this.store, message.thread_id)?.id ?? message.thread_id : message.thread_id,
         threadId: message.thread_id, version: message.id, after: message, confidence: 1, requestedTier: 1,
       };
       const member = this.handoffs.member(caller)!;
