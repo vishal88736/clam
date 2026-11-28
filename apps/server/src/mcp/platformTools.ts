@@ -62,7 +62,8 @@ export function registerPlatformTools(server: McpServer, args: {
   server.tool('provision_and_run_agent',
     'Zero-setup entry point: turn any natural-language request into a persistent Siftvane agent across Gmail, Calendar, Drive, Docs, Sheets, and Photos. ' +
     'Siftvane compiles a validated plan, creates the agent, switches the user to it, and starts it in the backend under the policy engine, ' +
-    'Tier 2 approval gate, and kill switch. Returns the agent id, plan summary, and dashboard URL.', {
+    'Tier 2 approval gate, and kill switch. Returns the agent id, plan summary, and dashboard URL. Agents that reply to people ' +
+    'use the business profile (get_business_profile / set_business_profile) for product facts, so there is no need to ask the user for them first.', {
       user_instruction: z.string().trim().min(4).max(4000),
       agent_name: z.string().trim().max(80).optional(),
       services: z.array(z.enum(services)).max(6).optional(),
@@ -96,6 +97,15 @@ export function registerPlatformTools(server: McpServer, args: {
       return { ...result, status: agent.status, phase: agent.state.phase, pending_approvals: agent.state.pending_approvals, last_error: agent.state.last_error ?? null,
         artifacts: platform.artifacts(grant.userId, agent.id).map((row) => artifactView(row.id)) };
     }));
+
+  server.tool('get_business_profile', "Read the user's business profile: the facts (products, prices, hours, policies, links) agents may use " +
+    'when writing replies. Empty text means nothing is on file yet.', {},
+  () => workflow('get_business_profile', 'agent:manage', async () => platform.businessProfile(grant.inboxId)));
+
+  server.tool('set_business_profile', "Save the user's business profile (replaces it; plain text up to 4000 characters). Reply-writing agents " +
+    'state only these facts and never invent others. Save only what the user told you about their business; empty text clears it.', {
+    text: z.string().max(4000),
+  }, ({ text }) => workflow('set_business_profile', 'agent:manage', async () => { inbox.guard(); return platform.setBusinessProfile(grant.inboxId, text); }));
 
   server.tool('switch_active_agent', "Switch the user's active Siftvane agent and record the switch in the audited timeline.", {
     agent_id: z.string().uuid(), reason: z.string().trim().max(300).optional(),

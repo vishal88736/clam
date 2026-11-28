@@ -1,0 +1,655 @@
+{
+  "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+  "steps": [
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:1",
+      "stage": "TRIGGER",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:28.117Z",
+      "detail": {
+        "trigger": "agent:5076a6e2-f863-4a35-b5ab-afd129658f92",
+        "mailbox_mode": "sandbox",
+        "agent_mode": "llm",
+        "policy_version": 1
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 0,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "40c433f10bad58267ce6bca970e99ee9c9f51906b9d8a64246bc923b94ac5cfe"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:2",
+      "stage": "PLAN",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:28.120Z",
+      "detail": {
+        "agent_id": "5076a6e2-f863-4a35-b5ab-afd129658f92",
+        "agent_name": "Meeting Requests Tracker",
+        "template": "generic",
+        "phase": "start",
+        "planner": "llm-planner",
+        "steps": [
+          "search_meetings",
+          "extract_meeting_details",
+          "append_meetings",
+          "remind_meetings",
+          "filter_meetings",
+          "extract_meeting_deta_2",
+          "extract_meeting_deta_3",
+          "extract_meeting_deta_4",
+          "remove_redundant_extract"
+        ]
+      },
+      "prev_hash": "40c433f10bad58267ce6bca970e99ee9c9f51906b9d8a64246bc923b94ac5cfe",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "b5c1047342fde7a9f7b5531542e2e844d5a451f2b039d3235f655b872f7b78ad"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:3",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:28.123Z",
+      "detail": {
+        "action": "mail_search",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "b5c1047342fde7a9f7b5531542e2e844d5a451f2b039d3235f655b872f7b78ad",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "bc3ed25b3367e2dd08eb3d049ce0915e589be3629f25f928389a2cc63ff0f29b"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:4",
+      "stage": "PLAN",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:36.565Z",
+      "detail": {
+        "event": "AGENT_MODEL_CALL",
+        "phase": "extract",
+        "status": "RECEIVED"
+      },
+      "prev_hash": "bc3ed25b3367e2dd08eb3d049ce0915e589be3629f25f928389a2cc63ff0f29b",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 427,
+        "completion_tokens": 282,
+        "latency_ms": 8439,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 709,
+        "usd": 0
+      },
+      "step_hash": "a6240f7f32aa729e5f7bca016c98f5bfb8058c1ea8944dbb7eef705d6002aae4"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:5",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:36.568Z",
+      "detail": {
+        "action": "ai_extract",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "a6240f7f32aa729e5f7bca016c98f5bfb8058c1ea8944dbb7eef705d6002aae4",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 709,
+        "usd": 0
+      },
+      "step_hash": "2647f8e3ccde8cf0d7f24ef31d61748307a171ad0208a17285dfc152b1b18ffa"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:6",
+      "stage": "POLICY",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:36.573Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Meeting Requests",
+        "playbook_id": "workspace_create_or_get_spreadsheet",
+        "source_msg_id": "agent:5076a6e2-f863-4a35-b5ab-afd129658f92",
+        "rule_id": "WORKSPACE_REVERSIBLE_WRITE",
+        "reason": "Reversible workspace write passed the secret, taint, and type checks.",
+        "decision": "AUTONOMOUS",
+        "tier": 0
+      },
+      "prev_hash": "2647f8e3ccde8cf0d7f24ef31d61748307a171ad0208a17285dfc152b1b18ffa",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 709,
+        "usd": 0
+      },
+      "step_hash": "68c6e9ebe092afc2eee073aff93fca34b1b78b62e71d742b3c5959a8bdb432ed"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:7",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:36.575Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Meeting Requests",
+        "outcome": "ALREADY_CURRENT"
+      },
+      "prev_hash": "68c6e9ebe092afc2eee073aff93fca34b1b78b62e71d742b3c5959a8bdb432ed",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 709,
+        "usd": 0
+      },
+      "step_hash": "31ffcf3372c9c54b3b5c4cf3a0355197c9c0cbcc4db0af7465a2b886e7560523"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:8",
+      "stage": "PLAN",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.045Z",
+      "detail": {
+        "event": "AGENT_MODEL_CALL",
+        "phase": "extract",
+        "status": "RECEIVED"
+      },
+      "prev_hash": "31ffcf3372c9c54b3b5c4cf3a0355197c9c0cbcc4db0af7465a2b886e7560523",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 155,
+        "completion_tokens": 15,
+        "latency_ms": 465,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "dabeae20410a2799087530a214858853974bd7a4f5262ec30811061c64644767"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:9",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.049Z",
+      "detail": {
+        "action": "ai_extract",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "dabeae20410a2799087530a214858853974bd7a4f5262ec30811061c64644767",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "2960afe65364f229e90c4e6d2585199ae32eb5c2decd55292b244907a2674445"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:10",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.053Z",
+      "detail": {
+        "action": "append_sheet_rows",
+        "target": "u:e18a7baf5aaa/sheet:Meeting Requests",
+        "outcome": "ALREADY_CURRENT",
+        "rows_skipped_duplicates": 5,
+        "row_count": 5
+      },
+      "prev_hash": "2960afe65364f229e90c4e6d2585199ae32eb5c2decd55292b244907a2674445",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "e699b5dc5c27f28fe64fd9929e61934b5c16efb0a71e6469711753662151283d"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:11",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.057Z",
+      "detail": {
+        "action": "add_reminder",
+        "outcome": "VERIFIED",
+        "rule_id": "ALREADY_CURRENT"
+      },
+      "prev_hash": "e699b5dc5c27f28fe64fd9929e61934b5c16efb0a71e6469711753662151283d",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "e5c1b1dd46b045face7db71eaa934c249a630a558399ba3f87ef25f43bf03be4"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:12",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.060Z",
+      "detail": {
+        "action": "add_reminder",
+        "outcome": "VERIFIED",
+        "rule_id": "ALREADY_CURRENT"
+      },
+      "prev_hash": "e5c1b1dd46b045face7db71eaa934c249a630a558399ba3f87ef25f43bf03be4",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "2a3e3293b3918e1cd1a4839306106d07fa61efdc058a2cb3968aaea57e433ab8"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:13",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.064Z",
+      "detail": {
+        "action": "add_reminder",
+        "outcome": "VERIFIED",
+        "rule_id": "ALREADY_CURRENT"
+      },
+      "prev_hash": "2a3e3293b3918e1cd1a4839306106d07fa61efdc058a2cb3968aaea57e433ab8",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "d7af1fe5b92a12a2b3f92ad29bf4d1a07dccc9140fdc9013d257aa633683f970"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:14",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.067Z",
+      "detail": {
+        "action": "add_reminder",
+        "outcome": "VERIFIED",
+        "rule_id": "ALREADY_CURRENT"
+      },
+      "prev_hash": "d7af1fe5b92a12a2b3f92ad29bf4d1a07dccc9140fdc9013d257aa633683f970",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "b6108a29379728dbf16723ed20941f6539a17accd1f45b3ca7b43c1af0dec554"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:15",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:37.070Z",
+      "detail": {
+        "action": "filter",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "b6108a29379728dbf16723ed20941f6539a17accd1f45b3ca7b43c1af0dec554",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 879,
+        "usd": 0
+      },
+      "step_hash": "7443d4a2ed34449354d572c2b794c01f1efbc46c3f222b54f34df47e0e8eebfd"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:16",
+      "stage": "PLAN",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:38.615Z",
+      "detail": {
+        "event": "AGENT_MODEL_CALL",
+        "phase": "extract",
+        "status": "RECEIVED"
+      },
+      "prev_hash": "7443d4a2ed34449354d572c2b794c01f1efbc46c3f222b54f34df47e0e8eebfd",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 365,
+        "completion_tokens": 52,
+        "latency_ms": 1541,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 1296,
+        "usd": 0
+      },
+      "step_hash": "048bca07e0672c460cc5fe122e8e75f7384267832548a180150ee26dde9132d0"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:17",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:38.618Z",
+      "detail": {
+        "action": "ai_extract",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "048bca07e0672c460cc5fe122e8e75f7384267832548a180150ee26dde9132d0",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 1296,
+        "usd": 0
+      },
+      "step_hash": "c50f69486f1a015c0e41f2e5b0c3a6a782be326553d543af992c58c543941c4b"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:18",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:38.622Z",
+      "detail": {
+        "action": "filter",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "c50f69486f1a015c0e41f2e5b0c3a6a782be326553d543af992c58c543941c4b",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 1296,
+        "usd": 0
+      },
+      "step_hash": "f167825aa99ba799682210e24a932b748d3a934a8351a586199b0d12b6262ba5"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:19",
+      "stage": "PLAN",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:42.750Z",
+      "detail": {
+        "event": "AGENT_MODEL_CALL",
+        "phase": "review",
+        "status": "RECEIVED",
+        "round": 1
+      },
+      "prev_hash": "f167825aa99ba799682210e24a932b748d3a934a8351a586199b0d12b6262ba5",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 3078,
+        "completion_tokens": 97,
+        "latency_ms": 4124,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 4471,
+        "usd": 0
+      },
+      "step_hash": "0a573de9f02e7d700f8130cdb6015df7f6a84a2fdeef9e4763f4928e69cf82d8"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:20",
+      "stage": "CHECK",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:42.754Z",
+      "detail": {
+        "action": "llm_review",
+        "outcome": "VERIFIED",
+        "rule_id": "LLM_REVIEW"
+      },
+      "prev_hash": "0a573de9f02e7d700f8130cdb6015df7f6a84a2fdeef9e4763f4928e69cf82d8",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 4471,
+        "usd": 0
+      },
+      "step_hash": "c6c8c13035bfc0c085aeb239f002365ba11d78dd8d0d76b7be5ded2136681b04"
+    },
+    {
+      "id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd:21",
+      "stage": "REPORT",
+      "run_id": "a7ba3a40-5217-49ae-99c0-8b1672f4fbdd",
+      "timestamp": "2026-11-28T10:05:42.757Z",
+      "detail": {
+        "autonomy": {
+          "autonomous_verified": 0,
+          "gated_for_approval": 0,
+          "blocked_quarantined": 0
+        },
+        "status": "COMPLETED",
+        "error": null,
+        "emails": 0,
+        "conflicts": 0,
+        "threats": 0,
+        "rollback_available": false
+      },
+      "prev_hash": "c6c8c13035bfc0c085aeb239f002365ba11d78dd8d0d76b7be5ded2136681b04",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 4025,
+        "completion_tokens": 446,
+        "latency_ms": 14569,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 4471,
+        "usd": 0
+      },
+      "step_hash": "b3ebca92060a8d6ce23a56b77b4654873e3c6e47490979d8241ee931ae068b3e"
+    }
+  ],
+  "step_count": 21,
+  "head_hash": "b3ebca92060a8d6ce23a56b77b4654873e3c6e47490979d8241ee931ae068b3e",
+  "mode": "llm",
+  "model_usage": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b",
+    "prompt_tokens": 4025,
+    "completion_tokens": 446,
+    "latency_ms": 14569,
+    "estimated_usd": 0
+  }
+}

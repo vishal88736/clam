@@ -11,7 +11,7 @@ export class SandboxInboxAdapter implements MailboxAdapter {
   private all(): EphemeralEmail[] {
     this.guard();
     return this.store.sqlite.prepare(
-      "SELECT body FROM inbox_sandbox_messages WHERE scope IN ('inbox','history') ORDER BY rowid",
+      "SELECT body FROM inbox_sandbox_messages WHERE scope IN ('inbox','history','workspace') ORDER BY rowid",
     ).all().map((row) => {
       const message = JSON.parse(String(row.body)) as ReaderMessage;
       const flags = scanPromptInjection([message.subject, message.text, message.html ?? ''].join('\n'));

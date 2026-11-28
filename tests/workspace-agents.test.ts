@@ -64,13 +64,15 @@ it('provisions a persistent agent from one CLI sentence, auto-switches to it, an
       wait_seconds: 30,
     } }));
     expect(provisioned).toMatchObject({ switched: true, plan_summary: { template: 'invoice_ledger', schedule_mode: 'daily' },
-      status: 'input_required', phase: 'awaiting_review' });
+      status: 'active', phase: 'start' });
+    // A daily agent keeps its schedule while the flagged invoices wait in the Approval Inbox.
+    expect(provisioned.pending_approvals.length).toBeGreaterThan(0);
     expect(provisioned.dashboard_url).toMatch(/\/#agents$/);
     const agentId = provisioned.agent_id as string;
 
     // SQLite system of record: agent row, automatic active-agent switch, and switch history.
     const row = runtime.inbox.store.sqlite.prepare('SELECT * FROM user_agents WHERE id=?').get(agentId) as Record<string, string>;
-    expect(row).toMatchObject({ source_cli: 'claude-code', schedule_mode: 'daily', status: 'input_required', user_id: sandboxMcpOwner });
+    expect(row).toMatchObject({ source_cli: 'claude-code', schedule_mode: 'daily', status: 'active', user_id: sandboxMcpOwner });
     expect(row.goal_prompt).toContain('recurring bills and daily invoices');
     expect(JSON.parse(row.allowed_services_json)).toEqual(expect.arrayContaining(['gmail', 'drive', 'sheets', 'docs']));
     expect(runtime.dbHandle.sqlite.prepare('SELECT active_agent_id FROM users WHERE id=?').get(sandboxMcpOwner)).toEqual({ active_agent_id: agentId });

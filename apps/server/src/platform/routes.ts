@@ -46,6 +46,12 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
       const who = viewer(request, accounts, config);
       return { ...platform.profile(who.userId, who.inboxId), signed_in: who.signedIn, halted: inbox.halted() };
     });
+    router.get('/api/inbox/platform/business-profile', async (request) => platform.businessProfile(viewer(request, accounts, config).inboxId));
+    router.put('/api/inbox/platform/business-profile', async (request) => {
+      const { text } = z.object({ text: z.string().max(4000) }).strict().parse(request.body);
+      inbox.guard();
+      return platform.setBusinessProfile(viewer(request, accounts, config).inboxId, text);
+    });
     router.get('/api/inbox/platform/agents', async (request) => {
       const who = viewer(request, accounts, config);
       return { agents: platform.agents(who.userId), active_agent_id: platform.activeAgentId(who.userId) };

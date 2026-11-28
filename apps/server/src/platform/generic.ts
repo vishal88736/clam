@@ -122,7 +122,7 @@ export const opCatalogForPrompt = [
   'docs.write {title, heading, content? | from?, folder?, mode?: append|replace_section}',
   'drive.folder {path[]}', 'drive.save_attachments {from: a mail.search step, folder[]}', 'drive.save_text {folder[], name(.md|.txt|.csv), content, from?}',
   'calendar.reminders {from, date_field, title, time_utc?}', 'mail.label {from, label: SIFTVANE_UPPER_SNAKE}',
-  'mail.draft_replies {from, subject, body} (drafts a reply to each row sender; always needs approval)',
+  'mail.draft_replies {from, subject, body} (drafts a reply to each row sender; in AI mode each reply is written for its email from the user\'s business profile, with body as guidance; always needs approval)',
   'mail.send {to[] (only addresses the user wrote), subject, body, from?} (sent once per distinct content; non-allowlisted recipients need approval)',
   'Templates may use {{field}} for row fields, {{count}}, {{date}}, {{rows}} (bulleted list), {{summary}} (latest summarize step).',
 ].join('\n');

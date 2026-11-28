@@ -167,7 +167,7 @@ it.skipIf(!chromium)('streams CLI agent creation, switches, live logs, and artif
       text: document.body.innerText,
     })`);
     const synced = await until('first agent live sync', view, (state) => state.cards === 1 && state.active === first.agent_id &&
-      state.logs >= 10 && state.artifacts >= 7 && state.switches === 1 && state.status === 'Needs Approval');
+      state.logs >= 10 && state.artifacts >= 7 && state.switches === 1 && state.status === 'Active' && state.text.includes('waiting in Approval Inbox'));
     expect(synced.text).toContain('Claude Code');
     expect(synced.text).toContain('Scan my email for daily invoices');
     expect(synced.text).toContain('Siftvane Invoice Ledger');

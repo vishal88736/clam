@@ -383,6 +383,13 @@ export class MissionRunner {
         ...(observed ? { observed } : {}),
         ...(phase !== agent.state.phase ? { phase_started_at: new Date().toISOString() } : {}) };
       if (run.status === 'HALTED' || this.engine.halted()) return { status: 'halted', next_run_at: null, state };
+      // A watcher (continuous/daily/weekly) keeps watching while its review items wait: each new email gets its own
+      // approval (drafts are deduplicated per message), and every still-open approval stays listed on the agent.
+      if ((phase === 'start' || phase === 'awaiting_review') && agent.schedule_mode !== 'one_shot' && run.status === 'COMPLETED' && !failure) {
+        const open = [...new Set([...agent.state.pending_approvals, ...activeApprovals])]
+          .filter((approvalId) => this.engine.store.approval(approvalId)?.status === 'PENDING');
+        return { ...this.afterRun(agent), state: { ...state, phase: 'start', pending_approvals: open } };
+      }
       if (activeApprovals.length) return { status: 'input_required', next_run_at: null,
         state: { ...state, phase: phase === 'start' ? 'awaiting_review' : phase } };
       if (run.status !== 'COMPLETED' || failure) return { status: 'paused', next_run_at: null, state };

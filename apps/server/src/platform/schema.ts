@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS user_agents (
 CREATE INDEX IF NOT EXISTS user_agents_user ON user_agents(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS user_agents_due ON user_agents(status, next_run_at);
 
+-- What agents may say about the user's business when writing replies (one free-text profile per mailbox).
+CREATE TABLE IF NOT EXISTS business_profiles (
+  inbox_id TEXT PRIMARY KEY,
+  body TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agent_switch_history (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

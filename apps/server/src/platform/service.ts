@@ -134,6 +134,21 @@ export class PlatformService extends EventEmitter {
     };
   }
 
+  /** The mailbox owner's business profile: facts agents may use when writing replies ('' when not set). */
+  businessProfile(inboxId: string) {
+    const row = this.store.sqlite.prepare('SELECT body, updated_at FROM business_profiles WHERE inbox_id=?').get(inboxId) as
+      { body: string; updated_at: string } | undefined;
+    return { inbox_id: inboxId, text: row?.body ?? '', updated_at: row?.updated_at ?? null };
+  }
+
+  setBusinessProfile(inboxId: string, text: string) {
+    const body = text.replace(/\r\n?/g, '\n').trim().slice(0, 4000);
+    if (!body) this.store.sqlite.prepare('DELETE FROM business_profiles WHERE inbox_id=?').run(inboxId);
+    else this.store.sqlite.prepare('INSERT INTO business_profiles VALUES (?,?,?) ON CONFLICT(inbox_id) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at')
+      .run(inboxId, body, now());
+    return this.businessProfile(inboxId);
+  }
+
   createAgent(input: {
     userId: string; inboxId: string; name: string; goal: string; sourceCli: SourceCli; services: Service[]; plan: WorkflowPlan;
     scheduleMode: ScheduleMode; intervalSeconds: number | null; state?: Partial<AgentState>; startNow?: boolean;

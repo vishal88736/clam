@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowLeft, Plug, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { AgentInboxes } from '../../components/AgentInboxes';
+import { BusinessProfile } from '../../components/BusinessProfile';
 import { InboxTokenList } from '../../components/InboxTokenList';
 import { actionsGranted, authRequest, connectionStatus, GoogleAccountBar, useGoogleSession } from '../../components/GoogleSession';
 
@@ -133,10 +134,11 @@ export default function SettingsPage() {
           </article>)}
         </>}
     </section>
+    <BusinessProfile />
     <AgentInboxes sandboxSelected={!session || session.active_inbox_id === 'sandbox'} />
     {session && (!session.live_enabled || session.user) && <section className="inbox-panel">
       <h2>Sandbox mailbox tokens</h2>
-      <InboxTokenList inboxId="sandbox" revision={0} canMint />
+      <InboxTokenList inboxId="sandbox" revision={0} canMint choices={choices} />
     </section>}
     <section className="inbox-panel">
       <h2><ShieldCheck size={19} /> MCP setup</h2>

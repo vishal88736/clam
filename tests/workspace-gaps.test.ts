@@ -721,3 +721,37 @@ it('never confuses a requested "date" with when the email arrived', async () => 
   ], 'Put the school dates on my calendar').steps;
   expect(fuzzy[2]).toEqual({ id: 'f', op: 'classify', from: 'x', condition: 'its topic is about "date"' });
 });
+
+it('reply agents write each reply from the business profile and keep watching while replies wait for approval', () => withPlan({
+  reasoning: 'Find product questions and reply to each sender.', name: 'Product Replies', schedule_mode: 'continuous', program: [
+    { id: 'asks', op: 'mail.search', keywords: ['lamp'] },
+    { id: 'reply', op: 'mail.draft_replies', from: 'asks', subject: 'Re: {{subject}}', body: 'Thanks for asking, we will follow up.' }] },
+async (runtime, prompts) => {
+  const saved = await runtime.app.inject({ method: 'PUT', url: '/api/inbox/platform/business-profile',
+    payload: { text: 'Acme Lamps. Table lamp costs 2400 rupees. Returns within 14 days.' } });
+  expect(saved.json()).toMatchObject({ inbox_id: 'sandbox', text: expect.stringContaining('2400 rupees') });
+  const deliver = (from: string, subject: string) => runtime.app.inject({ method: 'POST', url: '/api/inbox/platform/sandbox/messages',
+    payload: { from, subject, text: 'Hi, how much is your table lamp and can I return it?' } });
+  await deliver('asha@buyer.example', 'Question about the table lamp');
+  const { agent_id } = await createAgent(runtime, 'Whenever someone asks about my lamp, reply to them');
+  await until(() => generic(runtime, agent_id), (entry) => Boolean(entry.state.last_run_id) && !entry.state.running_run_id);
+  const first = generic(runtime, agent_id);
+  // Still watching: active with a next run, while the reply waits in the Approval Inbox.
+  expect(first.status).toBe('active');
+  expect(first.next_run_at).not.toBeNull();
+  expect(first.state.pending_approvals).toHaveLength(1);
+  const draft = runtime.inbox.store.approval(first.state.pending_approvals[0])!.proposed_action as { after: { text: string } };
+  expect(draft.after.text).toBe('The table lamp is 2400 rupees and you can return it within 14 days.');
+  const replyPrompt = prompts.find((prompt) => prompt.startsWith('Write the reply'))!;
+  expect(replyPrompt).toContain('Table lamp costs 2400 rupees');
+  // A new request on the next run gets its own reply; the earlier one is not drafted again and stays listed.
+  await deliver('ben@buyer.example', 'Lamp question');
+  runtime.platform.updateAgentIfStatus(agent_id, 'active', () => ({ next_run_at: new Date().toISOString() }));
+  await runtime.missions.tick();
+  await until(() => generic(runtime, agent_id), (entry) => entry.state.last_run_id !== first.state.last_run_id && !entry.state.running_run_id);
+  const second = generic(runtime, agent_id);
+  expect(second.status).toBe('active');
+  expect(second.state.pending_approvals).toHaveLength(2);
+  expect(runtime.platform.logs(user, { agentId: agent_id }).filter((entry) => entry.action_name === 'draft_reply')).toHaveLength(2);
+}, (prompt) => prompt.startsWith('Write the reply')
+  ? { reply: 'The table lamp is 2400 rupees and you can return it within 14 days.' } : { reasoning: 'Done.', done: true }), 60_000);
