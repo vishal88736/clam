@@ -149,6 +149,29 @@ export class PlatformService extends EventEmitter {
     return this.businessProfile(inboxId);
   }
 
+  /** The user's behavior.md for a mailbox ('' when it has not been built yet). */
+  behaviorProfile(inboxId: string) {
+    const row = this.store.sqlite.prepare('SELECT * FROM behavior_profiles WHERE inbox_id=?').get(inboxId) as
+      { body: string; built_by: string; source_count: number; built_at: string | null; updated_at: string } | undefined;
+    return { inbox_id: inboxId, markdown: row?.body ?? '', built_by: row?.built_by ?? null, source_count: row?.source_count ?? 0,
+      built_at: row?.built_at ?? null, updated_at: row?.updated_at ?? null };
+  }
+
+  /** Saves a built profile (built set) or the user's own edit (built omitted; marked as theirs so a rebuild asks first). */
+  setBehaviorProfile(inboxId: string, markdown: string, built?: { by: 'ai' | 'stats'; count: number }) {
+    const body = markdown.replace(/\r\n?/g, '\n').trim().slice(0, 12_000);
+    const at = now();
+    if (built) {
+      this.store.sqlite.prepare(`INSERT INTO behavior_profiles VALUES (?,?,?,?,?,?) ON CONFLICT(inbox_id) DO UPDATE SET body=excluded.body,
+        built_by=excluded.built_by, source_count=excluded.source_count, built_at=excluded.built_at, updated_at=excluded.updated_at`)
+        .run(inboxId, body, built.by, built.count, at, at);
+    } else {
+      this.store.sqlite.prepare(`INSERT INTO behavior_profiles VALUES (?,?,'user',0,NULL,?) ON CONFLICT(inbox_id) DO UPDATE SET body=excluded.body,
+        built_by='user', updated_at=excluded.updated_at`).run(inboxId, body, at);
+    }
+    return this.behaviorProfile(inboxId);
+  }
+
   createAgent(input: {
     userId: string; inboxId: string; name: string; goal: string; sourceCli: SourceCli; services: Service[]; plan: WorkflowPlan;
     scheduleMode: ScheduleMode; intervalSeconds: number | null; state?: Partial<AgentState>; startNow?: boolean;

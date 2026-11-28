@@ -87,7 +87,10 @@ export interface MissionContext {
 
 export class InboxEngine extends EventEmitter {
   readonly store: InboxStore;
-  readonly agent: AgentConfig;
+  private agentConfig: AgentConfig;
+  /** The model powering planning and reading; replaced when the user picks another AI provider. */
+  get agent(): AgentConfig { return this.agentConfig; }
+  useAgent(config: AgentConfig) { this.agentConfig = config; }
   readonly handoffs: HandoffService;
   private readonly leaseOwner = randomUUID();
   private readonly active = new Map<string, { done: Promise<RunRecord>; session: Session }>();
@@ -100,7 +103,7 @@ export class InboxEngine extends EventEmitter {
 
   constructor(private readonly config: EngineOptions) {
     super();
-    this.agent = config.agent ?? resolveAgentConfig({ SIFTVANE_AGENT_MODE: 'offline-smoke' });
+    this.agentConfig = config.agent ?? resolveAgentConfig({ SIFTVANE_AGENT_MODE: 'offline-smoke' });
     this.store = new InboxStore(config.databasePath);
     this.handoffs = new HandoffService(this.store, config.handoffKey);
     const sandboxBase = config.sandboxTarget?.(this.store, this.guard) ?? new SandboxTarget(this.store, this.guard, 'sandbox', this.handoffs);

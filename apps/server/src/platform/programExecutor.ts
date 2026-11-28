@@ -145,11 +145,15 @@ export class ProgramExecutor {
   /** The AI keeps the rows matching a plain-language condition; null when no model is available (callers fall back). */
   private async classifyRows(rows: Row[], condition: string): Promise<Row[] | null> {
     if (!this.modelEnabled) return null;
+    // Reply agents decide "would the owner answer this?" from the owner's behavior.md.
+    const habits = /\b(?:repl\w*|respond\w*|answer\w*|write back|like (?:me|i do))\b/i.test(this.agent.goal_prompt + ' ' + condition)
+      ? this.platform.behaviorProfile(this.agent.inbox_id).markdown.slice(0, 2500) : '';
     const kept: Row[] = [];
     for (let start = 0; start < Math.min(rows.length, 60); start += 10) {
       const batch = rows.slice(start, start + 10);
       const output = await this.askModel(['For each item decide whether it matches this condition: ' + JSON.stringify(condition) + '.',
-        'Judge by meaning, not exact words. Return JSON only: {"matches": [<index of each matching item>]}'].join('\n'), batch, 'classify', 600);
+        habits ? 'The owner\'s own notes on which mail they answer and which they ignore (use them to judge):\n' + habits : '',
+        'Judge by meaning, not exact words. Return JSON only: {"matches": [<index of each matching item>]}'].filter(Boolean).join('\n'), batch, 'classify', 600);
       if (!output) return null;
       const matches = (output as { matches?: unknown }).matches;
       for (const index of Array.isArray(matches) ? matches : []) if (batch[Number(index)] && !kept.includes(batch[Number(index)])) kept.push(batch[Number(index)]);
@@ -180,14 +184,16 @@ export class ProgramExecutor {
   private async writeReply(row: Row, guidance: string): Promise<string | null> {
     if (!this.modelEnabled || !row.message) return null;
     const business = this.platform.businessProfile(this.agent.inbox_id).text;
+    const behavior = this.platform.behaviorProfile(this.agent.inbox_id).markdown;
     const output = await this.askModel(['Write the reply the mailbox owner would send to this email (item 0).',
+      behavior ? 'How the owner handles and writes email (follow their tone, greeting, sign-off, length and rules):\n' + behavior.slice(0, 3500) : '',
       'The owner asked their agent: ' + JSON.stringify(this.agent.goal_prompt.slice(0, 400)),
       'Planned reply (use it as guidance for tone and intent): ' + JSON.stringify(guidance.slice(0, 600)),
       business ? 'Facts about the owner\'s business (the ONLY facts you may state about products, prices, hours, policies or links):\n' + business
         : 'No business details are on file: do not state any product facts, prices or policies.',
       'Answer the sender\'s actual question when those facts cover it; otherwise say the team will follow up. Never invent',
       'details, discounts, deadlines or promises. Plain text, friendly and brief (under 1200 characters), no subject line, no placeholders like [Name].',
-      'Return JSON only: {"reply": "<text>"}'].join('\n'), [row], 'reply', 900);
+      'Return JSON only: {"reply": "<text>"}'].filter(Boolean).join('\n'), [row], 'reply', 900);
     const text = typeof (output as { reply?: unknown } | null)?.reply === 'string' ? String((output as { reply: string }).reply) : '';
     const clean = sanitizeText(text, 1800).value.trim();
     if (!clean || scanPromptInjection(clean).detected || /\[[A-Z][a-zA-Z ]{1,20}\]/.test(clean)) return null;

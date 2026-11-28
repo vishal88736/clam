@@ -8,7 +8,7 @@ const allowed = [
   /^briefing(?:\/[a-f\d-]{36})?$/, /^runs(?:\/[a-f\d-]{36}\/(?:trace|rollback))?$/,
   /^approvals(?:\/approval_[a-f\d]{24}_v\d+)?$/, /^calendar(?:\.ics)?$/, /^bills(?:\.csv)?$/,
   /^connection$/, /^policy(?:\/preview)?$/, /^schedule$/, /^events$/, /^kill-switch$/,
-  /^platform\/(?:me|agents|switches|logs|artifacts)$/,
+  /^platform\/(?:me|agents|switches|logs|artifacts|business-profile|behavior|behavior\/rebuild|ai-provider|ai-provider\/test)$/,
   /^platform\/agents\/[a-f\d-]{36}\/(?:switch|pause|resume|cancel)$/, /^platform\/artifacts\/[a-f\d-]{36}$/,
   /^platform\/recipes(?:\/[a-f\d-]{36}(?:\/(?:backtest|enable|disable|run|archive))?)?$/,
   /^platform\/recipes\/[a-f\d-]{36}\/items\/[\w.:@-]{1,160}\/(?:approve|decline|escalate)$/, /^platform\/sandbox\/messages$/,
@@ -47,4 +47,4 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   }
 }
 
-export { proxy as GET, proxy as POST, proxy as PUT, proxy as PATCH };
+export { proxy as GET, proxy as POST, proxy as PUT, proxy as PATCH, proxy as DELETE };

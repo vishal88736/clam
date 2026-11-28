@@ -2,7 +2,7 @@
 
 import {
   Activity, ArrowDownToLine, ArrowRight, Bot, CalendarDays, CircleHelp, Clock3,
-  FileCheck2, GitCompareArrows, Inbox, ListChecks, Play, Power, ReceiptText,
+  FileCheck2, GitCompareArrows, House, Inbox, ListChecks, Play, Power, ReceiptText, UserRound, Wrench,
   Repeat, RotateCcw, ShieldCheck, Sun, Moon, TriangleAlert,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -15,16 +15,19 @@ import { ThreadExecutionStack } from './ThreadExecutionStack';
 import { AgentSwitcherBar, AgentsView, usePlatformData } from './AgentConsole';
 import { RecipesView } from './RecipeConsole';
 import { PolicyEditor, policyChanges } from './PolicyEditor';
+import { HomeView } from './HomeView';
 
+// Home and Approvals are the everyday pages; the rest are operator tools under Advanced.
 const views = [
-  { id: 'briefing', label: 'Inbox Briefing', icon: Inbox },
-  { id: 'agents', label: 'Agents & Activity', icon: Bot },
-  { id: 'recipes', label: 'Recipes', icon: Repeat },
-  { id: 'approvals', label: 'Approval Inbox', icon: ListChecks },
-  { id: 'calendar', label: 'Calendar Sync', icon: CalendarDays },
-  { id: 'policy', label: 'Policy Change Preview', icon: GitCompareArrows },
-  { id: 'monitor', label: 'Runs & Live Monitor', icon: Activity },
-  { id: 'bills', label: 'Bills & Receipts', icon: ReceiptText },
+  { id: 'home', label: 'Home', icon: House, simple: true },
+  { id: 'approvals', label: 'Approvals', icon: ListChecks, simple: true },
+  { id: 'agents', label: 'Agents & Activity', icon: Bot, simple: false },
+  { id: 'briefing', label: 'Inbox Briefing', icon: Inbox, simple: false },
+  { id: 'recipes', label: 'Recipes', icon: Repeat, simple: false },
+  { id: 'calendar', label: 'Calendar Sync', icon: CalendarDays, simple: false },
+  { id: 'policy', label: 'Rules & Policy', icon: GitCompareArrows, simple: false },
+  { id: 'monitor', label: 'Runs & Live Monitor', icon: Activity, simple: false },
+  { id: 'bills', label: 'Bills & Receipts', icon: ReceiptText, simple: false },
 ] as const;
 type View = typeof views[number]['id'];
 type Snapshot = Record<string, unknown>;
@@ -482,7 +485,7 @@ function BriefingView({ data, onTrace }: { data: Briefing; onTrace: (id: string)
 export function InboxWorkspace() {
   const { theme, toggleTheme } = useTheme();
   const { session, refresh: refreshGoogleSession } = useGoogleSession();
-  const [view, setView] = useState<View>('briefing');
+  const [view, setView] = useState<View>('home');
   const [data, setData] = useState<Briefing | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -522,7 +525,7 @@ export function InboxWorkspace() {
   useEffect(() => {
     const sync = () => {
       const id = window.location.hash.slice(1);
-      setView(views.find((item) => item.id === id)?.id ?? 'briefing');
+      setView(views.find((item) => item.id === id)?.id ?? 'home');
     };
     sync();
     window.addEventListener('hashchange', sync);
@@ -583,6 +586,7 @@ export function InboxWorkspace() {
   );
 
   const title = views.find((item) => item.id === view)!.label;
+  const simple = views.find((item) => item.id === view)!.simple;
   const active = runs.some((run) => run.status === 'RUNNING');
   const halted = !!data?.halted;
   const blocked = !data || busy || active || halted;
@@ -592,23 +596,31 @@ export function InboxWorkspace() {
     <aside className="inbox-sidebar">
       <Link href="/" className="inbox-brand"><SiftvaneMark /><span>Siftvane</span></Link>
       <nav aria-label="Inbox navigation">
-        {views.map(({ id, label: itemLabel, icon: Icon }) => <a key={id} href={'#' + id} aria-current={view === id ? 'page' : undefined}>
+        {views.filter((item) => item.simple).map(({ id, label: itemLabel, icon: Icon }) => <a key={id} href={'#' + id} aria-current={view === id ? 'page' : undefined}>
           <Icon size={17} aria-hidden="true" /><span>{itemLabel}</span>
           {id === 'approvals' && Boolean(data?.needs_attention.length) && <span className="inbox-nav-count">{data?.needs_attention.length}</span>}
         </a>)}
+        <Link href="/settings"><UserRound size={17} aria-hidden="true" /><span>Profile</span></Link>
+        <details className="inbox-nav-advanced" open={!simple}>
+          <summary><Wrench size={16} aria-hidden="true" /><span>Advanced</span></summary>
+          {views.filter((item) => !item.simple).map(({ id, label: itemLabel, icon: Icon }) => <a key={id} href={'#' + id} aria-current={view === id ? 'page' : undefined}>
+            <Icon size={16} aria-hidden="true" /><span>{itemLabel}</span>
+          </a>)}
+          <Link href="/settings#developer"><ShieldCheck size={16} aria-hidden="true" /><span>MCP & connections</span></Link>
+        </details>
       </nav>
       <div className="inbox-sidebar-bottom">
         <Link href="/about"><CircleHelp size={16} /> About Siftvane</Link>
-        <Link href="/settings"><ShieldCheck size={16} /> Connections</Link>
       </div>
     </aside>
     <main className="inbox-main">
       <header className="inbox-header">
         <div className="inbox-title"><h1>{title}</h1>
-          <p>{view === 'briefing' ? 'What changed, what needs you, and what Siftvane handled.' :
+          <p>{view === 'home' ? 'Tell Siftvane what you want done with your email. It builds an agent that keeps working for you.' :
+            view === 'briefing' ? 'What changed, what needs you, and what Siftvane handled.' :
             view === 'agents' ? 'Every agent your CLI or this console created, with live logs and Workspace artifacts.' :
             view === 'recipes' ? 'Teach a recipe from an agent once; matching emails then run with zero model calls.' :
-            view === 'approvals' ? 'Review actions that require your permission.' :
+            view === 'approvals' ? 'Replies, sends and changes your agents prepared. Nothing goes out until you approve it.' :
             view === 'calendar' ? 'Review verified changes and upcoming calendar events.' :
             view === 'policy' ? 'See how rule changes affect real decisions before saving.' :
             view === 'monitor' ? 'Schedule runs and inspect the decisions they make.' :
@@ -618,16 +630,17 @@ export function InboxWorkspace() {
             {theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}
           </button>
           <button type="button" className="inbox-button" data-tone="danger" disabled={!data || (busy && halted)}
+            title={halted ? 'Let agents run again' : 'Emergency stop: halt every agent immediately'}
             onClick={() => halted ? setShowResume(true) : void act(() => api('kill-switch', 'POST', { active: true, reason: 'Operator used the Inbox panic button.' }))}>
-            <Power size={16} /> {halted ? 'Resume agent' : 'Halt agent'}
+            <Power size={16} /> {halted ? (simple ? 'Restart agents' : 'Resume agent') : (simple ? 'Stop all agents' : 'Halt agent')}
           </button>
-          <button type="button" className="inbox-button" data-tone="primary" disabled={!canRun}
+          {!simple && <button type="button" className="inbox-button" data-tone="primary" disabled={!canRun}
             onClick={() => void act(() => api('runs', 'POST', { wait: true }), 'Inbox run completed.')}>
             <Play size={16} /> {active ? 'Running…' : 'Run now'}
-          </button>
+          </button>}
         </div>
       </header>
-      <GoogleAccountBar session={session} />
+      {!simple && <><GoogleAccountBar session={session} />
       <AgentSwitcherBar data={platformData} onError={reportError} />
       <section className="inbox-status" aria-label="Agent status">
         <div><span>Status</span><Tag tone={halted ? 'red' : connected ? 'green' : 'amber'}>{halted ? 'Halted' : active ? 'Running' : connected ? 'Ready' : 'Connecting'}</Tag></div>
@@ -639,7 +652,7 @@ export function InboxWorkspace() {
           onClick={() => data?.run_meta && rollback(data.run_meta.id)}>
           <RotateCcw size={16} /> Roll back last run
         </button>
-      </section>
+      </section></>}
       {showResume && <form className="inbox-panel inbox-form-row" onSubmit={(event) => {
         event.preventDefault();
         void act(async () => {
@@ -655,7 +668,9 @@ export function InboxWorkspace() {
       </form>}
       {error && <div className="inbox-error" role="alert">{error}</div>}
       {notice && <div className="inbox-notice" role="status">{notice}</div>}
-      {!data ? <Empty><button className="inbox-button" onClick={() => void reload()}>Reload inbox state</button></Empty> :
+      {view === 'home' ? <HomeView data={platformData} session={session} waiting={data?.needs_attention.length ?? 0}
+          aiReady={!data || data.agent_mode === 'llm'} onError={reportError} /> :
+        !data ? <Empty><button className="inbox-button" onClick={() => void reload()}>Reload inbox state</button></Empty> :
         view === 'briefing' ? <>
           <BriefingView data={data} onTrace={(id) => void inspect(id, true)} />
           <ThreadExecutionStack revision={revision} onTrace={(id, step) => void inspect(id, true, step)} />

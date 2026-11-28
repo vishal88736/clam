@@ -1,10 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Plug, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Plug, ShieldCheck, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { AgentInboxes } from '../../components/AgentInboxes';
 import { BusinessProfile } from '../../components/BusinessProfile';
+import { AiProvider } from '../../components/AiProvider';
+import { BehaviorProfile } from '../../components/BehaviorProfile';
+import { GoogleConnect } from '../../components/GoogleConnect';
 import { InboxTokenList } from '../../components/InboxTokenList';
 import { actionsGranted, authRequest, connectionStatus, GoogleAccountBar, useGoogleSession } from '../../components/GoogleSession';
 
@@ -75,10 +78,16 @@ export default function SettingsPage() {
     finally { setBusy(false); }
   }
   return <main className="inbox-main settings-page">
-    <Link className="inbox-text-link" href="/#briefing"><ArrowLeft size={16} /> Inbox Briefing</Link>
-    <header className="inbox-title"><h1>Connections</h1><p>Manage Google accounts and scoped MCP access.</p></header>
-    <GoogleAccountBar session={session} />
+    <Link className="inbox-text-link" href="/#home"><ArrowLeft size={16} /> Home</Link>
+    <header className="inbox-title"><h1>Profile</h1><p>Your Google account, how you handle email, your business, and the AI behind your agents.</p></header>
     {(error || accountError) && <p className="inbox-error" role="alert">{error || accountError}</p>}
+    <GoogleConnect session={session} refresh={refresh} />
+    <BehaviorProfile />
+    <BusinessProfile />
+    <AiProvider />
+    <details className="profile-advanced" id="developer">
+      <summary><Wrench size={17} /> Advanced: linked accounts, MCP tokens for AI tools (Claude Code, Antigravity, Cursor…)</summary>
+    <GoogleAccountBar session={session} />
     <section className="inbox-panel">
       <h2><Plug size={19} /> Google accounts</h2>
       {!session ? <p>Loading connections.</p> : !session.user ?
@@ -134,7 +143,6 @@ export default function SettingsPage() {
           </article>)}
         </>}
     </section>
-    <BusinessProfile />
     <AgentInboxes sandboxSelected={!session || session.active_inbox_id === 'sandbox'} />
     {session && (!session.live_enabled || session.user) && <section className="inbox-panel">
       <h2>Sandbox mailbox tokens</h2>
@@ -150,5 +158,6 @@ export default function SettingsPage() {
       </div>}
       <SetupCommands />
     </section>
+    </details>
   </main>;
 }

@@ -21,7 +21,7 @@ pnpm dev
 
 For the recommended low-cost cloud setup, set `SIFTVANE_LLM_PROVIDER=gemini`, `SIFTVANE_LLM_MODEL=gemini-3.1-flash-lite`, and `GEMINI_API_KEY` in `.env`. The published standard rates are **$0.25/1M input tokens** and **$1.50/1M output tokens**. Siftvane records provider-reported usage and estimates USD from these rates. [Google pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite)
 
-Two real local Ollama runs on the 20-message sandbox averaged **5,305 tokens per run** (3,976 input and 1,329 output), with **$0 in provider charges** for `qwen2.5:1.5b`. Each run recorded 2 verified protected-message actions, 10 approvals, and 1 quarantine. Gemini usage and billed cost remain unmeasured. [Run receipts and timings](docs/AGENTWARE_AUDIT.md#measured-model-runs)
+Two real local Ollama runs on the 20-message sandbox averaged **5,305 tokens per run** (3,976 input and 1,329 output), with **$0 in provider charges** for `qwen2.5:1.5b`. Each run recorded 2 verified protected-message actions, 10 approvals, and 1 quarantine. Gemini usage and billed cost remain unmeasured.
 
 Open `http://localhost:3000/#briefing`. The status bar labels the current agent as `llm` or `offline-smoke` separately from the mailbox. Google access is optional and works with either inference mode.
 
@@ -229,12 +229,12 @@ The recorded run is labeled `offline-smoke`. It scanned 20 messages and exercise
 | Gated Approvals (Tier 2) | **6** |
 | Blocked Threats / Quarantined | **1** |
 
-The verified work includes six calendar writes and three mock sends. The shared meeting and dossier write counts once. The quarantine is counted in the third row. [Run summary](traces/c611f6b5-2153-4c50-9a86-ac06ee13103e.md)
+The verified work includes six calendar writes and three mock sends. The shared meeting and dossier write counts once. The quarantine is counted in the third row. Each run writes its receipt to `traces/<run-id>.md` and `.json`.
 
 ```sh
 pnpm test
 pnpm test:adversarial
-pnpm agent verify-trace traces/c611f6b5-2153-4c50-9a86-ac06ee13103e.json
+pnpm agent verify-trace traces/<run-id>.json
 ```
 
 The built-in [adversarial regression report](tests/adversarial_regression_report.md) covers five synthetic inputs, a burst halt, and post-write timeout recovery. For the official files supplied separately, run `pnpm run-official-trap-pack PATH` with a directory or JSON manifest. The runner preserves per-case trace links, including failures, in `tests/official_trap_pack_report.md`. It uses an isolated database per file and defaults to offline analysis. Set `SIFTVANE_AGENT_MODE=llm` explicitly to exercise the configured model with the supplied files. The organizer lists the official release at kickoff on November 27 at 18:00 UTC. [Agentware timeline](https://www.agentwarehack.com/)
@@ -262,4 +262,4 @@ Compose users can run online commands with `docker compose exec api pnpm agent w
 - The hash chain checks consistency against the recorded head. Retain an independent trusted copy of the head when provenance matters.
 - Live source excerpts and provider credentials are excluded from run receipts. SQLite retains structured business state and provenance. The default installation binds to localhost and is designed for trusted local operation.
 
-[Architecture and playbooks](AGENT.md) · [Safety details](SAFETY.md) · [Acceptance audit](docs/ACCEPTANCE_AUDIT.md) · [Rubric remediation](docs/AGENTWARE_AUDIT.md) · [Near-miss log](docs/NEAR_MISS_LOG.md) · [MIT License](LICENSE)
+[Safety details](SAFETY.md) · [MIT License](LICENSE)

@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 const allowed = {
-  GET: /^(?:session|google\/(?:login|connect|callback))$/,
+  GET: /^(?:session|google\/(?:login|start|connect|callback))$/,
   POST: /^(?:inbox|logout|google\/(?:disconnect|token)\/[a-f\d-]{36}|google\/token\/sandbox)$/,
 };
 

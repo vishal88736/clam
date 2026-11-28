@@ -4,14 +4,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { inboxPolicySchema, type InboxPolicy, type InboxSchedule } from '@siftvane/shared';
-import { livePolicy, sandboxDriveFiles, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
+import { livePolicy, sandboxDriveFiles, sandboxReplyHistory, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
 import type { ActionKind, Attention, Claim, Mode, RunRecord, RunTrace, Snapshot, TraceStep } from './contracts.js';
 import { genesisHash } from './trace.js';
 import { handoffSchema } from '../handoffs/schema.js';
 import { platformSchema } from '../platform/schema.js';
 import { sandboxPhotos, vendorQuoteReplies, workspaceMessages } from '../sandbox/seed.js';
 
-export const sandboxAddress = 'sandbox';
 const latestSchedule: InboxSchedule = { enabled: false, frequency: 'daily', intervalMinutes: 1440 };
 const ddl = `
 BEGIN IMMEDIATE;
@@ -144,6 +143,12 @@ export class InboxStore {
           if (file.blob) this.sqlite.prepare('INSERT OR REPLACE INTO workspace_sandbox_blobs VALUES (?, ?, ?)').run(file.key, file.blob.mime, file.blob.data);
         }
         this.setState('seed-v5-drive', true);
+      }
+      if (!this.state('seed-v6-replies')) {
+        for (const message of sandboxReplyHistory) {
+          this.sqlite.prepare('INSERT OR IGNORE INTO inbox_sandbox_messages VALUES (?, ?, ?)').run(message.id, 'replies', JSON.stringify(message));
+        }
+        this.setState('seed-v6-replies', true);
       }
     });
   }

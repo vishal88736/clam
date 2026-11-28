@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-export const handoffHeaderNames = [
-  'X-Siftvane-Agent-Origin', 'X-Siftvane-Handoff-Id', 'X-Siftvane-Hop-Count',
-  'X-Siftvane-Max-Hops', 'X-Siftvane-Handoff-Sig',
-] as const;
 export const forgedHandoffRule = 'FORGED_AGENT_HANDOFF_HEADER';
 export const handoffDefaults = { maxHops: 4, hardCeiling: 6 } as const;
 export const handoffId = z.string().regex(/^[A-Za-z0-9_-]{1,96}$/);

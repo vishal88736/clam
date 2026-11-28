@@ -107,6 +107,10 @@ export function registerPlatformTools(server: McpServer, args: {
     text: z.string().max(4000),
   }, ({ text }) => workflow('set_business_profile', 'agent:manage', async () => { inbox.guard(); return platform.setBusinessProfile(grant.inboxId, text); }));
 
+  server.tool('get_behavior_profile', "Read the user's behavior.md: which mail they reply to and how they write, learned from their own " +
+    'sent replies and edited by them. Agents follow it when deciding what to answer and how.', {},
+  () => workflow('get_behavior_profile', 'agent:manage', async () => platform.behaviorProfile(grant.inboxId)));
+
   server.tool('switch_active_agent', "Switch the user's active Siftvane agent and record the switch in the audited timeline.", {
     agent_id: z.string().uuid(), reason: z.string().trim().max(300).optional(),
   }, ({ agent_id, reason }) => workflow('switch_active_agent', 'agent:manage', async () =>

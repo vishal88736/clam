@@ -5,13 +5,6 @@ import type { WorkspaceRegistry } from './registry.js';
 import { maxFileBytes } from './adapters.js';
 import { titleOf, type WorkspaceAdapter, type WorkspaceState, type WriteReceipt } from './types.js';
 
-export interface WorkspaceOwner {
-  userId: string;
-  agentId: string | null;
-  inboxId: string;
-  runId?: string | null;
-}
-
 /**
  * Routes `workspace` actions to the Drive/Docs/Sheets adapter while every other kind keeps its existing
  * Gmail/Calendar target. Because it is an ordinary InboxTarget, workspace writes inherit the engine's

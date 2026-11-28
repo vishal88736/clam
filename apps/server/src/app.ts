@@ -26,6 +26,7 @@ import { registerApiRoutes, type StoredLlmSettings } from './routes/api.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
 import { MissionRunner } from './platform/runner.js';
 import { registerPlatformRoutes } from './platform/routes.js';
+import { AiSettings } from './platform/aiSettings.js';
 import { PlatformService } from './platform/service.js';
 import { LiveGoogleWorkspaceAdapter } from './workspace/adapters.js';
 
@@ -191,10 +192,13 @@ export async function createSiftvaneApp(overrides?: {
   });
   if (inbox.halted()) inbox.latch(true);
   inbox.startScheduler();
+  // The AI provider can be picked in the website; tests that inject a model keep it.
+  const ai = new AiSettings(inbox.store.sqlite, config.googleTokenKey, inbox.agent, (choice) => inbox.useAgent(choice));
+  if (!overrides?.agent) ai.load();
   const platform = new PlatformService(inbox.store, dbHandle.sqlite, inbox.registry);
   const missions = new MissionRunner(inbox, platform, { webOrigin: config.webOrigin });
   missions.start();
-  registerPlatformRoutes(app, { inbox, platform, missions, accounts, config });
+  registerPlatformRoutes(app, { inbox, platform, missions, accounts, config, ai });
   registerGoogleAuthRoutes(app, accounts, config, inbox);
   registerInboxRoutes(app, inbox, config, killSwitchService, accounts, lockfile, platform);
 

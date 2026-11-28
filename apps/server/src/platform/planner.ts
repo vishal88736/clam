@@ -5,7 +5,6 @@ import { composeProgram, describeStep, genericProgramSchema, opService, type Gen
 
 const serviceEnum = z.enum(['gmail', 'calendar', 'drive', 'docs', 'sheets', 'photos', 'policy', 'system']);
 export const templates = ['invoice_ledger', 'vendor_rfq', 'photo_receipts', 'inbox_digest', 'generic', 'interactive'] as const;
-export type Template = (typeof templates)[number];
 
 const stepSchema = z.object({
   id: z.string().regex(/^[a-z0-9_]{1,40}$/),

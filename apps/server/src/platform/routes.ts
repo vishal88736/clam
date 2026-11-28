@@ -9,6 +9,9 @@ import { sandboxClock } from '../sandbox/seed.js';
 import { recipeComputedSchema, recipeRuleSchema } from './recipes.js';
 import type { MissionRunner } from './runner.js';
 import { services, type PlatformService } from './service.js';
+import type { AiSettings } from './aiSettings.js';
+import { gmailCorpus, sandboxCorpus, writeProfile } from './behavior.js';
+import { agentProviders } from '../inbox/agentConfig.js';
 
 const agentId = z.object({ id: z.string().uuid() });
 
@@ -23,9 +26,15 @@ export function viewer(request: FastifyRequest, accounts: GoogleAccounts, config
 
 /** Website system-of-record API for users, agents, agent switches, execution logs, and Workspace artifacts. */
 export function registerPlatformRoutes(app: FastifyInstance, deps: {
-  inbox: InboxEngine; platform: PlatformService; missions: MissionRunner; accounts: GoogleAccounts; config: SiftvaneConfig;
+  inbox: InboxEngine; platform: PlatformService; missions: MissionRunner; accounts: GoogleAccounts; config: SiftvaneConfig; ai?: AiSettings;
 }) {
-  const { inbox, platform, missions, accounts, config } = deps;
+  const { inbox, platform, missions, accounts, config, ai } = deps;
+  /** In live mode only a signed-in user may change server-wide settings. */
+  const owner = (request: FastifyRequest) => {
+    const who = viewer(request, accounts, config);
+    if (config.inboxLive && !who.signedIn) throw new Error('SIGN_IN_REQUIRED');
+    return who;
+  };
   app.register(async (router) => {
     router.addHook('preHandler', async (request, reply) => {
       const origin = request.headers.origin;
@@ -38,13 +47,68 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
       const message = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : 'PLATFORM_OPERATION_FAILED';
       const code = error instanceof ZodError ? 400 : message === 'INBOX_HALTED' ? 423 : /^AI_(?:MODEL_UNAVAILABLE|PLAN_UNUSABLE)$/.test(message) ? 503 :
         /NOT_AVAILABLE/.test(message) ? 404 :
-        /ALREADY|INVALID|NOT_ALLOWED|NOT_READY|NOT_WAITING|NOT_ESCALATED|DUPLICATE|UNKNOWN_FIELD|SANDBOX_ONLY|AGENT_(?:RUN_STOPPING|STATUS_CHANGED)/.test(message) ? 409 : 500;
+        /AI_KEY_REQUIRED|AI_KEY_STORAGE_UNAVAILABLE|SIGN_IN_REQUIRED|ALREADY|INVALID|NOT_ALLOWED|NOT_READY|NOT_WAITING|NOT_ESCALATED|DUPLICATE|UNKNOWN_FIELD|SANDBOX_ONLY|AGENT_(?:RUN_STOPPING|STATUS_CHANGED)/.test(message) ? 409 : 500;
       reply.code(code).send({ error: error instanceof ZodError ? 'INVALID_INPUT' : message });
     });
 
     router.get('/api/inbox/platform/me', async (request) => {
       const who = viewer(request, accounts, config);
       return { ...platform.profile(who.userId, who.inboxId), signed_in: who.signedIn, halted: inbox.halted() };
+    });
+    // behavior.md: built from the user's own replies (in the background), then theirs to edit.
+    const building = new Set<string>();
+    const buildBehavior = (inboxId: string) => {
+      if (building.has(inboxId)) return;
+      building.add(inboxId);
+      void (async () => {
+        const owner = inboxId === 'sandbox' ? null : accounts.connection(inboxId)?.email;
+        const corpus = inboxId === 'sandbox' || !owner ? sandboxCorpus(inbox) : await gmailCorpus(accounts, inbox, inboxId, owner);
+        const written = await writeProfile(inbox, corpus);
+        platform.setBehaviorProfile(inboxId, written.markdown, { by: written.by, count: corpus.pairs.length });
+      })().catch(() => undefined).finally(() => building.delete(inboxId));
+    };
+    router.get('/api/inbox/platform/behavior', async (request) => {
+      const { inboxId } = viewer(request, accounts, config);
+      const profile = platform.behaviorProfile(inboxId);
+      if (!profile.updated_at && !inbox.halted()) buildBehavior(inboxId);
+      return { ...profile, building: building.has(inboxId) };
+    });
+    router.put('/api/inbox/platform/behavior', async (request) => {
+      const { inboxId } = owner(request);
+      const { markdown } = z.object({ markdown: z.string().max(12_000) }).strict().parse(request.body);
+      inbox.guard();
+      return { ...platform.setBehaviorProfile(inboxId, markdown), building: building.has(inboxId) };
+    });
+    router.post('/api/inbox/platform/behavior/rebuild', async (request) => {
+      const { inboxId } = owner(request);
+      inbox.guard();
+      buildBehavior(inboxId);
+      return { ...platform.behaviorProfile(inboxId), building: true };
+    });
+    router.get('/api/inbox/platform/ai-provider', async () => {
+      if (!ai) throw new Error('AI_SETTINGS_NOT_AVAILABLE');
+      return ai.view(inbox.agent);
+    });
+    router.put('/api/inbox/platform/ai-provider', async (request) => {
+      owner(request);
+      if (!ai) throw new Error('AI_SETTINGS_NOT_AVAILABLE');
+      const choice = z.object({
+        provider: z.enum([...agentProviders, 'off']), model: z.string().trim().max(120).optional(),
+        api_key: z.string().trim().max(400).optional(), endpoint: z.string().trim().url().max(300).optional(),
+      }).strict().parse(request.body);
+      ai.save(choice);
+      return ai.view(inbox.agent);
+    });
+    router.delete('/api/inbox/platform/ai-provider', async (request) => {
+      owner(request);
+      if (!ai) throw new Error('AI_SETTINGS_NOT_AVAILABLE');
+      ai.reset();
+      return ai.view(inbox.agent);
+    });
+    router.post('/api/inbox/platform/ai-provider/test', async (request) => {
+      owner(request);
+      if (!ai) throw new Error('AI_SETTINGS_NOT_AVAILABLE');
+      return ai.test(inbox.agent);
     });
     router.get('/api/inbox/platform/business-profile', async (request) => platform.businessProfile(viewer(request, accounts, config).inboxId));
     router.put('/api/inbox/platform/business-profile', async (request) => {

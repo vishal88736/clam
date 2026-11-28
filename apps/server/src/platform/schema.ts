@@ -33,6 +33,16 @@ CREATE TABLE IF NOT EXISTS business_profiles (
   updated_at TEXT NOT NULL
 );
 
+-- behavior.md: which mail the user answers and how they write, learned from their sent replies and editable by them.
+CREATE TABLE IF NOT EXISTS behavior_profiles (
+  inbox_id TEXT PRIMARY KEY,
+  body TEXT NOT NULL,
+  built_by TEXT NOT NULL,
+  source_count INTEGER NOT NULL DEFAULT 0,
+  built_at TEXT,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agent_switch_history (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

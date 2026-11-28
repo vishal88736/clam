@@ -11,14 +11,20 @@ import './inbox.css';
 import { ThemeProvider } from '@/components/ThemeContext';
 
 export const metadata: Metadata = {
-  title: 'Siftvane · Agentic Inbox & Calendar',
+  title: 'Siftvane',
   description:
-    'An inbox and calendar agent with verified changes and policy-gated approvals.',
+    'Agents that work through your Gmail, Calendar and Drive, and ask before they act.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" data-theme="light" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&display=swap" />
+      </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
       </body>

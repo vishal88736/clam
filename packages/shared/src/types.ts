@@ -44,36 +44,6 @@ export const DEFAULT_SENSITIVE_CATEGORIES: SensitiveCategory[] = [
   'crypto_seed_recovery',
 ];
 
-export const SENSITIVE_CATEGORY_META: Record<
-  SensitiveCategory,
-  { label: string; description: string }
-> = {
-  password_resets: {
-    label: 'Password Resets',
-    description: 'Account password reset links and recovery emails',
-  },
-  otp_2fa: {
-    label: 'OTPs & 2FA Codes',
-    description: 'One-time passcodes, login codes, and multi-factor tokens',
-  },
-  bank_security_alerts: {
-    label: 'Bank Security Alerts',
-    description: 'Fraud warnings, wire confirmations, and card lock notices',
-  },
-  medical_records: {
-    label: 'Medical Records',
-    description: 'Lab results, patient portal notices, and health records',
-  },
-  legal_confidential: {
-    label: 'Legal & Privileged',
-    description: 'Attorney-client privileged emails, NDAs, and legal notices',
-  },
-  crypto_seed_recovery: {
-    label: 'Crypto Seed Recovery',
-    description: 'Wallet recovery phrases, hardware key backups, and custody resets',
-  },
-};
-
 export const SemanticScopeSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -128,7 +98,6 @@ export const PolicyIRSchema = z.object({
 export type PolicyIR = z.infer<typeof PolicyIRSchema>;
 
 export const PolicyDecisionSchema = z.enum(['ALLOW', 'DENY', 'PENDING_APPROVAL']);
-export type PolicyDecision = z.infer<typeof PolicyDecisionSchema>;
 
 export const AuditDecisionSchema = z.enum([
   'ALLOW',
@@ -396,15 +365,3 @@ export interface TrapPackReport {
 export type MailMode = 'sandbox' | 'gmail';
 export type LlmProvider = 'local_heuristic' | 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
-export const SIFTVANE_ERROR_CODES = {
-  UNAUTHORIZED: 'SIFTVANE_UNAUTHORIZED',
-  AGENT_PAUSED: 'SIFTVANE_AGENT_PAUSED',
-  KILL_SWITCH_ENGAGED: 'KILL_SWITCH_ENGAGED',
-  RATE_LIMITED: 'SIFTVANE_RATE_LIMITED',
-  POLICY_DENIED: 'SIFTVANE_POLICY_DENIED',
-  PROMPT_INJECTION_BLOCKED: 'PROMPT_INJECTION_BLOCKED',
-  CLASSIFIER_FAIL_CLOSED: 'SIFTVANE_CLASSIFIER_FAIL_CLOSED',
-  APPROVAL_REQUIRED: 'SIFTVANE_APPROVAL_REQUIRED',
-  APPROVAL_EXPIRED: 'SIFTVANE_APPROVAL_EXPIRED',
-  NOT_FOUND: 'SIFTVANE_NOT_FOUND',
-} as const;

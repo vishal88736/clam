@@ -45,6 +45,12 @@ export function registerGoogleAuthRoutes(app: FastifyInstance, accounts: GoogleA
       const flow = accounts.begin('identity', accounts.browser(request.headers.cookie), link ? requireOperator(request) : undefined);
       return reply.header('Set-Cookie', flow.cookie).redirect(flow.url);
     });
+    // One click: sign in and connect Gmail, Calendar, Drive, Docs, Sheets and Photos with a single Google consent.
+    router.get('/api/auth/google/start', async (request, reply) => {
+      z.object({}).strict().parse(request.query);
+      const flow = accounts.begin('all', accounts.browser(request.headers.cookie), accounts.session(request.headers.cookie));
+      return reply.header('Set-Cookie', flow.cookie).redirect(flow.url);
+    });
     router.get('/api/auth/google/connect', async (request, reply) => {
       const query = z.object({ mode: z.enum(['readonly', 'readwrite', 'workspace', 'workspace_edit', 'drive_read']), inboxId: id.optional() }).strict().parse(request.query);
       const flow = accounts.begin(query.mode, accounts.browser(request.headers.cookie), requireOperator(request), query.inboxId);
@@ -55,7 +61,7 @@ export function registerGoogleAuthRoutes(app: FastifyInstance, accounts: GoogleA
       if (!query.code || query.error) return reply.redirect(new URL('/settings?google=cancelled', config.webOrigin).toString());
       const result = await accounts.complete(query.code, query.state, request.headers.cookie);
       if (result.next) return reply.header('Set-Cookie', result.next.cookie).redirect(result.next.url);
-      if (result.inboxId) inbox.store.policy(`live:${result.inboxId}`);
+      if ('inboxId' in result && result.inboxId) inbox.store.policy(`live:${result.inboxId}`);
       reply.header('Set-Cookie', [cookie(flowCookie, '', 0, accounts.secure), cookie(legacyFlowCookie, '', 0, accounts.secure),
         ...(result.session ? [result.session, cookie(legacySessionCookie, '', 0, accounts.secure)] : [])]);
       return reply.redirect(new URL('/settings?google=connected', config.webOrigin).toString());

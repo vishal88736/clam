@@ -37,6 +37,16 @@ async function until<T>(read: () => T, done: (value: T) => boolean, ms = 20_000)
   }
 }
 
+async function untilAsync<T>(read: () => Promise<T>, done: (value: T) => boolean, ms = 20_000) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (done(value)) return value;
+    if (Date.now() > end) throw new Error('Timed out: ' + JSON.stringify(value).slice(0, 500));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 const createAgent = async (runtime: Runtime, instruction: string) => {
   const response = await runtime.app.inject({ method: 'POST', url: '/api/inbox/platform/agents', payload: { instruction } });
   expect(response.statusCode).toBe(200);
@@ -755,3 +765,45 @@ async (runtime, prompts) => {
   expect(runtime.platform.logs(user, { agentId: agent_id }).filter((entry) => entry.action_name === 'draft_reply')).toHaveLength(2);
 }, (prompt) => prompt.startsWith('Write the reply')
   ? { reply: 'The table lamp is 2400 rupees and you can return it within 14 days.' } : { reasoning: 'Done.', done: true }), 60_000);
+
+it('learns behavior.md from the user\'s own replies, lets them edit it, and reply agents follow it', () => withPlan({
+  reasoning: 'Reply to lamp questions.', name: 'Lamp Replies', schedule_mode: 'continuous', program: [
+    { id: 'asks', op: 'mail.search', keywords: ['lamp'] },
+    { id: 'reply', op: 'mail.draft_replies', from: 'asks', subject: 'Re: {{subject}}', body: 'Thanks, we will follow up.' }] },
+async (runtime, prompts) => {
+  const read = async () => (await runtime.app.inject({ method: 'GET', url: '/api/inbox/platform/behavior' })).json() as { markdown: string; built_by: string; source_count: number; building: boolean };
+  await read();
+  const built = await untilAsync(read, (profile) => Boolean(profile.markdown));
+  // Built from the seeded sent replies (the fake model answers the profile prompt below).
+  expect(built).toMatchObject({ built_by: 'ai', source_count: 5 });
+  const profilePrompt = prompts.find((prompt) => prompt.startsWith('You are writing a profile'))!;
+  expect(profilePrompt).toContain('Hi Priya');
+  expect(profilePrompt).toContain('UNANSWERED');
+  const edited = await runtime.app.inject({ method: 'PUT', url: '/api/inbox/platform/behavior', payload: { markdown: '# How I handle my email\n- Sign off with "Cheers, Alex".' } });
+  expect(edited.json()).toMatchObject({ built_by: 'user', markdown: expect.stringContaining('Cheers, Alex') });
+  await runtime.app.inject({ method: 'POST', url: '/api/inbox/platform/sandbox/messages', payload: { from: 'asha@buyer.example', subject: 'Lamp question', text: 'Is the lamp in stock?' } });
+  const { agent_id } = await createAgent(runtime, 'Whenever someone asks about my lamp, reply to them');
+  await until(() => generic(runtime, agent_id), (entry) => Boolean(entry.state.last_run_id) && !entry.state.running_run_id);
+  expect(prompts.find((prompt) => prompt.startsWith('Write the reply'))).toContain('Cheers, Alex');
+}, (prompt) => prompt.startsWith('You are writing a profile') ? { markdown: '# How I handle my email\n## How I write\n- I greet with "Hi <name>," and sign off "Thanks, Alex".' }
+  : prompt.startsWith('Write the reply') ? { reply: 'In stock! Cheers, Alex' } : { reasoning: 'Done.', done: true }), 60_000);
+
+it('without a model, behavior.md is counted from the replies (greeting, sign-off, who gets answers)', () => runtimeTest(async (runtime) => {
+  await runtime.app.inject({ method: 'GET', url: '/api/inbox/platform/behavior' });
+  const built = await untilAsync(async () => (await runtime.app.inject({ method: 'GET', url: '/api/inbox/platform/behavior' })).json() as { markdown: string; built_by: string },
+    (profile) => Boolean(profile.markdown));
+  expect(built.built_by).toBe('stats');
+  expect(built.markdown).toContain('"Thanks, / Alex" (5×)');
+  expect(built.markdown).toContain('People at client.example');
+}), 60_000);
+
+it('the AI provider is chosen in the website, the key is never returned, and a cloud provider needs a key', () => runtimeTest(async (runtime) => {
+  const put = (payload: unknown) => runtime.app.inject({ method: 'PUT', url: '/api/inbox/platform/ai-provider', payload });
+  expect((await put({ provider: 'openai', model: 'gpt-4o-mini' })).json()).toEqual({ error: 'AI_KEY_REQUIRED' });
+  const saved = await put({ provider: 'ollama', model: 'llama3.1:8b', endpoint: 'http://127.0.0.1:11434' });
+  expect(saved.json()).toMatchObject({ source: 'website', provider: 'ollama', model: 'llama3.1:8b' });
+  expect(runtime.inbox.agent).toMatchObject({ mode: 'llm', provider: 'ollama', model: 'llama3.1:8b' });
+  const reset = await runtime.app.inject({ method: 'DELETE', url: '/api/inbox/platform/ai-provider' });
+  expect(reset.json()).toMatchObject({ source: 'environment', provider: 'off' });
+  expect(JSON.stringify(reset.json())).not.toMatch(/api_key|sk-/);
+}), 60_000);

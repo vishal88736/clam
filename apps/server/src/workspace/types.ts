@@ -66,7 +66,6 @@ export interface WorkspaceAdapter {
   preview?(key: string): Promise<Record<string, unknown> | null>;
 }
 
-export const serviceOf = (state: Pick<WorkspaceState, 'type'>): ArtifactService => state.type;
 
 export function titleOf(state: WorkspaceState) {
   return state.type === 'drive_folder' || state.type === 'drive_file' ? state.name : state.title;

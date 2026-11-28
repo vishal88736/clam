@@ -14,6 +14,12 @@ const scopes = {
     'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'],
   // Opt-in: agents may find and read (never change) the user's existing Drive files, Docs, Sheets and PDFs.
   drive_read: ['https://www.googleapis.com/auth/drive.readonly'],
+  // One click: sign in and connect Gmail, Calendar, Drive (read + Siftvane files), Docs, Sheets and the Photos picker together.
+  all: ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/gmail.modify', 'https://www.googleapis.com/auth/calendar.events',
+    'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'],
 } as const;
 export const workspaceScopes = {
   driveFile: 'https://www.googleapis.com/auth/drive.file',
@@ -199,7 +205,8 @@ export class GoogleAccounts {
   begin(stage: AuthStage, browserCookie?: string, session?: OperatorSession, inboxId?: string,
     linked?: { sub: string; email: string }) {
     this.requireEnabled();
-    if (stage !== 'identity' && (!this.config.inboxLive || !session)) throw new Error('OPERATOR_SESSION_REQUIRED');
+    if (stage === 'all' && !this.config.inboxLive) throw new Error('OPERATOR_SESSION_REQUIRED');
+    if (stage !== 'identity' && stage !== 'all' && (!this.config.inboxLive || !session)) throw new Error('OPERATOR_SESSION_REQUIRED');
     if (inboxId && (!session || !this.isOwned(inboxId, session.user_id))) throw new Error('INBOX_NOT_AVAILABLE');
     const browser = /^[\w-]{43}$/.test(browserCookie ?? '') ? browserCookie! : opaque();
     const id = opaque();
@@ -214,6 +221,7 @@ export class GoogleAccounts {
       client_id: this.config.googleClientId, redirect_uri: this.config.googleRedirectUri, response_type: 'code',
       scope: scopes[stage].join(' '), state, code_challenge: hash(verifier, 'base64url'), code_challenge_method: 'S256',
       ...(stage === 'identity' ? { nonce, ...(session ? { prompt: 'select_account' } : {}) } :
+        stage === 'all' ? { nonce, access_type: 'offline', prompt: 'consent select_account', include_granted_scopes: 'true' } :
         { access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', ...(linked ? { login_hint: linked.email } : {}) }),
     }).toString();
     return { url: auth.toString(), cookie: cookie(flowCookie, browser, 600, this.secure) };
@@ -243,7 +251,8 @@ export class GoogleAccounts {
     }
     const flow = this.db.prepare('DELETE FROM google_oauth_flows WHERE id=? AND browser_hash=? AND expires_at>? RETURNING *')
       .get(id, hash(browser), Date.now()) as Flow | undefined;
-    if (!flow || (flow.intent !== 'identity' && this.session(cookies)?.token_hash !== flow.session_hash)) {
+    const fresh = flow?.intent === 'all' && !flow.session_hash;
+    if (!flow || (flow.intent !== 'identity' && !fresh && this.session(cookies)?.token_hash !== flow.session_hash)) {
       throw new Error('INVALID_GOOGLE_STATE');
     }
     const result = await this.tokens({
@@ -258,13 +267,17 @@ export class GoogleAccounts {
         if (!current || current.token_hash !== flow.session_hash) throw new Error('INVALID_GOOGLE_STATE');
         return { next: this.begin('readonly', browser, current, undefined, identity) };
       }
-      this.logout(this.session(cookies));
-      const user = this.db.prepare(`INSERT INTO users (id,google_sub,email,name,picture,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(google_sub) DO UPDATE
-        SET email=excluded.email,name=excluded.name,picture=excluded.picture,updated_at=excluded.updated_at RETURNING id`)
-        .get(randomUUID(), identity.sub, identity.email, identity.name ?? '', safePicture(identity.picture), nowIso())!;
-      const raw = opaque();
-      this.db.prepare('INSERT INTO operator_sessions VALUES (?,?,?,?)').run(hash(raw), user.id, 'sandbox', Date.now() + sessionAge * 1000);
-      return { session: cookie(sessionCookie, raw, sessionAge, this.secure) };
+      return { session: this.startSession(identity, cookies).cookie };
+    }
+    // One-click connect: the same consent signs the user in (verified ID token) and connects the mailbox.
+    let started: ReturnType<GoogleAccounts['startSession']> | undefined;
+    if (flow.intent === 'all') {
+      if (!result.id_token) throw new Error('GOOGLE_IDENTITY_INVALID');
+      const identity = await this.verifyIdentity(result.id_token).catch(() => undefined);
+      if (!identity?.sub || !identity.email_verified || !identity.email || identity.nonce !== flow.nonce) throw new Error('GOOGLE_IDENTITY_INVALID');
+      const current = this.session(cookies);
+      const owner = current ? this.db.prepare('SELECT google_sub FROM users WHERE id=?').get(current.user_id) as { google_sub?: string } | undefined : undefined;
+      if (fresh || owner?.google_sub !== identity.sub) started = this.startSession(identity, cookies);
     }
     const granted = exactScopes(result.scope);
     if (!mayUse(granted, 'mail:read') && !mayUse(granted, 'calendar:read')) throw new Error('GOOGLE_SCOPES_UNVERIFIED');
@@ -275,15 +288,15 @@ export class GoogleAccounts {
     const identity = await profile.json() as Identity;
     if (!identity.sub || !identity.email || !identity.email_verified) throw new Error('GOOGLE_IDENTITY_INVALID');
     if (flow.expected_sub && flow.expected_sub !== identity.sub) throw new Error('GOOGLE_ACCOUNT_MISMATCH');
-    const session = this.session(cookies);
-    if (!session || session.token_hash !== flow.session_hash) throw new Error('INVALID_GOOGLE_STATE');
+    const session = started?.session ?? this.session(cookies);
+    if (!session || (!started && session.token_hash !== flow.session_hash)) throw new Error('INVALID_GOOGLE_STATE');
     const stored = this.db.prepare('SELECT id FROM inboxes WHERE user_id=? AND google_sub=?')
       .get(session.user_id, identity.sub);
     if (flow.inbox_id && stored?.id !== flow.inbox_id) throw new Error('GOOGLE_ACCOUNT_MISMATCH');
     const idForInbox = stored?.id ? String(stored.id) : randomUUID();
     const current = this.connection(idForInbox);
     if (current?.status === 'revoked') throw new Error('GOOGLE_REAUTH_REQUIRED');
-    if (flow.intent !== 'readwrite') {
+    if (flow.intent !== 'readwrite' && flow.intent !== 'all') {
       const previous = current ? JSON.parse(current.granted_scopes) as string[] : [];
       if (scopes.readwrite.some((scope) => granted.includes(scope) && !previous.includes(scope))) throw new Error('GOOGLE_SCOPE_NOT_ALLOWED');
     }
@@ -300,7 +313,19 @@ export class GoogleAccounts {
       this.db.exec('ROLLBACK');
       throw error;
     }
-    return { inboxId: idForInbox };
+    return { inboxId: idForInbox, ...(started ? { session: started.cookie } : {}) };
+  }
+
+  /** Creates (or updates) the Google user and a fresh operator session, ending any previous one in this browser. */
+  private startSession(identity: Identity, cookies?: string) {
+    this.logout(this.session(cookies));
+    const user = this.db.prepare(`INSERT INTO users (id,google_sub,email,name,picture,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(google_sub) DO UPDATE
+      SET email=excluded.email,name=excluded.name,picture=excluded.picture,updated_at=excluded.updated_at RETURNING id`)
+      .get(randomUUID(), identity.sub, identity.email, identity.name ?? '', safePicture(identity.picture), nowIso())!;
+    const raw = opaque();
+    const session: OperatorSession = { token_hash: hash(raw), user_id: String(user.id), inbox_id: 'sandbox', expires_at: Date.now() + sessionAge * 1000 };
+    this.db.prepare('INSERT INTO operator_sessions VALUES (?,?,?,?)').run(session.token_hash, session.user_id, session.inbox_id, session.expires_at);
+    return { session, cookie: cookie(sessionCookie, raw, sessionAge, this.secure) };
   }
 
   browser(cookies?: string) { return readCookie(cookies, flowCookie) || readCookie(cookies, legacyFlowCookie); }
