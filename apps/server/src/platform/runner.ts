@@ -11,7 +11,7 @@ import { canonicalJson, sha256 } from '../inbox/trace.js';
 import { sandboxClock, type ReaderMessage } from '../sandbox/seed.js';
 import { extractPhotoDetails, type PhotoDetails } from '../workspace/photos.js';
 import { sanitizeCell } from '../workspace/sanitize.js';
-import { compileIntent, interactivePlan, planFromChoice, planFromProgram, type CompiledIntent, type WorkflowPlan } from './planner.js';
+import { compileIntent, deterministicChoice, interactivePlan, planFromChoice, planFromProgram, type CompiledIntent, type WorkflowPlan } from './planner.js';
 import { llmPlan, type PlannerCall } from './llmPlanner.js';
 import { ProgramExecutor } from './programExecutor.js';
 import type { AgentRecord, AgentState, PlatformService, ScheduleMode, Service, SourceCli } from './service.js';
@@ -131,25 +131,26 @@ export class MissionRunner {
     }
   }
 
-  /** LLM planner when the agent runs in llm mode; any planner failure falls back to the deterministic compiler. */
+  /**
+   * With a model configured, the model composes every agent's program itself; there are no fixed workflows on this path.
+   * If the model is unreachable or cannot produce a usable plan, provisioning fails with a clear error instead of
+   * quietly building a different, hard-coded agent. Without a model (offline mode) the keyword compiler is used.
+   */
   async plan(instruction: string, services: string[] | undefined, inboxId: string, calls: PlannerCall[] = []):
     Promise<{ compiled: CompiledIntent; fallback: string | null; repairs?: string[] }> {
     const options = { services, mode: inboxId === 'sandbox' ? 'sandbox' as const : 'live' as const };
-    if (this.engine.agent.mode === 'llm') {
-      try {
-        const planned = await llmPlan(this.engine.agent, instruction, options.mode, undefined, (call) => calls.push(call));
-        if (planned.kind === 'program') {
-          return { compiled: planFromProgram({ program: planned.program, name: planned.name, scheduleMode: planned.scheduleMode, reasoning: planned.reasoning },
-            instruction, 'llm-planner'), fallback: null, repairs: planned.issues };
-        }
-        const compiled = planFromChoice(planned.choice, instruction, options, 'llm-planner');
-        compiled.plan.params.reasoning = planned.reasoning;
-        return { compiled, fallback: null };
-      } catch (error) {
-        return { compiled: compileIntent(instruction, options), fallback: errorCode(error) };
-      }
+    if (this.engine.agent.mode !== 'llm') return { compiled: compileIntent(instruction, options), fallback: null };
+    let planned: Awaited<ReturnType<typeof llmPlan>>;
+    try {
+      planned = await llmPlan(this.engine.agent, instruction, options.mode, undefined, (call) => calls.push(call));
+    } catch (error) {
+      throw new Error(/^PLANNER_(?:OUTPUT|PROGRAM)_INVALID$/.test(errorCode(error)) ? 'AI_PLAN_UNUSABLE' : 'AI_MODEL_UNAVAILABLE');
     }
-    return { compiled: compileIntent(instruction, options), fallback: null };
+    // Small models often answer "one_shot" for "every time I get…"; an explicit recurrence in the user's words wins.
+    const stated = deterministicChoice(instruction, options).schedule_mode;
+    const scheduleMode = planned.scheduleMode === 'one_shot' && stated !== 'one_shot' ? stated : planned.scheduleMode;
+    return { compiled: planFromProgram({ program: planned.program, name: planned.name, scheduleMode, reasoning: planned.reasoning },
+      instruction, 'llm-planner'), fallback: null, repairs: planned.issues };
   }
 
   async provision(input: {

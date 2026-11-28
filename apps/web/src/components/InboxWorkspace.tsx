@@ -14,6 +14,7 @@ import { GoogleAccountBar, useGoogleSession } from './GoogleSession';
 import { ThreadExecutionStack } from './ThreadExecutionStack';
 import { AgentSwitcherBar, AgentsView, usePlatformData } from './AgentConsole';
 import { RecipesView } from './RecipeConsole';
+import { PolicyEditor, policyChanges } from './PolicyEditor';
 
 const views = [
   { id: 'briefing', label: 'Inbox Briefing', icon: Inbox },
@@ -224,7 +225,7 @@ function ApprovalsView({ pending, busy, onResolve }: {
 
 function PolicyView({ reload }: { reload: () => Promise<void> }) {
   const [policy, setPolicy] = useState<{ version: number; policy: InboxPolicy; mode: string } | null>(null);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState<InboxPolicy | null>(null);
   const [compared, setCompared] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -233,36 +234,40 @@ function PolicyView({ reload }: { reload: () => Promise<void> }) {
   }> } | null>(null);
   useEffect(() => {
     api<{ version: number; policy: InboxPolicy; mode: string }>('policy')
-      .then((value) => { setPolicy(value); setDraft(JSON.stringify(value.policy, null, 2)); })
+      .then((value) => { setPolicy(value); setDraft(value.policy); })
       .catch((err) => setError(showError(err)));
   }, []);
   const execute = async (save: boolean) => {
     setError('');
     setBusy(true);
     try {
-      const value = JSON.parse(draft);
+      const value = draft;
+      if (!value) return;
       if (save && policy) {
         const installed = await api<{ version: number; policy: InboxPolicy }>('policy', 'PUT', { version: policy.version, policy: value });
         setPolicy({ ...installed, mode: policy.mode });
+        setDraft(installed.policy);
         setReport(null);
         setCompared('');
         await reload();
       } else {
         setReport(await api('policy/preview', 'POST', value));
-        setCompared(draft);
+        setCompared(JSON.stringify(value));
       }
     } catch (err) { setError(showError(err)); }
     finally { setBusy(false); }
   };
   return <div className="inbox-stack">
     <Panel title="Policy versions" icon={<GitCompareArrows size={18} />}>
-      {policy ? <><div className="inbox-two">
-        <label>Current v{policy.version}<textarea value={JSON.stringify(policy.policy, null, 2)} readOnly rows={15} className="inbox-code" /></label>
-        <label>Draft v{policy.version + 1}<textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={15} className="inbox-code" spellCheck={false} /></label>
-      </div><div className="inbox-actions">
-        <button className="inbox-button" disabled={busy} onClick={() => void execute(false)}>Preview sandbox decisions</button>
-        <button className="inbox-button" data-tone="primary" disabled={busy || compared !== draft || !report} onClick={() => void execute(true)}>Save policy version</button>
-      </div></> : <Empty>Loading the active policy.</Empty>}
+      {policy && draft ? <>
+        <p>You are on <strong>version {policy.version}</strong>. Edit a copy below, preview how it would treat the sandbox mail, then save it as version {policy.version + 1}. Nothing changes until you save.</p>
+        <PolicyEditor current={policy.policy} draft={draft} onChange={(next) => { setDraft(next); setError(''); }} />
+        <div className="inbox-actions">
+          <button className="inbox-button" disabled={busy || draft.workStart >= draft.workEnd} onClick={() => void execute(false)}>Preview sandbox decisions</button>
+          <button className="inbox-button" data-tone="primary" disabled={busy || compared !== JSON.stringify(draft) || !report || policyChanges(policy.policy, draft).length === 0}
+            onClick={() => void execute(true)}>Save as version {policy.version + 1}</button>
+          {report && compared !== JSON.stringify(draft) && <small>You changed something since the preview. Preview again to save.</small>}
+        </div></> : <Empty>Loading the active policy.</Empty>}
       {error && <p role="alert" className="inbox-error">{error}</p>}
     </Panel>
     {report && <Panel title={`Decisions across ${report.messages_scanned} sandbox messages`} icon={<FileCheck2 size={18} />}>

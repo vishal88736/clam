@@ -1,0 +1,697 @@
+{
+  "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+  "steps": [
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:1",
+      "stage": "TRIGGER",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.697Z",
+      "detail": {
+        "trigger": "agent:103fd4af-15af-4c63-bee9-290c11bf27bb",
+        "mailbox_mode": "sandbox",
+        "agent_mode": "llm",
+        "policy_version": 1
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 0,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "00ad20f5b2b26521352ab688528f364f76293f4430c5ebc34b464c4a6bf5cbcd"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:2",
+      "stage": "PLAN",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.703Z",
+      "detail": {
+        "agent_id": "103fd4af-15af-4c63-bee9-290c11bf27bb",
+        "agent_name": "Invoice Logger",
+        "template": "generic",
+        "phase": "start",
+        "planner": "llm-planner",
+        "steps": [
+          "search_invoices",
+          "extract_invoice_data",
+          "filter_invoices",
+          "log_invoices"
+        ]
+      },
+      "prev_hash": "00ad20f5b2b26521352ab688528f364f76293f4430c5ebc34b464c4a6bf5cbcd",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "69215237b26c326169b72bfc1a08674ab0bf0db03e71c9e6edc17798b115420d"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:3",
+      "stage": "CHECK",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.708Z",
+      "detail": {
+        "action": "mail_search",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "69215237b26c326169b72bfc1a08674ab0bf0db03e71c9e6edc17798b115420d",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "bc257858a8e9384013afb8610d4d96f0ecc2d8c51351dd9df758c015be5550bf"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:4",
+      "stage": "CHECK",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.715Z",
+      "detail": {
+        "action": "photos_extract",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "bc257858a8e9384013afb8610d4d96f0ecc2d8c51351dd9df758c015be5550bf",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "2e0e1ac0c0bd4e76694464db5fe0ecaafe2ce3f77dc2a170a1c0fa778d6613f5"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:5",
+      "stage": "CHECK",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.721Z",
+      "detail": {
+        "action": "filter",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "2e0e1ac0c0bd4e76694464db5fe0ecaafe2ce3f77dc2a170a1c0fa778d6613f5",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "20f2d823a92c979319c5806a14ba3b083e42b4d4743c780dfc949f6f809b5f90"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:6",
+      "stage": "POLICY",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.726Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoice Log",
+        "playbook_id": "workspace_create_or_get_spreadsheet",
+        "source_msg_id": "agent:103fd4af-15af-4c63-bee9-290c11bf27bb",
+        "rule_id": "WORKSPACE_REVERSIBLE_WRITE",
+        "reason": "Reversible workspace write passed the secret, taint, and type checks.",
+        "decision": "AUTONOMOUS",
+        "tier": 0
+      },
+      "prev_hash": "20f2d823a92c979319c5806a14ba3b083e42b4d4743c780dfc949f6f809b5f90",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "47802dd971c63efa8edaa14c0ff6927630ec350e3bd8a4c3183038305da3c846"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:7",
+      "stage": "CHECK",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.729Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoice Log",
+        "outcome": "ALREADY_CURRENT"
+      },
+      "prev_hash": "47802dd971c63efa8edaa14c0ff6927630ec350e3bd8a4c3183038305da3c846",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "2203024598518fad6999577add32b8ddf472a7720e9218c570d1654dfdb411db"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:8",
+      "stage": "POLICY",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.737Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoice Log",
+        "playbook_id": "workspace_append_sheet_rows",
+        "source_msg_id": "agent:103fd4af-15af-4c63-bee9-290c11bf27bb",
+        "rule_id": "WORKSPACE_REVERSIBLE_WRITE",
+        "reason": "Reversible workspace write passed the secret, taint, and type checks.",
+        "decision": "AUTONOMOUS",
+        "tier": 0
+      },
+      "prev_hash": "2203024598518fad6999577add32b8ddf472a7720e9218c570d1654dfdb411db",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "9fb34182cd810f6fdceaf20b22ea81c8ec3657c24db4ca5101cb7f76bed6a4cf"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:9",
+      "stage": "ACT",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.742Z",
+      "detail": {
+        "action_id": "04d9dcfd551d5de2169159ad654aef6fd2f43e5d3f6d7e9b42f97195635056e0",
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoice Log",
+        "rule_id": "WORKSPACE_REVERSIBLE_WRITE",
+        "source_msg_id": "agent:103fd4af-15af-4c63-bee9-290c11bf27bb",
+        "before": {
+          "type": "google_sheet",
+          "title": "Invoice Log",
+          "folder": null,
+          "tabs": [
+            {
+              "name": "Rows",
+              "headers": [
+                "Date",
+                "From",
+                "Subject",
+                "Vendor",
+                "Amount",
+                "Due",
+                "Source ID"
+              ],
+              "rows": [
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207 revised",
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207",
+                  "AWS",
+                  42.5,
+                  "2026-12-14",
+                  "bill-aws"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@studio.example",
+                  "Studio trial renewal",
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma-payments.example",
+                  "Invoice FIG-3391 - updated bank details",
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@printco.example",
+                  "Daily invoice PC-1207",
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma.example",
+                  "Invoice FIG-3391 for December",
+                  "Figma",
+                  45,
+                  "2026-12-20",
+                  "ws-invoice-figma"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@notion-saas.example",
+                  "Your monthly subscription receipt",
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ]
+              ]
+            }
+          ]
+        },
+        "expected": {
+          "type": "google_sheet",
+          "title": "Invoice Log",
+          "folder": null,
+          "tabs": [
+            {
+              "name": "Rows",
+              "headers": [
+                "Date",
+                "From",
+                "Subject",
+                "Vendor",
+                "Amount",
+                "Due",
+                "Source ID"
+              ],
+              "rows": [
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207 revised",
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207",
+                  "AWS",
+                  42.5,
+                  "2026-12-14",
+                  "bill-aws"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@studio.example",
+                  "Studio trial renewal",
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma-payments.example",
+                  "Invoice FIG-3391 - updated bank details",
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@printco.example",
+                  "Daily invoice PC-1207",
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma.example",
+                  "Invoice FIG-3391 for December",
+                  "Figma",
+                  45,
+                  "2026-12-20",
+                  "ws-invoice-figma"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@notion-saas.example",
+                  "Your monthly subscription receipt",
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@acme-cloud.example",
+                  "Invoice ACME-7781 for November",
+                  "billing@acme-cloud.example",
+                  "",
+                  "",
+                  "test-1-51387599"
+                ]
+              ]
+            }
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "9fb34182cd810f6fdceaf20b22ea81c8ec3657c24db4ca5101cb7f76bed6a4cf",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 3,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "361e14cb3ed918c0296989209f7097f41fb2d79bc2c9d7b2450a4afc27926ade"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:10",
+      "stage": "CHECK",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:31.752Z",
+      "detail": {
+        "action_id": "04d9dcfd551d5de2169159ad654aef6fd2f43e5d3f6d7e9b42f97195635056e0",
+        "outcome": "VERIFIED",
+        "actual": {
+          "type": "google_sheet",
+          "title": "Invoice Log",
+          "folder": null,
+          "tabs": [
+            {
+              "name": "Rows",
+              "headers": [
+                "Date",
+                "From",
+                "Subject",
+                "Vendor",
+                "Amount",
+                "Due",
+                "Source ID"
+              ],
+              "rows": [
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207 revised",
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207",
+                  "AWS",
+                  42.5,
+                  "2026-12-14",
+                  "bill-aws"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@studio.example",
+                  "Studio trial renewal",
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma-payments.example",
+                  "Invoice FIG-3391 - updated bank details",
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@printco.example",
+                  "Daily invoice PC-1207",
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma.example",
+                  "Invoice FIG-3391 for December",
+                  "Figma",
+                  45,
+                  "2026-12-20",
+                  "ws-invoice-figma"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@notion-saas.example",
+                  "Your monthly subscription receipt",
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@acme-cloud.example",
+                  "Invoice ACME-7781 for November",
+                  "billing@acme-cloud.example",
+                  "",
+                  "",
+                  "test-1-51387599"
+                ]
+              ]
+            }
+          ]
+        },
+        "action": "workspace",
+        "playbook_ids": [
+          "workspace_append_sheet_rows"
+        ]
+      },
+      "prev_hash": "361e14cb3ed918c0296989209f7097f41fb2d79bc2c9d7b2450a4afc27926ade",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "09bf88e3c3e657a3b2358787c936516e2dc6f35d4a0554b77be8780d3302958b"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:11",
+      "stage": "PLAN",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:34.017Z",
+      "detail": {
+        "event": "AGENT_MODEL_CALL",
+        "phase": "review",
+        "status": "RECEIVED",
+        "round": 1
+      },
+      "prev_hash": "09bf88e3c3e657a3b2358787c936516e2dc6f35d4a0554b77be8780d3302958b",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 2114,
+        "completion_tokens": 50,
+        "latency_ms": 2252,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 2164,
+        "usd": 0
+      },
+      "step_hash": "022ccd224d814c24c775eeefceef50e1b5cbcd10bc309ba1ceb0afac350b080c"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:12",
+      "stage": "CHECK",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:34.065Z",
+      "detail": {
+        "action": "llm_review",
+        "outcome": "VERIFIED",
+        "rule_id": "LLM_REVIEW"
+      },
+      "prev_hash": "022ccd224d814c24c775eeefceef50e1b5cbcd10bc309ba1ceb0afac350b080c",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 2164,
+        "usd": 0
+      },
+      "step_hash": "0b144a15147fddabc39574bd876404271ec2eeda70d7456fa481d633cf92a0be"
+    },
+    {
+      "id": "331a12ef-67ca-4274-a5b7-7714d4a27f07:13",
+      "stage": "REPORT",
+      "run_id": "331a12ef-67ca-4274-a5b7-7714d4a27f07",
+      "timestamp": "2026-11-28T05:00:34.069Z",
+      "detail": {
+        "autonomy": {
+          "autonomous_verified": 1,
+          "gated_for_approval": 0,
+          "blocked_quarantined": 0
+        },
+        "status": "COMPLETED",
+        "error": null,
+        "emails": 0,
+        "conflicts": 0,
+        "threats": 0,
+        "rollback_available": true
+      },
+      "prev_hash": "0b144a15147fddabc39574bd876404271ec2eeda70d7456fa481d633cf92a0be",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 2114,
+        "completion_tokens": 50,
+        "latency_ms": 2252,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 2164,
+        "usd": 0
+      },
+      "step_hash": "2d7228f79fb5cfb538e39e3e7e7d100beeb4b72550252de2d8516a87e9985d38"
+    }
+  ],
+  "step_count": 13,
+  "head_hash": "2d7228f79fb5cfb538e39e3e7e7d100beeb4b72550252de2d8516a87e9985d38",
+  "mode": "llm",
+  "model_usage": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b",
+    "prompt_tokens": 2114,
+    "completion_tokens": 50,
+    "latency_ms": 2252,
+    "estimated_usd": 0
+  }
+}

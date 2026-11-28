@@ -12,7 +12,8 @@ const choices = [
   ['mail:draft', 'Request drafts'], ['mail:send', 'Request or send policy-allowed mail'],
   ['mail:label', 'Label matching mail in agent workflows'],
   ['calendar:propose', 'Read or propose calendar changes'],
-  ['agent:manage', 'Create, switch, and inspect persistent agents'], ['workspace:write', 'Write Drive folders/files, Docs, and Sheets'],
+  ['agent:manage', 'Create, switch, and inspect persistent agents'], ['workspace:read', 'Find and read Drive files, Docs, and Sheets (read-only)'],
+  ['workspace:write', 'Write Drive folders/files, Docs, and Sheets'],
   ['photos:read', 'Search and extract receipt photos (read-only)'],
 ] as const;
 
@@ -32,14 +33,26 @@ function SetupCommands() {
     ['Cline MCP settings', settings('streamableHttp')],
     ['Cursor MCP settings', settings()],
   ];
-  return <div>
-    <p>Export your scoped <code>SIFTVANE_MCP_TOKEN</code> before running either client. Use one transport per client. For stdio, start from the Siftvane repo with <code>pnpm</code> on your PATH.</p>
-    {commands.map(([name, value]) => <details key={name} className="inbox-item">
-      <summary>{name}</summary>
+  const [active, setActive] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const [name, value] = commands[active];
+  return <div className="setup">
+    <ol className="setup-steps">
+      <li><strong>Mint a token</strong><span>Use “Create scoped MCP token” above, or a sandbox token, and pick only the scopes the client needs.</span></li>
+      <li><strong>Export it</strong><span><code>export SIFTVANE_MCP_TOKEN=…</code> in the shell that starts your client.</span></li>
+      <li><strong>Add the server</strong><span>Pick your client below and run or paste the snippet. Use one transport per client.</span></li>
+    </ol>
+    <div className="setup-tabs" role="tablist" aria-label="MCP client">
+      {commands.map(([label], index) => <button key={label} type="button" role="tab" aria-selected={index === active}
+        className="setup-tab" onClick={() => { setActive(index); setCopied(false); }}>{label}</button>)}
+    </div>
+    <div className="setup-code" role="tabpanel" aria-label={name}>
+      <div className="setup-code-head"><span>{name.includes('settings') ? 'Paste into the client’s MCP settings file' : name.startsWith('Codex') ? 'Add to ~/.codex/config.toml' : 'Run in a terminal'}</span>
+        <button type="button" className="inbox-button" onClick={() => void navigator.clipboard.writeText(value)
+          .then(() => { setCopyError(''); setCopied(true); }).catch(() => setCopyError('Select and copy the command from the screen.'))}>{copied ? 'Copied' : 'Copy'}</button></div>
       <pre>{value}</pre>
-      <button type="button" className="inbox-button" onClick={() => void navigator.clipboard.writeText(value)
-        .then(() => setCopyError('')).catch(() => setCopyError('Select and copy the command from the screen.'))}>Copy</button>
-    </details>)}
+    </div>
+    {name.includes('stdio') && <p>stdio clients start Siftvane themselves, so run them from the Siftvane repo with <code>pnpm</code> on your PATH.</p>}
     {copyError && <p role="status">{copyError}</p>}
   </div>;
 }
@@ -60,7 +73,7 @@ export default function SettingsPage() {
     catch (failure) { setError(failure instanceof Error ? failure.message : 'Unable to update the account.'); }
     finally { setBusy(false); }
   }
-  return <main className="inbox-main max-w-3xl">
+  return <main className="inbox-main settings-page">
     <Link className="inbox-text-link" href="/#briefing"><ArrowLeft size={16} /> Inbox Briefing</Link>
     <header className="inbox-title"><h1>Connections</h1><p>Manage Google accounts and scoped MCP access.</p></header>
     <GoogleAccountBar session={session} />
@@ -87,6 +100,9 @@ export default function SettingsPage() {
               {account.scopes.includes('https://www.googleapis.com/auth/drive.file') && !account.scopes.includes('https://www.googleapis.com/auth/spreadsheets') &&
                 <a className="inbox-button" href={'/api/auth/google/connect?mode=workspace_edit&inboxId=' + account.id}
                   title="Adds documents and spreadsheets scopes so agents can edit existing files you choose.">Allow editing existing Docs &amp; Sheets</a>}
+              {!account.scopes.includes('https://www.googleapis.com/auth/drive.readonly') && <a className="inbox-button" href={'/api/auth/google/connect?mode=drive_read&inboxId=' +
+                account.id} title="Requests drive.readonly: agents can find and read your existing files, Docs, Sheets and PDFs. They can never change or delete them.">
+                Let agents read my Drive (read-only)</a>}
               <button className="inbox-button" type="button" disabled={busy} onClick={() => {
                 if (window.confirm('Disconnect ' + account.email + ' and revoke its Google and MCP access?')) void update(async () => {
                   const result = await authRequest<{ remote_revoked: boolean }>('google/disconnect/' + account.id, { revoke_mcp: true });

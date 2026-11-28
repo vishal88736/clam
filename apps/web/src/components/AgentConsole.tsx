@@ -69,7 +69,11 @@ export async function platform<T>(endpoint: string, method = 'GET', body?: unkno
 }
 export const time = (value: string | null | undefined) => value && !Number.isNaN(Date.parse(value))
   ? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value)) : '—';
-export const nice = (value: string) => value.replace(/_/g, ' ').replace(/^./, (char) => char.toUpperCase());
+const friendly: Record<string, string> = {
+  AI_MODEL_UNAVAILABLE: 'The AI model could not be reached, so no agent was created. Start your model (for Ollama: run "ollama serve") or check the API key, then try again.',
+  AI_PLAN_UNUSABLE: 'The AI model could not turn this request into a workable plan. Try rephrasing it, or use a larger model.',
+};
+export const nice = (value: string) => friendly[value] ?? value.replace(/_/g, ' ').replace(/^./, (char) => char.toUpperCase());
 
 export function Tag({ children, tone = 'neutral', testId }: { children: ReactNode; tone?: 'neutral' | 'green' | 'amber' | 'red'; testId?: string }) {
   return <span className="inbox-tag" data-tone={tone} data-testid={testId}>{children}</span>;

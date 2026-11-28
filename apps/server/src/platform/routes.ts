@@ -36,7 +36,8 @@ export function registerPlatformRoutes(app: FastifyInstance, deps: {
     });
     router.setErrorHandler((error, _request, reply) => {
       const message = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message) ? error.message : 'PLATFORM_OPERATION_FAILED';
-      const code = error instanceof ZodError ? 400 : message === 'INBOX_HALTED' ? 423 : /NOT_AVAILABLE/.test(message) ? 404 :
+      const code = error instanceof ZodError ? 400 : message === 'INBOX_HALTED' ? 423 : /^AI_(?:MODEL_UNAVAILABLE|PLAN_UNUSABLE)$/.test(message) ? 503 :
+        /NOT_AVAILABLE/.test(message) ? 404 :
         /ALREADY|INVALID|NOT_ALLOWED|NOT_READY|NOT_WAITING|NOT_ESCALATED|DUPLICATE|UNKNOWN_FIELD|SANDBOX_ONLY|AGENT_(?:RUN_STOPPING|STATUS_CHANGED)/.test(message) ? 409 : 500;
       reply.code(code).send({ error: error instanceof ZodError ? 'INVALID_INPUT' : message });
     });

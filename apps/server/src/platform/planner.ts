@@ -94,13 +94,16 @@ export function deterministicChoice(instruction: string, options: CompileOptions
   const requested = new Set((options.services ?? []).map((value) => value.toLowerCase()));
   const schedule_mode = has(text, /\b(?:every day|daily|each day|each morning|every morning)\b/) ? 'daily'
     : has(text, /\b(?:every week|weekly)\b/) ? 'weekly'
-      : has(text, /\b(?:keep watching|continuous(?:ly)?|monitor|whenever|as they arrive)\b/) ? 'continuous' : 'one_shot';
+      : has(text, /\b(?:keep watching|keep (?:a )?(?:log|track|record)|every [a-z ]{1,40}?(?:i|we) (?:get|receive)|continuous(?:ly)?|monitor|whenever|as they arrive|every time|each time|any time|anytime|when(?:ever)? (?:i|we) (?:get|receive)|when (?:a |an )?new|(?:all|any) new|24\/7)(?![a-z])/) ? 'continuous' : 'one_shot';
   const wantsPhotos = requested.has('photos') || has(text, /\b(?:photo|photos|picture|image|screenshot)s?\b/);
   const wantsCalendar = requested.has('calendar') || has(text, /\b(?:remind|reminder|calendar|due date)\b/);
   const wait = /\bwait(?:ing)?\s+(?:up to\s+)?(\d{1,3})\s*(hours?|hrs?|days?)\b/.exec(text);
   const quote_wait_hours = wait ? Number(wait[1]) * (wait[2].startsWith('d') ? 24 : 1) : undefined;
 
-  if (has(text, /\b(?:quote|quotes|rfq|vendor|vendors|supplier|suppliers|bid|bids)\b/) && has(text, /\b(?:email|ask|request|contact|send|reach out|ping)\b/)) {
+  // Outreach needs an explicit ask for quotes or to contact vendors; "add the vendor and amount" from an invoice is bookkeeping, not an RFQ.
+  const asksQuotes = has(text, /\b(?:quote|quotes|rfq|rfqs|bid|bids)\b/) && has(text, /\b(?:email|ask|request|contact|send|reach out|ping|get|collect)\b/);
+  const contactsVendors = has(text, /\b(?:email|ask|contact|reach out to|ping|message|write to)\s+(?:\d+\s+|a few\s+|some\s+|several\s+|the\s+|my\s+|these\s+)?(?:vendors?|suppliers?)\b/);
+  if (asksQuotes || contactsVendors) {
     const phrase = /\b(?:for|on)\s+(\d{1,7}\s+[a-z][a-z -]{2,60}?)(?:[,.]|\s+and\b|\s+then\b|$)/i.exec(instruction)?.[1]?.trim();
     // Quantity comes from the item phrase ("500 custom boxes"), never from the vendor count ("4 vendors").
     const quantity = Number(/^(\d{1,7})/.exec(phrase ?? '')?.[1] ??

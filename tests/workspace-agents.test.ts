@@ -8,6 +8,7 @@ import { createSiftvaneApp } from '../apps/server/src/app.js';
 import { bannedScopes, connectedServices, exactScopes, mayUse, workspaceScopes, sandboxMcpOwner } from '../apps/server/src/auth/google.js';
 import { verifyTrace } from '../apps/server/src/inbox/trace.js';
 import { compileIntent } from '../apps/server/src/platform/planner.js';
+import { sandboxDriveFiles } from '../apps/server/src/sandbox/seed.js';
 import { evaluateWorkspaceAction } from '../apps/server/src/workspace/policy.js';
 import { hasLiveFormula, sanitizeCell } from '../apps/server/src/workspace/sanitize.js';
 
@@ -257,7 +258,8 @@ it('halts every agent with the kill switch, blocks reactivation while latched, a
     const rollback = await runtime.app.inject({ method: 'POST', url: `/api/inbox/runs/${runId}/rollback`, payload: { wait: true } });
     expect(rollback.json().run.status).toBe('COMPLETED');
     expect(artifacts(runtime)).toHaveLength(0);
-    expect(runtime.inbox.store.entities('sandbox', 'workspace')).toHaveLength(0);
+    // Everything the agent created is gone; only the user's own pre-existing Drive files remain untouched.
+    expect(runtime.inbox.store.entities('sandbox', 'workspace')).toHaveLength(sandboxDriveFiles.length);
     await client.close();
   }), 60_000);
 

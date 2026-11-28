@@ -1,0 +1,838 @@
+{
+  "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+  "steps": [
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:1",
+      "stage": "TRIGGER",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.022Z",
+      "detail": {
+        "trigger": "agent:caec257b-e880-4d33-a31c-354cfcd833a0",
+        "mailbox_mode": "sandbox",
+        "agent_mode": "llm",
+        "policy_version": 1
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 0,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "91d1e22e706bb0aa0fd6fa1cb68a106f6d441cd83b05a9b48e511f34edbb6ce4"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:2",
+      "stage": "PLAN",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.025Z",
+      "detail": {
+        "agent_id": "caec257b-e880-4d33-a31c-354cfcd833a0",
+        "agent_name": "Invoice Logger",
+        "template": "generic",
+        "phase": "start",
+        "planner": "llm-planner",
+        "steps": [
+          "search_invoices",
+          "filter_invoices",
+          "summarize_invoices",
+          "log_invoices"
+        ]
+      },
+      "prev_hash": "91d1e22e706bb0aa0fd6fa1cb68a106f6d441cd83b05a9b48e511f34edbb6ce4",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "abf885f7a7bc3ecb4bcf888435d4e526501dea347942237c4b676341b4b6396a"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:3",
+      "stage": "CHECK",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.028Z",
+      "detail": {
+        "action": "mail_search",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "abf885f7a7bc3ecb4bcf888435d4e526501dea347942237c4b676341b4b6396a",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "8dd28488c498c260ddbf3ba42baf093d662e632d0b02accc184623741619b0c6"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:4",
+      "stage": "CHECK",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.031Z",
+      "detail": {
+        "action": "filter",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "8dd28488c498c260ddbf3ba42baf093d662e632d0b02accc184623741619b0c6",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "7ede74bae4124b496d0d13059830b275cafb5b776f2b004f06f2354f4ae44574"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:5",
+      "stage": "CHECK",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.034Z",
+      "detail": {
+        "action": "summarize",
+        "outcome": "VERIFIED",
+        "rule_id": "READ_ONLY_SCOPED"
+      },
+      "prev_hash": "7ede74bae4124b496d0d13059830b275cafb5b776f2b004f06f2354f4ae44574",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "ce8d4c61e965eed35e1a4d3d0d5684fa57628c311922895c0c2199e2770d9962"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:6",
+      "stage": "POLICY",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.037Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoices",
+        "playbook_id": "workspace_create_or_get_spreadsheet",
+        "source_msg_id": "agent:caec257b-e880-4d33-a31c-354cfcd833a0",
+        "rule_id": "WORKSPACE_REVERSIBLE_WRITE",
+        "reason": "Reversible workspace write passed the secret, taint, and type checks.",
+        "decision": "AUTONOMOUS",
+        "tier": 0
+      },
+      "prev_hash": "ce8d4c61e965eed35e1a4d3d0d5684fa57628c311922895c0c2199e2770d9962",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 1,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "5d16f0f12e436e1386b09272d5a7c2a42e8511f744ab3f8e57b5a5b31b0c5b33"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:7",
+      "stage": "CHECK",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.039Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoices",
+        "outcome": "ALREADY_CURRENT"
+      },
+      "prev_hash": "5d16f0f12e436e1386b09272d5a7c2a42e8511f744ab3f8e57b5a5b31b0c5b33",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "df52969e89235da281d1781684bf163e22043e9b9c8313b6b50ffbfbdeb3aed1"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:8",
+      "stage": "POLICY",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.044Z",
+      "detail": {
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoices",
+        "playbook_id": "workspace_append_sheet_rows",
+        "source_msg_id": "agent:caec257b-e880-4d33-a31c-354cfcd833a0",
+        "rule_id": "WORKSPACE_REVERSIBLE_WRITE",
+        "reason": "Reversible workspace write passed the secret, taint, and type checks.",
+        "decision": "AUTONOMOUS",
+        "tier": 0
+      },
+      "prev_hash": "df52969e89235da281d1781684bf163e22043e9b9c8313b6b50ffbfbdeb3aed1",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 2,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "0f68f99db7bcc84f6baf56893a81d764199a6dda9e046f49df70cd4df28bd04b"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:9",
+      "stage": "ACT",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.048Z",
+      "detail": {
+        "action_id": "9eef77633b285375bfa0e0f106f95a593dc6bdaca97b86b5b584c376857f84b7",
+        "action": "workspace",
+        "target": "u:e18a7baf5aaa/sheet:Invoices",
+        "rule_id": "WORKSPACE_REVERSIBLE_WRITE",
+        "source_msg_id": "agent:caec257b-e880-4d33-a31c-354cfcd833a0",
+        "before": {
+          "type": "google_sheet",
+          "title": "Invoices",
+          "folder": null,
+          "tabs": [
+            {
+              "name": "Rows",
+              "headers": [
+                "Vendor",
+                "Amount",
+                "Due Date",
+                "Source ID"
+              ],
+              "rows": [
+                [
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "AWS",
+                  42.5,
+                  "2026-12-14",
+                  "bill-aws"
+                ],
+                [
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "Figma",
+                  45,
+                  "2026-12-20",
+                  "ws-invoice-figma"
+                ],
+                [
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@acme-cloud.example",
+                  "Invoice ACME-7781 for November",
+                  "Acme Cloud",
+                  612,
+                  "2026-12-22",
+                  "test-1-51387599"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207 revised",
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@studio.example",
+                  "Studio trial renewal",
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma-payments.example",
+                  "Invoice FIG-3391 - updated bank details",
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@printco.example",
+                  "Daily invoice PC-1207",
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@notion-saas.example",
+                  "Your monthly subscription receipt",
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@northwind-design.example",
+                  "Your invoice from Northwind",
+                  "Northwind Design",
+                  2350.75,
+                  "2027-01-09",
+                  "test-2-33deb55b"
+                ]
+              ]
+            }
+          ]
+        },
+        "expected": {
+          "type": "google_sheet",
+          "title": "Invoices",
+          "folder": null,
+          "tabs": [
+            {
+              "name": "Rows",
+              "headers": [
+                "Vendor",
+                "Amount",
+                "Due Date",
+                "Source ID",
+                "Date",
+                "From",
+                "Subject"
+              ],
+              "rows": [
+                [
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "AWS",
+                  42.5,
+                  "2026-12-14",
+                  "bill-aws"
+                ],
+                [
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "Figma",
+                  45,
+                  "2026-12-20",
+                  "ws-invoice-figma"
+                ],
+                [
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@acme-cloud.example",
+                  "Invoice ACME-7781 for November",
+                  "Acme Cloud",
+                  612,
+                  "2026-12-22",
+                  "test-1-51387599"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207 revised",
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@studio.example",
+                  "Studio trial renewal",
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma-payments.example",
+                  "Invoice FIG-3391 - updated bank details",
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@printco.example",
+                  "Daily invoice PC-1207",
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@notion-saas.example",
+                  "Your monthly subscription receipt",
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@northwind-design.example",
+                  "Your invoice from Northwind",
+                  "Northwind Design",
+                  2350.75,
+                  "2027-01-09",
+                  "test-2-33deb55b"
+                ],
+                [
+                  "Northwind Design",
+                  2350.75,
+                  "2027-01-09",
+                  "test-2-33deb55b",
+                  "2026-12-07",
+                  "accounts@northwind-design.example",
+                  "Your invoice from Northwind"
+                ],
+                [
+                  "Acme Cloud",
+                  612,
+                  "2026-12-22",
+                  "test-1-51387599",
+                  "2026-12-07",
+                  "billing@acme-cloud.example",
+                  "Invoice ACME-7781 for November"
+                ]
+              ]
+            }
+          ]
+        },
+        "rollback_handler": "restore_before"
+      },
+      "prev_hash": "0f68f99db7bcc84f6baf56893a81d764199a6dda9e046f49df70cd4df28bd04b",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 3,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "170213738e76ff2183103c50aef7a1690dbd9a71422b2f82228cd361baec9ca5"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:10",
+      "stage": "CHECK",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:00.054Z",
+      "detail": {
+        "action_id": "9eef77633b285375bfa0e0f106f95a593dc6bdaca97b86b5b584c376857f84b7",
+        "outcome": "VERIFIED",
+        "actual": {
+          "type": "google_sheet",
+          "title": "Invoices",
+          "folder": null,
+          "tabs": [
+            {
+              "name": "Rows",
+              "headers": [
+                "Vendor",
+                "Amount",
+                "Due Date",
+                "Source ID",
+                "Date",
+                "From",
+                "Subject"
+              ],
+              "rows": [
+                [
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "AWS",
+                  42.5,
+                  "2026-12-14",
+                  "bill-aws"
+                ],
+                [
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "Figma",
+                  45,
+                  "2026-12-20",
+                  "ws-invoice-figma"
+                ],
+                [
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@acme-cloud.example",
+                  "Invoice ACME-7781 for November",
+                  "Acme Cloud",
+                  612,
+                  "2026-12-22",
+                  "test-1-51387599"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@aws.example",
+                  "AWS invoice AWS-1207 revised",
+                  "AWS",
+                  420.5,
+                  "2026-12-14",
+                  "bill-duplicate"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@studio.example",
+                  "Studio trial renewal",
+                  "Studio",
+                  35,
+                  "2026-12-09",
+                  "trial-renewal"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@figma-payments.example",
+                  "Invoice FIG-3391 - updated bank details",
+                  "Figma",
+                  4500,
+                  "2026-12-09",
+                  "ws-invoice-spoof"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@printco.example",
+                  "Daily invoice PC-1207",
+                  "PrintCo",
+                  318.4,
+                  "2026-12-17",
+                  "ws-invoice-printco"
+                ],
+                [
+                  "2026-12-07",
+                  "billing@notion-saas.example",
+                  "Your monthly subscription receipt",
+                  "Notion SaaS",
+                  16,
+                  "2026-12-15",
+                  "ws-bill-saas"
+                ],
+                [
+                  "2026-12-07",
+                  "accounts@northwind-design.example",
+                  "Your invoice from Northwind",
+                  "Northwind Design",
+                  2350.75,
+                  "2027-01-09",
+                  "test-2-33deb55b"
+                ],
+                [
+                  "Northwind Design",
+                  2350.75,
+                  "2027-01-09",
+                  "test-2-33deb55b",
+                  "2026-12-07",
+                  "accounts@northwind-design.example",
+                  "Your invoice from Northwind"
+                ],
+                [
+                  "Acme Cloud",
+                  612,
+                  "2026-12-22",
+                  "test-1-51387599",
+                  "2026-12-07",
+                  "billing@acme-cloud.example",
+                  "Invoice ACME-7781 for November"
+                ]
+              ]
+            }
+          ]
+        },
+        "action": "workspace",
+        "playbook_ids": [
+          "workspace_append_sheet_rows"
+        ]
+      },
+      "prev_hash": "170213738e76ff2183103c50aef7a1690dbd9a71422b2f82228cd361baec9ca5",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 0,
+        "usd": 0
+      },
+      "step_hash": "e7f7a7e2df3bca46edcd9ffa3c1608d1d0b082d403aa78cb7a6af918797c5677"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:11",
+      "stage": "PLAN",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:02.045Z",
+      "detail": {
+        "event": "AGENT_MODEL_CALL",
+        "phase": "review",
+        "status": "RECEIVED",
+        "round": 1
+      },
+      "prev_hash": "e7f7a7e2df3bca46edcd9ffa3c1608d1d0b082d403aa78cb7a6af918797c5677",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 2438,
+        "completion_tokens": 55,
+        "latency_ms": 1983,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 2493,
+        "usd": 0
+      },
+      "step_hash": "be34cc95d7144826cf2029900048a309492bbb0ef02ce550088a8f0f34b70dbb"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:12",
+      "stage": "CHECK",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:02.048Z",
+      "detail": {
+        "action": "llm_review",
+        "outcome": "VERIFIED",
+        "rule_id": "LLM_REVIEW"
+      },
+      "prev_hash": "be34cc95d7144826cf2029900048a309492bbb0ef02ce550088a8f0f34b70dbb",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "latency_ms": 0,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 2493,
+        "usd": 0
+      },
+      "step_hash": "7a0bf0fa1b1b88d46405b704f978c97f040939cd8fca4285f55b3ea317f0d775"
+    },
+    {
+      "id": "a07826e0-2baa-4d59-983e-79ff27f3c64a:13",
+      "stage": "REPORT",
+      "run_id": "a07826e0-2baa-4d59-983e-79ff27f3c64a",
+      "timestamp": "2026-11-28T05:18:02.051Z",
+      "detail": {
+        "autonomy": {
+          "autonomous_verified": 1,
+          "gated_for_approval": 0,
+          "blocked_quarantined": 0
+        },
+        "status": "COMPLETED",
+        "error": null,
+        "emails": 0,
+        "conflicts": 0,
+        "threats": 0,
+        "rollback_available": true
+      },
+      "prev_hash": "7a0bf0fa1b1b88d46405b704f978c97f040939cd8fca4285f55b3ea317f0d775",
+      "mode": "llm",
+      "model_usage": {
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "prompt_tokens": 2438,
+        "completion_tokens": 55,
+        "latency_ms": 1983,
+        "estimated_usd": 0
+      },
+      "budgets": {
+        "outbound": 0,
+        "calendar": 0,
+        "steps": 5,
+        "tokens": 2493,
+        "usd": 0
+      },
+      "step_hash": "943380799ba378ee383ba21cab72efd2b5856386b3a7a72e77c1f30060a270a4"
+    }
+  ],
+  "step_count": 13,
+  "head_hash": "943380799ba378ee383ba21cab72efd2b5856386b3a7a72e77c1f30060a270a4",
+  "mode": "llm",
+  "model_usage": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b",
+    "prompt_tokens": 2438,
+    "completion_tokens": 55,
+    "latency_ms": 1983,
+    "estimated_usd": 0
+  }
+}

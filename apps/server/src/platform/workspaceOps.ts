@@ -4,10 +4,10 @@ import { readAttachments } from '../inbox/attachments.js';
 import type { SafeAction, Snapshot } from '../inbox/contracts.js';
 import type { MissionContext, MissionOutcome } from '../inbox/engine.js';
 import { canonicalJson, sha256 } from '../inbox/trace.js';
-import { describeContent, loadContent } from '../workspace/adapters.js';
+import { describeContent, loadContent, maxFileBytes } from '../workspace/adapters.js';
 import { sanitizeRows, sanitizeText } from '../workspace/sanitize.js';
 import {
-  trimRow, verifiedState, type Cell, type ContentSource, type DocSection, type SheetTab, type WorkspaceAdapter, type WorkspaceState,
+  trimRow, verifiedState, type Cell, type ContentSource, type DocSection, type FoundFile, type SheetTab, type WorkspaceAdapter, type WorkspaceState,
 } from '../workspace/types.js';
 import type { LogService, PlatformService, PolicyVerdictLabel } from './service.js';
 
@@ -44,6 +44,35 @@ export class WorkspaceOps {
 
   read(key: string) {
     return this.adapter.read(key);
+  }
+
+  private readLog(service: LogService, action: string, input: string, output: string) {
+    const step = this.context.record('CHECK', { action, outcome: 'VERIFIED', rule_id: 'READ_ONLY_SCOPED' });
+    this.platform.log({ userId: this.who.userId, agentId: this.who.agentId, runId: this.context.runId, service, action, input, output,
+      verdict: 'ALLOW_TIER_0', ruleId: 'READ_ONLY_SCOPED', verified: true, traceStepHash: step.step_hash });
+  }
+
+  /** Read-only: finds the user's Drive files (sandbox: their seeded Drive plus this user's own artifacts). */
+  async findFiles(query: string | undefined, kind: FoundFile['kind'] | 'any', limit: number) {
+    const files = await this.adapter.searchFiles({ query, kind, limit, namespaces: this.adapter.live ? undefined : [this.ns, 'drive'] });
+    this.readLog('drive', 'find_drive_files', `${kind === 'any' ? 'files' : kind + ' files'}${query ? ` matching "${query}"` : ''}`,
+      `${files.length} found${files.length ? ': ' + files.slice(0, 4).map((file) => file.name).join(', ') + (files.length > 4 ? '…' : '') : ''}`);
+    return files;
+  }
+
+  /** Read-only: a file's text (Docs, PDFs, text) or tabs (Sheets). Content carrying injected instructions or secrets is withheld. */
+  async readFile(id: string) {
+    const content = await this.adapter.readFile(id, maxFileBytes);
+    if (!content) return null;
+    let note = `${content.text.length.toLocaleString()} characters`;
+    if (content.text && (scanPromptInjection(content.text).detected || scanOutboundSecrets(content.text))) {
+      content.text = '';
+      content.tabs = undefined;
+      note = 'withheld: the file contains instructions aimed at AI agents or secrets';
+    }
+    const service: LogService = content.file.kind === 'doc' ? 'docs' : content.file.kind === 'sheet' ? 'sheets' : 'drive';
+    this.readLog(service, 'read_file', content.file.name, content.tabs ? `${content.tabs.length} tab(s), ${content.tabs.reduce((sum, tab) => sum + tab.rows.length, 0)} rows` : note);
+    return content;
   }
 
   async submit(key: string, after: WorkspaceState, before: Snapshot, operation: string, input: string, output: string,
@@ -112,12 +141,24 @@ export class WorkspaceOps {
   }
 
   /** Idempotent append: rows whose dedupe column value is already present are skipped. Returns the read-back row count. */
-  async appendRows(title: string, tabName: string, rows: unknown[][], dedupeColumn?: string, sourceId?: string) {
+  async appendRows(title: string, tabName: string, rows: unknown[][], dedupeColumn?: string, sourceId?: string, columns?: string[]) {
     const key = this.sheetKey(title);
     const before = await this.read(key) as unknown as Extract<WorkspaceState, { type: 'google_sheet' }> | null;
     if (!before) throw new Error('SPREADSHEET_NOT_AVAILABLE');
-    const tab = before.tabs.find((item) => item.name === tabName);
-    if (!tab) throw new Error('SHEET_TAB_NOT_AVAILABLE');
+    const found = before.tabs.find((item) => item.name === tabName);
+    if (!found) throw new Error('SHEET_TAB_NOT_AVAILABLE');
+    // When the tab already exists with other headers (another agent, or an edited plan), each value goes under its own
+    // header and new columns are added at the end, so rows never shift under the wrong heading.
+    let tab = found;
+    if (columns) {
+      const norm = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const headers = [...found.headers];
+      for (const column of columns) if (!headers.some((header) => norm(header) === norm(column))) headers.push(column);
+      const index = columns.map((column) => headers.findIndex((header) => norm(header) === norm(column)));
+      rows = rows.map((row) => { const aligned: unknown[] = headers.map(() => ''); index.forEach((at, from) => { aligned[at] = row[from]; }); return aligned; });
+      if (dedupeColumn) dedupeColumn = headers.find((header) => norm(header) === norm(dedupeColumn!)) ?? dedupeColumn;
+      tab = { ...found, headers };
+    }
     const clean = sanitizeRows(rows);
     clean.flags.forEach((flag) => this.flags.add(flag));
     const column = dedupeColumn ? tab.headers.indexOf(dedupeColumn) : -1;
@@ -139,7 +180,7 @@ export class WorkspaceOps {
       return { key, appended: 0, skipped, rowCount: tab.rows.length, verified: true, decision: 'AUTONOMOUS' as const, ruleId: 'IDEMPOTENT_DEDUPE', flags: clean.flags };
     }
     const after: WorkspaceState = { type: 'google_sheet', title, folder: before.folder,
-      tabs: before.tabs.map((item) => item.name === tabName ? { ...item, rows: [...item.rows, ...fresh] } : item) };
+      tabs: before.tabs.map((item) => item.name === tabName ? { ...item, headers: tab.headers, rows: [...item.rows, ...fresh] } : item) };
     const outcome = await this.submit(key, after, before as unknown as Snapshot, 'append_sheet_rows',
       `${title} / ${tabName}: ${rows.length} candidate rows${clean.flags.length ? ' · sanitized ' + clean.flags.join(', ') : ''}`,
       `${tabName}: appended ${fresh.length} rows (${skipped} duplicates skipped); read-back row count ${tab.rows.length + fresh.length}`, sourceId);

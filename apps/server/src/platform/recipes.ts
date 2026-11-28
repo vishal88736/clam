@@ -213,6 +213,8 @@ export function analyzeBindings(program: GenericStep[], triggerId: string, obser
         break;
       case 'summarize': template(step.id, 'heading', step.heading); break;
       case 'drive.folder': bindings.push({ step: step.id, arg: 'path', kind: 'constant', detail: step.path.join(' / ') }); break;
+      case 'drive.find': case 'drive.read': case 'sheets.read':
+        bindings.push({ step: step.id, arg: 'source', kind: 'constant', detail: describeStep(step) }); break;
       case 'drive.save_attachments':
         bindings.push({ step: step.id, arg: 'files', kind: 'request', field: 'attachments', detail: 'its attachments' });
         bindings.push({ step: step.id, arg: 'folder', kind: 'constant', detail: step.folder.join(' / ') });
@@ -313,6 +315,7 @@ function previewActions(program: GenericStep[], triggerId: string, row: Row): { 
       }
       case 'summarize': actions.push('Included in the summary'); break;
       case 'drive.folder': actions.push(`Drive folder ${step.path.join(' / ')}`); break;
+      case 'drive.find': case 'drive.read': case 'sheets.read': actions.push(describeStep(step)); break;
       case 'drive.save_attachments': actions.push(`Save ${Number(row.fields.attachments ?? 0)} attachment(s) to ${step.folder.join(' / ')}`); break;
       case 'drive.save_text': actions.push(`Write ${step.name}`); break;
       case 'sheets.append': actions.push(`Row in "${step.title}": ${step.columns.filter((column) => !['source_id', 'message_id'].includes(key(column)))
@@ -454,7 +457,9 @@ export class RecipeService {
     return this.platform.agents(userId).filter((agent) => !agent.state.interactive && agent.status !== 'archived').map((agent) => {
       const program = agent.workflow_plan.params.program;
       const reason = agent.workflow_plan.template !== 'generic' || !program ? 'Only agents with a step-by-step plan can be taught as recipes.' :
-        program[0]?.op !== 'mail.search' ? 'Recipes start from incoming email; this agent starts from photos.' :
+        program[0]?.op !== 'mail.search' ? 'Recipes start from incoming email; this agent starts from photos or Drive files.' :
+        program.some((step) => step.op === 'extract' || step.op === 'classify') ?
+          'This agent relies on AI reading (extract/classify); a recipe runs with zero model calls, so it cannot repeat that exactly.' :
         !agent.state.last_run_id ? 'Let the agent finish one run first.' :
         this.engine.store.run(agent.state.last_run_id)?.status !== 'COMPLETED' ? 'The last run did not complete; fix it before teaching.' : null;
       return { agent_id: agent.id, name: agent.name, ready: !reason, reason };

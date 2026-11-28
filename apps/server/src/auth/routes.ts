@@ -46,7 +46,7 @@ export function registerGoogleAuthRoutes(app: FastifyInstance, accounts: GoogleA
       return reply.header('Set-Cookie', flow.cookie).redirect(flow.url);
     });
     router.get('/api/auth/google/connect', async (request, reply) => {
-      const query = z.object({ mode: z.enum(['readonly', 'readwrite', 'workspace', 'workspace_edit']), inboxId: id.optional() }).strict().parse(request.query);
+      const query = z.object({ mode: z.enum(['readonly', 'readwrite', 'workspace', 'workspace_edit', 'drive_read']), inboxId: id.optional() }).strict().parse(request.query);
       const flow = accounts.begin(query.mode, accounts.browser(request.headers.cookie), requireOperator(request), query.inboxId);
       return reply.header('Set-Cookie', flow.cookie).redirect(flow.url);
     });

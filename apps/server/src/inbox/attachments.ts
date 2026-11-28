@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 export type ReaderAttachment = { name: string; mime: string; data: string };
 const maxBytes = 750_000;
 
-function pdfText(buffer: Buffer): Promise<string> {
+export function pdfText(buffer: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('pdftotext', ['-f', '1', '-l', '3', '-', '-'], { stdio: ['pipe', 'pipe', 'ignore'] });
     const timer = setTimeout(() => {

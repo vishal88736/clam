@@ -39,6 +39,12 @@ export interface PhotoItem {
   productUrl: string | null;
 }
 
+/** A file in the user's Drive that an agent found (read-only view). */
+export interface FoundFile {
+  id: string; name: string; kind: 'doc' | 'sheet' | 'pdf' | 'text' | 'folder' | 'file'; mime: string; modified: string | null; url: string | null;
+}
+export interface FileContent { file: FoundFile; text: string; tabs?: SheetTab[] }
+
 export interface WorkspaceAdapter {
   readonly live: boolean;
   read(key: string): Promise<Snapshot>;
@@ -52,6 +58,10 @@ export interface WorkspaceAdapter {
   startPhotoPicker?(): Promise<{ session_id: string; picker_uri: string; expire_time: string | null }>;
   /** Whether the user finished picking items in the current picker session. */
   photoPickerReady?(): Promise<boolean>;
+  /** Finds files in the user's Drive by name/content and type (live: all files with drive.readonly, else Siftvane's own). */
+  searchFiles(filter: { query?: string; kind?: FoundFile['kind'] | 'any'; limit: number; namespaces?: string[] }): Promise<FoundFile[]>;
+  /** Reads a found file as text (Docs, PDFs, text files) or tabs (Sheets). Never modifies it. */
+  readFile(id: string, maxBytes: number): Promise<FileContent | null>;
   /** Content preview of a sandbox artifact (live artifacts are opened through their Google URL). */
   preview?(key: string): Promise<Record<string, unknown> | null>;
 }

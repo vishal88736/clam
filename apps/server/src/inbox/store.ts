@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { inboxPolicySchema, type InboxPolicy, type InboxSchedule } from '@siftvane/shared';
-import { livePolicy, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
+import { livePolicy, sandboxDriveFiles, sandboxEvents, sandboxHistory, sandboxMessages, sandboxPolicy, trapMessages } from '../sandbox/seed.js';
 import type { ActionKind, Attention, Claim, Mode, RunRecord, RunTrace, Snapshot, TraceStep } from './contracts.js';
 import { genesisHash } from './trace.js';
 import { handoffSchema } from '../handoffs/schema.js';
@@ -135,6 +135,15 @@ export class InboxStore {
           this.sqlite.prepare('INSERT OR IGNORE INTO sandbox_photos VALUES (?, ?)').run(photo.id, JSON.stringify(photo));
         }
         this.setState('seed-v3-workspace', true);
+      }
+      if (!this.state('seed-v4-drive')) {
+        this.sqlite.exec('CREATE TABLE IF NOT EXISTS workspace_sandbox_blobs (key TEXT PRIMARY KEY, mime TEXT NOT NULL, data BLOB NOT NULL)');
+        for (const file of sandboxDriveFiles) {
+          const bytes = file.blob?.data.length ?? 0;
+          if (!this.entity('sandbox', 'workspace', file.key)) this.setEntity('sandbox', 'workspace', file.key, { ...file.state, ...(file.blob ? { bytes } : {}) } as Snapshot);
+          if (file.blob) this.sqlite.prepare('INSERT OR IGNORE INTO workspace_sandbox_blobs VALUES (?, ?, ?)').run(file.key, file.blob.mime, file.blob.data);
+        }
+        this.setState('seed-v4-drive', true);
       }
     });
   }

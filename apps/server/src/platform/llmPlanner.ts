@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { AgentConfig, ModelUsage } from '../inbox/agentConfig.js';
 import { providerUsage, type ProviderWire } from '../inbox/model.js';
-import { opCatalogForPrompt, repairProgram, type GenericStep } from './generic.js';
-import { plannerChoiceSchema, type PlannerChoice } from './planner.js';
+import { opCatalogForPrompt, repairProgram, type GenericStep, type RowKind } from './generic.js';
+import type { PlannerChoice } from './planner.js';
 
 export class PlannerFailure extends Error {}
 
@@ -68,26 +68,29 @@ const dropNulls = (value: unknown): unknown => Array.isArray(value) ? value.map(
   ? Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null).map(([key, item]) => [key, dropNulls(item)])) : value;
 
 const guidance = [
-  'Row fields: mail.search rows have date, from, subject, message_id, thread_id, attachments, plus every "Label: value" line of the email as a',
-  'lowercase snake_case field (for example deadline, amount, due, invoice, vendor, order, status, return_by, project). photos.extract rows have',
-  'merchant, date, amount, currency, due, reference, media_item_id. Use these exact names in filter.field, calendar.reminders.date_field, and {{field}}.',
+  'How to think:',
+  '- Work out the data you need (emails, attachments, Drive files, Docs, Sheets, photos), what to understand from it, and the outputs wanted.',
+  '- Rows flow between steps. Use extract to pull ANY information out of emails or files (no fixed schema: name the fields the user needs),',
+  '  classify to keep rows by meaning, and summarize to write prose. Use filter only for exact field matches.',
+  '- mail.search rows carry date, from, subject, message_id; other values come from extract (or "Label: value" lines in the email).',
+  '  Use the same field names in sheets.append.columns, filter.field, calendar.reminders.date_field, and {{field}} (snake_case).',
+  '- To use the user\'s existing Drive files, Docs or Sheets: drive.find, then drive.read (text) or sheets.read (rows), then extract/summarize.',
+  '- Continuous agents run again every few minutes: searches see new mail, sheet appends skip rows already written, and mail.send sends each',
+  '  distinct message only once. So "email these vendors for quotes and compare the replies" is: mail.send to the vendors, mail.search for',
+  '  their replies, extract the quoted terms, sheets.append a comparison, summarize the best option.',
   'Grounding rules:',
   '- Only set from_contains or newer_than_days when the user named that sender or time range. Never guess the user\'s address.',
   '- mail.send.to may only contain addresses written in the request. Replies to senders use mail.draft_replies. Never email the user.',
-  '- Choose a meaningful label such as SIFTVANE_LAUNCH, never a placeholder.',
-  '- To keep rows that have a value use {"op":"filter","field":"deadline","exists":true}; do not search subjects for field names.',
+  '- Choose a meaningful label such as SIFTVANE_LAUNCH, never a placeholder. {{summary}} needs an earlier summarize step.',
   '- Email attachments come from mail.search rows (set include_attachments true) and are saved with drive.save_attachments from that step.',
-  '  photos.extract reads Google Photos images only.',
-  '- {{summary}} needs an earlier summarize step.',
-  '- The program language cannot email people the user did not name or parse quote replies; requests to get quotes or bids from vendors',
-  '  or suppliers must use the vendor_rfq workflow.',
-  '- Use mail.draft_replies only when the user asks to reply or respond to people; a summary for someone uses docs.write and/or mail.send.',
+  '  photos.extract reads Google Photos images only; use it only when the user mentions photos, pictures or screenshots.',
   '- Do only what was asked. Keywords should be the topic words of the request (singular is fine: "meeting" matches "meetings").',
-  'Example for "track launch emails in a sheet and remind me of deadlines":',
-  '{"reasoning":"Find launch mail, log it, then add reminders for rows with a deadline.","name":"Launch Tracker","schedule_mode":"one_shot","program":[',
+  'Example for "track launch emails in a sheet with the owner and deadline, and remind me of deadlines":',
+  '{"reasoning":"Find launch mail, read owner and deadline from each, log it, then remind on dated rows.","name":"Launch Tracker","schedule_mode":"one_shot","program":[',
   ' {"id":"launch","op":"mail.search","keywords":["launch"]},',
-  ' {"id":"sheet","op":"sheets.append","from":"launch","title":"Launch Tracker","columns":["Date","From","Subject","Deadline"]},',
-  ' {"id":"dated","op":"filter","from":"launch","field":"deadline","exists":true},',
+  ' {"id":"details","op":"extract","from":"launch","fields":["owner","deadline"]},',
+  ' {"id":"sheet","op":"sheets.append","from":"details","title":"Launch Tracker","columns":["Date","From","Subject","Owner","Deadline"]},',
+  ' {"id":"dated","op":"filter","from":"details","field":"deadline","exists":true},',
   ' {"id":"remind","op":"calendar.reminders","from":"dated","date_field":"deadline","title":"Deadline: {{subject}}"}]}',
 ].join('\n');
 
@@ -102,16 +105,11 @@ export const planPrompt = (instruction: string, mode: 'sandbox' | 'live') => [
   '',
   guidance,
   '',
-  'Ready-made workflows you MAY choose instead of a program when one clearly fits better (they include extra domain logic):',
-  '- vendor_rfq: email vendors for quotes, compare prices in a Sheet and Doc, optionally book the best (fields: vendors[], item, quantity, book, quote_wait_hours)',
-  '- invoice_ledger: invoices/bills from email into a dated Drive folder, a deduplicated ledger Sheet, a summary Doc, spoof flags (fields: include_photos)',
-  '- photo_receipts: receipt photos into a Sheet with optional calendar payment reminders (fields: calendar_reminders)',
-  '',
   'Prefer few, precise steps (max 15). Use descriptive titles. Mode: ' + mode + '.',
   '',
   'Return JSON only:',
   '{"reasoning": "2-4 sentences on how you will solve it", "name": "short agent name", "schedule_mode": "one_shot|daily|weekly|continuous",',
-  ' "program": [ ...steps ] }  OR  {"reasoning": "...", "name": "...", "schedule_mode": "...", "workflow": {"template": "vendor_rfq|invoice_ledger|photo_receipts", ...fields}}',
+  ' "program": [ ...steps ] }',
   '',
   'User request (data):',
   JSON.stringify(instruction.slice(0, 4000)),
@@ -122,36 +120,31 @@ const planOutput = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   schedule_mode: z.enum(['one_shot', 'continuous', 'daily', 'weekly']).default('one_shot'),
   program: z.array(z.unknown()).min(1).max(15).optional(),
-  workflow: z.record(z.unknown()).optional(),
 }).strip();
 
-export type LlmPlan =
-  | { kind: 'program'; reasoning: string; name: string; scheduleMode: PlannerChoice['schedule_mode']; program: GenericStep[]; issues: string[] }
-  | { kind: 'workflow'; reasoning: string; choice: PlannerChoice };
+export type LlmPlan = { kind: 'program'; reasoning: string; name: string; scheduleMode: PlannerChoice['schedule_mode']; program: GenericStep[]; issues: string[] };
 
-/** The model reasons about the request and composes a program (or picks a ready-made workflow). */
+/** The model reasons about the request and composes its own program from the operation catalog (no fixed workflows). */
 export async function llmPlan(config: AgentConfig, instruction: string, mode: 'sandbox' | 'live', fetcher?: typeof fetch, record?: RecordCall): Promise<LlmPlan> {
-  const parsed = planOutput.safeParse(await callModel(config, planPrompt(instruction, mode), fetcher, 2000, { record }));
-  if (!parsed.success) throw new PlannerFailure('PLANNER_OUTPUT_INVALID');
-  const { reasoning, name, schedule_mode, program, workflow } = parsed.data;
-  if (program) {
-    let { steps, issues } = repairProgram(program, instruction);
-    if (issues.length) {
-      // One correction round: the model sees exactly what was wrong and returns a fixed program.
-      const retry = planOutput.safeParse(await callModel(config, planPrompt(instruction, mode) + '\n\nYour previous answer was:\n' +
-        JSON.stringify(parsed.data).slice(0, 6000) + '\nThese steps were rejected:\n- ' + issues.join('\n- ') +
-        '\nReturn the complete corrected JSON.', fetcher, 2000, { phase: 'repair', record }).catch(() => null));
-      if (retry.success && retry.data.program) {
-        const repaired = repairProgram(retry.data.program, instruction);
-        if (repaired.steps.length >= steps.length) ({ steps, issues } = repaired);
-      }
+  const raw = await callModel(config, planPrompt(instruction, mode), fetcher, 2000, { record });
+  const parsed = planOutput.safeParse(raw);
+  let steps: GenericStep[] = [];
+  let issues: string[] = parsed.success && parsed.data.program ? [] : ['the answer must contain a "program" array of operations'];
+  if (parsed.success && parsed.data.program) ({ steps, issues } = repairProgram(parsed.data.program, instruction));
+  let best = parsed.success ? parsed.data : undefined;
+  if (issues.length) {
+    // One correction round: the model sees exactly what was wrong and returns a fixed program.
+    const retry = planOutput.safeParse(await callModel(config, planPrompt(instruction, mode) + '\n\nYour previous answer was:\n' +
+      JSON.stringify(raw ?? null).slice(0, 6000) + '\nThese problems were found:\n- ' + issues.join('\n- ') +
+      '\nReturn the complete corrected JSON.', fetcher, 2000, { phase: 'repair', record }).catch(() => null));
+    if (retry.success && retry.data.program) {
+      const repaired = repairProgram(retry.data.program, instruction);
+      if (repaired.steps.length >= steps.length) { ({ steps, issues } = repaired); best = retry.data; }
     }
-    if (!steps.length) throw new PlannerFailure('PLANNER_PROGRAM_INVALID');
-    return { kind: 'program', reasoning, name: name ?? 'Agent', scheduleMode: schedule_mode, program: steps, issues };
   }
-  const choice = plannerChoiceSchema.safeParse({ schedule_mode, name, ...workflow });
-  if (!choice.success || choice.data.template === 'inbox_digest') throw new PlannerFailure('PLANNER_OUTPUT_INVALID');
-  return { kind: 'workflow', reasoning, choice: choice.data };
+  if (!best) throw new PlannerFailure('PLANNER_OUTPUT_INVALID');
+  if (!steps.length) throw new PlannerFailure('PLANNER_PROGRAM_INVALID');
+  return { kind: 'program', reasoning: best.reasoning, name: best.name ?? 'Agent', scheduleMode: best.schedule_mode, program: steps, issues };
 }
 
 const reviewOutput = z.object({
@@ -165,7 +158,7 @@ const reviewOutput = z.object({
  * and may append follow-up steps — e.g. a filter it now knows is needed, or a reminder for dates it found.
  */
 export async function llmReview(config: AgentConfig, instruction: string, executed: GenericStep[], observations: unknown, fetcher?: typeof fetch,
-  kinds: Record<string, 'mail' | 'photo' | 'other'> = {}, record?: RecordCall, cancel?: AbortSignal) {
+  kinds: Record<string, RowKind> = {}, record?: RecordCall, cancel?: AbortSignal) {
   const prompt = [
     'You are reviewing the progress of a Siftvane agent program. Decide whether the user\'s request is fully satisfied.',
     'If not, return up to 6 additional steps (same operations as before; "from" may reference any executed step id). Never repeat finished work.',

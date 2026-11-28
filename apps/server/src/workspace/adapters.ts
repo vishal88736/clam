@@ -6,9 +6,10 @@ import type { Snapshot } from '../inbox/contracts.js';
 import type { InboxStore } from '../inbox/store.js';
 import type { SandboxPhoto } from '../sandbox/seed.js';
 import { canonicalJson } from '../inbox/trace.js';
+import { pdfText } from '../inbox/attachments.js';
 import type { WorkspaceRegistry } from './registry.js';
 import {
-  trimRow, verifiedState, type Cell, type ContentSource, type DocSection, type PhotoItem, type SheetTab,
+  trimRow, verifiedState, type Cell, type ContentSource, type DocSection, type FileContent, type FoundFile, type PhotoItem, type SheetTab,
   type WorkspaceAdapter, type WorkspaceState, type WriteReceipt,
 } from './types.js';
 
@@ -34,6 +35,24 @@ export async function loadContent(source: ContentSource | undefined, stagingRoot
 export function describeContent(bytes: Buffer) {
   return { bytes: bytes.length, md5: md5(bytes) };
 }
+
+const kindOfMime = (mime: string): FoundFile['kind'] => mime === 'application/vnd.google-apps.document' ? 'doc' :
+  mime === 'application/vnd.google-apps.spreadsheet' ? 'sheet' : mime === 'application/vnd.google-apps.folder' ? 'folder' :
+    mime === 'application/pdf' ? 'pdf' : /^(?:text\/|application\/json)/.test(mime) ? 'text' : 'file';
+const kindMimes: Record<string, string[]> = {
+  doc: ['application/vnd.google-apps.document'], sheet: ['application/vnd.google-apps.spreadsheet'], pdf: ['application/pdf'],
+  folder: ['application/vnd.google-apps.folder'], text: ['text/plain', 'text/markdown', 'text/csv', 'application/json'],
+};
+/** Plain text of document sections, as an agent reads them. */
+const sectionsText = (sections: DocSection[]) => sections.map((section) => (section.heading ? section.heading + '\n' : '') + section.text).join('\n\n');
+/** Sheet tabs as readable text (header row, then rows), for summaries and extraction. */
+export const tabsText = (tabs: SheetTab[]) => tabs.map((tab) => [tab.name + ':', tab.headers.join(' | '),
+  ...tab.rows.slice(0, 200).map((row) => row.map((cell) => String(cell ?? '')).join(' | '))].join('\n')).join('\n\n');
+const matchesQuery = (query: string | undefined, ...texts: string[]) => {
+  const words = (query ?? '').toLowerCase().split(/\s+/).filter((word) => word.length > 1);
+  const haystack = texts.join('\n').toLowerCase();
+  return !words.length || words.every((word) => haystack.includes(word));
+};
 
 /* ----------------------------------------------------------------------------------------------
  * $0 SandboxWorkspaceAdapter — SQLite-backed Drive, Docs, Sheets and a seeded read-only Photos library.
@@ -128,6 +147,44 @@ export class SandboxWorkspaceAdapter implements WorkspaceAdapter {
     return state;
   }
 
+  private found(key: string, state: Record<string, unknown>): FoundFile {
+    const mime = state.type === 'google_doc' ? 'application/vnd.google-apps.document' : state.type === 'google_sheet' ? 'application/vnd.google-apps.spreadsheet' :
+      state.type === 'drive_folder' ? folderMime : String(state.mime ?? 'application/octet-stream');
+    return { id: key, name: String(state.name ?? state.title ?? key), kind: kindOfMime(mime), mime, modified: typeof state.modified === 'string' ? state.modified : null, url: null };
+  }
+
+  async searchFiles(filter: { query?: string; kind?: FoundFile['kind'] | 'any'; limit: number; namespaces?: string[] }) {
+    this.guard();
+    const all = this.store.sqlite.prepare("SELECT id, body FROM inbox_entities WHERE mode=? AND kind='workspace' ORDER BY id").all(this.mode) as { id: string; body: string }[];
+    const results: FoundFile[] = [];
+    for (const row of all) {
+      if (filter.namespaces && !filter.namespaces.some((prefix) => row.id.startsWith(prefix + '/'))) continue;
+      const state = JSON.parse(row.body) as Record<string, unknown> | null;
+      if (!state) continue;
+      const file = this.found(row.id, state);
+      if (filter.kind && filter.kind !== 'any' && file.kind !== filter.kind) continue;
+      const body = state.type === 'google_doc' ? sectionsText(state.sections as DocSection[]) : state.type === 'google_sheet' ? tabsText(state.tabs as SheetTab[]) : '';
+      if (!matchesQuery(filter.query, file.name, body)) continue;
+      results.push(file);
+      if (results.length >= filter.limit) break;
+    }
+    return results;
+  }
+
+  async readFile(id: string, maxBytes: number): Promise<FileContent | null> {
+    this.guard();
+    const state = this.store.entity(this.mode as 'sandbox', 'workspace', id) as Record<string, unknown> | null;
+    if (!state) return null;
+    const file = this.found(id, state);
+    if (state.type === 'google_doc') return { file, text: sectionsText(state.sections as DocSection[]) };
+    if (state.type === 'google_sheet') return { file, text: tabsText(state.tabs as SheetTab[]), tabs: state.tabs as SheetTab[] };
+    if (state.type !== 'drive_file') return { file, text: '' };
+    const blob = this.blob(id);
+    if (!blob || blob.data.length > maxBytes) return { file, text: '' };
+    const bytes = Buffer.from(blob.data);
+    return { file, text: file.kind === 'pdf' ? await pdfText(bytes) : file.kind === 'text' ? bytes.toString('utf8') : '' };
+  }
+
   blob(key: string) {
     return this.store.sqlite.prepare('SELECT mime, data FROM workspace_sandbox_blobs WHERE key=?').get(key) as
       { mime: string; data: Uint8Array } | undefined;
@@ -211,14 +268,14 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     return list.files?.[0]?.id ?? null;
   }
 
-  private async readTabs(id: string): Promise<SheetTab[]> {
-    const meta = await this.call<{ sheets: { properties: { title: string } }[] }>('sheets:write',
+  private async readTabs(id: string, capability: GoogleCapability = 'sheets:write'): Promise<SheetTab[]> {
+    const meta = await this.call<{ sheets: { properties: { title: string } }[] }>(capability,
       'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(id) + '?fields=sheets.properties.title');
     const titles = meta.sheets.map((sheet) => sheet.properties.title);
     if (!titles.length) return [];
     const query = new URLSearchParams({ valueRenderOption: 'UNFORMATTED_VALUE', majorDimension: 'ROWS' });
     for (const title of titles) query.append('ranges', `'${title.replace(/'/g, "''")}'!A1:Z1000`);
-    const values = await this.call<{ valueRanges: { values?: Cell[][] }[] }>('sheets:write',
+    const values = await this.call<{ valueRanges: { values?: Cell[][] }[] }>(capability,
       'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(id) + '/values:batchGet?' + query);
     return titles.map((name, index) => {
       const [headers = [], ...rows] = values.valueRanges[index]?.values ?? [];
@@ -342,6 +399,36 @@ export class LiveGoogleWorkspaceAdapter implements WorkspaceAdapter {
     if (!response.ok) return null;
     const data = Buffer.from(await response.arrayBuffer());
     return data.length <= maxBytes ? { mime: meta.mimeType, data } : null;
+  }
+
+  async searchFiles(filter: { query?: string; kind?: FoundFile['kind'] | 'any'; limit: number }) {
+    this.guard();
+    const terms = ['trashed = false'];
+    const words = (filter.query ?? '').replace(/['\\]/g, ' ').split(/\s+/).filter((word) => word.length > 1).slice(0, 6);
+    for (const word of words) terms.push(`(name contains '${word}' or fullText contains '${word}')`);
+    const mimes = filter.kind && filter.kind !== 'any' ? kindMimes[filter.kind] : undefined;
+    if (mimes) terms.push('(' + mimes.map((mime) => `mimeType = '${mime}'`).join(' or ') + ')');
+    const list = await this.call<{ files?: Array<DriveFile & { modifiedTime?: string; webViewLink?: string }> }>('drive:read',
+      'https://www.googleapis.com/drive/v3/files?' + new URLSearchParams({ q: terms.join(' and '), pageSize: String(Math.min(filter.limit, 50)),
+        fields: 'files(id,name,mimeType,modifiedTime,webViewLink)', spaces: 'drive', ...(words.length ? {} : { orderBy: 'modifiedTime desc' }) }));
+    return (list.files ?? []).map((file) => ({ id: file.id, name: file.name, kind: kindOfMime(file.mimeType), mime: file.mimeType,
+      modified: file.modifiedTime ?? null, url: file.webViewLink ?? null }));
+  }
+
+  async readFile(id: string, maxBytes: number): Promise<FileContent | null> {
+    this.guard();
+    const base = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id);
+    const meta = await this.call<DriveFile & { modifiedTime?: string; webViewLink?: string }>('drive:read', base + '?fields=id,name,mimeType,size,modifiedTime,webViewLink');
+    const file: FoundFile = { id: meta.id, name: meta.name, kind: kindOfMime(meta.mimeType), mime: meta.mimeType, modified: meta.modifiedTime ?? null, url: meta.webViewLink ?? null };
+    if (file.kind === 'sheet') { const tabs = await this.readTabs(id, 'drive:read'); return { file, text: tabsText(tabs), tabs }; }
+    const exportable = file.kind === 'doc' || meta.mimeType === 'application/vnd.google-apps.presentation';
+    if (!exportable && Number(meta.size ?? Infinity) > maxBytes) return { file, text: '' };
+    if (!exportable && !['pdf', 'text'].includes(file.kind)) return { file, text: '' };
+    const response = await this.accounts.api(this.inboxId, 'drive:read', base + (exportable ? '/export?mimeType=text/plain' : '?alt=media'), this.guard);
+    if (!response.ok) return { file, text: '' };
+    const data = Buffer.from(await response.arrayBuffer());
+    if (data.length > maxBytes) return { file, text: '' };
+    return { file, text: file.kind === 'pdf' ? await pdfText(data) : data.toString('utf8') };
   }
 
   private usesPicker() {

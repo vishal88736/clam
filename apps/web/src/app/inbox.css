@@ -538,3 +538,48 @@
   .recipe-items li { grid-template-columns: minmax(0, 1fr); }
   .recipe-rules .inbox-button { margin-left: 0; }
 }
+
+/* ----------------------------- Connections (settings) page ----------------------------- */
+.inbox-main.settings-page { width: min(100%, 1040px); }
+.settings-page .inbox-panel { min-width: 0; }
+.settings-page pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.setup { display: grid; gap: 14px; min-width: 0; }
+.setup-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; counter-reset: step; }
+.setup-steps li { counter-increment: step; display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--border-hairline); border-radius: 12px; font-size: 13px; }
+.setup-steps li strong::before { content: counter(step) '. '; color: var(--accent-allow-text); }
+.setup-steps li span { color: var(--text-secondary); line-height: 1.5; }
+.setup-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.setup-tab { padding: 7px 12px; border: 1px solid var(--border-hairline); border-radius: 999px; font-size: 13px; font-weight: 700; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.setup-tab[aria-selected='true'] { background: var(--accent-allow-bg); border-color: transparent; color: var(--accent-allow-text); }
+.setup-code { border: 1px solid var(--border-hairline); border-radius: 12px; overflow: hidden; min-width: 0; }
+.setup-code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--border-hairline); font-size: 12px; color: var(--text-secondary); }
+.setup-code pre { margin: 0; padding: 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6; background: var(--bg-canvas); }
+
+/* ----------------------------- Policy editor ----------------------------- */
+.policy-editor { display: grid; gap: 14px; min-width: 0; }
+.policy-section { display: grid; gap: 10px; min-width: 0; }
+.policy-section h3 { display: flex; align-items: center; gap: 7px; }
+.policy-section h3 svg { color: var(--accent-allow-text); }
+.policy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.inbox-main .policy-field { display: grid; gap: 6px; align-content: start; padding: 12px 14px; border: 1px solid var(--border-hairline); border-radius: 12px; font-weight: 400; min-width: 0; }
+.policy-field p { margin: 0; font-size: 12px !important; }
+.policy-field-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.policy-count { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
+.policy-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.policy-chips li { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; background: var(--bg-canvas); border: 1px solid var(--border-hairline); font-size: 12px; max-width: 100%; }
+.policy-chips li span { overflow-wrap: anywhere; }
+.policy-chips li[data-new='true'] { background: var(--accent-allow-bg); color: var(--accent-allow-text); border-color: transparent; }
+.policy-chips li button { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; background: transparent; color: inherit; cursor: pointer; border: 0; }
+.policy-chips li button:hover { background: var(--accent-block-bg); color: var(--accent-block-text); }
+.policy-chips .policy-empty { padding: 3px 10px; color: var(--text-secondary); font-style: italic; }
+.policy-add { display: flex; gap: 6px; }
+.inbox-main .policy-add input { flex: 1; min-width: 0; }
+.policy-number, .policy-range { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.inbox-main .policy-number input { width: 96px; }
+.policy-range input { flex: 1; accent-color: var(--accent-allow-text); }
+.policy-range output { min-width: 42px; font-weight: 800; color: var(--text-primary); font-size: 14px; }
+.policy-summary { padding: 12px 14px; border-radius: 12px; background: var(--bg-canvas); border: 1px dashed var(--border-hairline); display: grid; gap: 8px; }
+.policy-summary ul { display: grid; gap: 4px; font-size: 13px; list-style: disc; padding-left: 18px; }
+.policy-summary p { margin: 0; }
+.policy-summary .inbox-text-link { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+@media (max-width: 720px) { .setup-steps { grid-template-columns: minmax(0, 1fr); } }

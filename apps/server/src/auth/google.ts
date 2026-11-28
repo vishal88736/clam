@@ -12,9 +12,12 @@ const scopes = {
   workspace: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'],
   workspace_edit: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/documents',
     'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'],
+  // Opt-in: agents may find and read (never change) the user's existing Drive files, Docs, Sheets and PDFs.
+  drive_read: ['https://www.googleapis.com/auth/drive.readonly'],
 } as const;
 export const workspaceScopes = {
   driveFile: 'https://www.googleapis.com/auth/drive.file',
+  driveReadonly: 'https://www.googleapis.com/auth/drive.readonly',
   documents: 'https://www.googleapis.com/auth/documents',
   spreadsheets: 'https://www.googleapis.com/auth/spreadsheets',
   photosReadonly: 'https://www.googleapis.com/auth/photoslibrary.readonly',
@@ -29,7 +32,7 @@ export const bannedScopes = new Set<string>([
   'https://www.googleapis.com/auth/photoslibrary', 'https://www.googleapis.com/auth/photoslibrary.appendonly',
   'https://www.googleapis.com/auth/photoslibrary.edit.appcreateddata', 'https://www.googleapis.com/auth/photoslibrary.sharing',
 ]);
-const acceptedScopes = new Set<string>([...scopes.identity, ...scopes.readonly, ...scopes.readwrite, ...scopes.workspace_edit,
+const acceptedScopes = new Set<string>([...scopes.identity, ...scopes.readonly, ...scopes.readwrite, ...scopes.workspace_edit, ...scopes.drive_read,
   workspaceScopes.photosAppCreated, workspaceScopes.photosReadonly, 'email', 'profile']);
 const tokenEndpoint = 'https://oauth2.googleapis.com/token';
 const retiring = 30_000;
@@ -38,11 +41,11 @@ export const flowCookie = 'siftvane_google_flow';
 export const legacySessionCookie = 'clam_session';
 export const legacyFlowCookie = 'clam_google_flow';
 export const mcpScopes = ['mail:read', 'attachment:extract', 'mail:draft', 'mail:send', 'mail:label', 'calendar:propose', 'inbox:manage',
-  'agent:manage', 'workspace:write', 'photos:read'] as const;
+  'agent:manage', 'workspace:read', 'workspace:write', 'photos:read'] as const;
 // This identity anchors existing agents, tokens, and artifact namespaces.
 export const sandboxMcpOwner = 'clam-local-sandbox';
 export type AuthStage = keyof typeof scopes;
-export type GoogleCapability = 'mail:read' | 'mail:write' | 'calendar:read' | 'calendar:write' | 'drive:write' | 'docs:write' | 'sheets:write' | 'photos:read';
+export type GoogleCapability = 'mail:read' | 'mail:write' | 'calendar:read' | 'calendar:write' | 'drive:read' | 'drive:write' | 'docs:write' | 'sheets:write' | 'photos:read';
 export type McpGrant = { inboxId: string; userId: string; scopes: string[]; tokenId: string };
 export type OperatorSession = { token_hash: string; user_id: string; inbox_id: string; expires_at: number };
 type Identity = { sub: string; email: string; email_verified: boolean; name?: string; picture?: string; nonce?: string };
@@ -103,6 +106,8 @@ export function exactScopes(value: unknown) {
 }
 
 const workspaceCapabilities: Partial<Record<GoogleCapability, string[]>> = {
+  // drive.readonly reaches every file; drive.file alone still finds and reads files Siftvane created.
+  'drive:read': [workspaceScopes.driveReadonly, workspaceScopes.driveFile],
   'drive:write': [workspaceScopes.driveFile],
   'docs:write': [workspaceScopes.driveFile, workspaceScopes.documents],
   'sheets:write': [workspaceScopes.driveFile, workspaceScopes.spreadsheets],

@@ -227,3 +227,32 @@ export const sandboxPhotos: SandboxPhoto[] = [
     creationTime: '2026-12-06T09:03:00.000Z', description: 'Parking citation',
     data: receiptSvg(['Merchant: City Parking Authority', 'Ticket: PK-55821', 'Date: 2026-12-06', 'Total: 32.00 USD', 'Pay by: 2026-12-20']) },
 ];
+
+/* ----------------------------------------------------------------------------------------------
+ * $0 The sandbox user's own Drive: files that already existed before Siftvane (agents may find and read them).
+ * Keys use the shared "drive/" namespace; agents never write here (their artifacts live in per-user namespaces).
+ * ---------------------------------------------------------------------------------------------- */
+export const sandboxDriveFiles: Array<{ key: string; state: Record<string, unknown>; blob?: { mime: string; data: Buffer } }> = [
+  { key: 'drive/doc:Q1 Marketing Plan', state: { type: 'google_doc', title: 'Q1 Marketing Plan', folder: null, modified: '2026-11-30T10:00:00.000Z', sections: [
+    { heading: 'Goals', text: 'Grow trial signups 25% and launch the partner webinar series by February 14, 2027.' },
+    { heading: 'Budget', text: 'Total marketing budget is $18,000: ads $9,000, events $6,000, content $3,000.' },
+    { heading: 'Owners', text: 'Priya owns ads (priya@team.example). Sam owns the webinar (sam@team.example).' },
+  ] } },
+  { key: 'drive/sheet:Vendor Contacts', state: { type: 'google_sheet', title: 'Vendor Contacts', folder: null, modified: '2026-11-21T09:00:00.000Z', tabs: [
+    { name: 'Vendors', headers: ['Vendor', 'Contact', 'Email', 'Category', 'Payment terms'], rows: [
+      ['PrintCo', 'Dana Reyes', 'accounts@printco.example', 'Printing', 'Net 30'],
+      ['Acme Cloud', 'Lee Park', 'billing@acme-cloud.example', 'Hosting', 'Net 15'],
+      ['Northwind Design', 'Ava Chen', 'accounts@northwind-design.example', 'Design', 'Net 30'],
+    ] },
+  ] } },
+  { key: 'drive/sheet:Team Budget 2027', state: { type: 'google_sheet', title: 'Team Budget 2027', folder: null, modified: '2026-12-01T08:00:00.000Z', tabs: [
+    { name: 'Budget', headers: ['Category', 'Budget', 'Spent'], rows: [['Software', 6000, 4210], ['Hosting', 9000, 7900], ['Design', 5000, 5350], ['Travel', 4000, 1200]] },
+  ] } },
+  { key: 'drive/file:Contracts/Northwind - signed contract.pdf', state: { type: 'drive_file', name: 'Northwind - signed contract.pdf', folder: null, mime: 'application/pdf',
+    bytes: 0, md5: '', modified: '2026-10-02T12:00:00.000Z' },
+    blob: { mime: 'application/pdf', data: Buffer.from(fixturePdf(['Services agreement: Northwind Design Studio', 'Contract value: $12,000 per year',
+      'Renewal date: 2027-03-01', 'Notice period: 30 days before renewal']), 'base64url') } },
+  { key: 'drive/file:Notes/standup-notes.txt', state: { type: 'drive_file', name: 'standup-notes.txt', folder: null, mime: 'text/plain', bytes: 0, md5: '',
+    modified: '2026-12-06T09:30:00.000Z' },
+    blob: { mime: 'text/plain', data: Buffer.from('Standup Dec 6\n- Sam: demo rehearsal moved to Thursday\n- Priya: launch handoff blocked on legal review, due Dec 10\n- Action: renew Northwind contract before March\n') } },
+];
