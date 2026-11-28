@@ -807,3 +807,13 @@ it('the AI provider is chosen in the website, the key is never returned, and a c
   expect(reset.json()).toMatchObject({ source: 'environment', provider: 'off' });
   expect(JSON.stringify(reset.json())).not.toMatch(/api_key|sk-/);
 }), 60_000);
+
+it('reply agents skip automated senders and never greet people by their email address', async () => {
+  const { automatedSender, plainGreeting } = await import('../apps/server/src/platform/programExecutor.js');
+  for (const from of ['orders@shop.example', 'no-reply@bank.example', 'notifications+abc@github.example', 'newsletter@site.example'])
+    expect(automatedSender(from)).toBe(true);
+  for (const from of ['maya@client.example', 'jordan@client.example', 'support-team@acme.example']) expect(automatedSender(from)).toBe(false);
+  expect(automatedSender('hello@brand.example', { 'List-Unsubscribe': '<mailto:x@y>' })).toBe(true);
+  expect(plainGreeting('Dear frustrated.customer@shop.example,\n\nThanks')).toBe('Hi,\n\nThanks');
+  expect(plainGreeting('Hi Maya,\nThanks')).toBe('Hi Maya,\nThanks');
+});

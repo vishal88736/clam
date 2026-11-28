@@ -105,6 +105,18 @@ export function inferMailFields(fields: Record<string, Value>, text: string, fro
   }
 }
 
+/** A greeting that addresses someone by their email address reads as a bot: "Dear a@b.com," becomes "Dear,"→"Hi,". */
+export const plainGreeting = (text: string) =>
+  text.replace(/^(\s*)(?:hi|hello|dear|hey)\s+[^\s,]+@[^\s,]+\s*,/i, (_match, space: string) => space + 'Hi,');
+
+/** Senders that are machines (no human reads a reply): no-reply and notification addresses, or bulk mail headers. */
+export function automatedSender(from: string, headers?: Record<string, string>) {
+  const local = from.split('@')[0]?.toLowerCase() ?? '';
+  if (/^(?:no-?reply|do-?not-?reply|donotreply|notifications?|notify|mailer-daemon|postmaster|bounces?|orders?|receipts?|alerts?|updates?|news(?:letter)?s?|marketing|automated|auto-?confirm|billing|invoices?|statements?)(?:[+._-].*)?$/.test(local)) return true;
+  const names = Object.keys(headers ?? {}).map((name) => name.toLowerCase());
+  return names.includes('list-unsubscribe') || /^(?:bulk|list|auto_reply)$/i.test(Object.entries(headers ?? {}).find(([name]) => name.toLowerCase() === 'precedence')?.[1] ?? '');
+}
+
 class PickerRequired extends Error { constructor(readonly uri: string) { super('PHOTOS_PICKER_SELECTION_REQUIRED'); } }
 
 /**
@@ -192,7 +204,9 @@ export class ProgramExecutor {
       business ? 'Facts about the owner\'s business (the ONLY facts you may state about products, prices, hours, policies or links):\n' + business
         : 'No business details are on file: do not state any product facts, prices or policies.',
       'Answer the sender\'s actual question when those facts cover it; otherwise say the team will follow up. Never invent',
-      'details, discounts, deadlines or promises. Plain text, friendly and brief (under 1200 characters), no subject line, no placeholders like [Name].',
+      'details, discounts, refunds, deadlines or promises beyond those facts (no "by Friday" unless a fact says so).',
+      'Greet the sender by first name when their name is known, otherwise just "Hi,"; never use an email address as a name.',
+      'Plain text, friendly and brief (under 1200 characters), no subject line, no placeholders like [Name].',
       'Return JSON only: {"reply": "<text>"}'].filter(Boolean).join('\n'), [row], 'reply', 900);
     const text = typeof (output as { reply?: unknown } | null)?.reply === 'string' ? String((output as { reply: string }).reply) : '';
     const clean = sanitizeText(text, 1800).value.trim();
@@ -724,13 +738,16 @@ export class ProgramExecutor {
       }
       case 'mail.draft_replies': {
         const source = this.rows(step.from);
+        let automated = 0;
         for (const row of source.rows.filter((entry) => entry.message).slice(0, 10)) {
           const to = address(row.message!.from);
+          // Nobody answers machines: order/shipping notices, receipts, alerts, newsletters and no-reply senders get no draft.
+          if (automatedSender(to, row.message!.headers)) { automated++; continue; }
           const subject = sanitizeText(this.render(step.subject, row), 150).value.replace(/[\r\n]+/g, ' ').replace(/^(?:re:\s*)+/i, 'Re: ').slice(0, 150) || 'Re:';
           const target = 'draft-' + sha256(this.agent.id + ':' + row.message!.id).slice(0, 24);
           if (this.engine.store.sqlite.prepare("SELECT 1 FROM inbox_approvals WHERE json_extract(body,'$.proposed_action.target')=?").get(target)) continue;
           const fallback = sanitizeText(this.render(step.body, row, source), 1800).value;
-          const body = await this.writeReply(row, fallback) ?? fallback;
+          const body = plainGreeting(await this.writeReply(row, fallback) ?? fallback);
           const action: SafeAction = { kind: 'draft', playbook: 'agent_reply', target, sourceId: row.message!.id, threadId: row.message!.threadId,
             effectiveContact: to, version: sha256(canonicalJson({ subject, body, to })), after: { subject, text: body }, requestedTier: 2,
             reason: 'AGENT_REPLY_APPROVAL', confidence: 1 };
@@ -738,6 +755,7 @@ export class ProgramExecutor {
           if (outcome.approvalId) this.pending.push(outcome.approvalId);
           this.log('gmail', 'draft_reply', `${to} · ${subject}`, outcome.approvalId ? 'Waiting in Approval Inbox' : `Blocked by ${outcome.ruleId}`, outcome);
         }
+        if (automated) this.log('gmail', 'draft_reply', `${automated} automated sender(s)`, `Skipped ${automated} automated message(s) (no-reply, notifications, order updates)`, undefined, 'AUTOMATED_SENDER');
         break;
       }
       case 'mail.send': {

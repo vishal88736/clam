@@ -2,6 +2,7 @@
 
 import { Download, PenLine, RefreshCw, UserRound } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Section } from './Section';
 
 type Behavior = { inbox_id: string; markdown: string; built_by: 'ai' | 'stats' | 'user' | null; source_count: number;
   built_at: string | null; updated_at: string | null; building: boolean };
@@ -86,33 +87,34 @@ export function BehaviorProfile() {
     link.click();
     URL.revokeObjectURL(link.href);
   };
-  const origin = profile?.built_by === 'ai' ? `Written by the AI from ${profile.source_count} of your replies`
-    : profile?.built_by === 'stats' ? `Counted from ${profile.source_count} of your replies (pick an AI provider below for a richer file)`
-      : profile?.built_by === 'user' ? 'Edited by you' : '';
+  const origin = profile?.built_by === 'ai' ? `written by the AI from ${profile.source_count} replies`
+    : profile?.built_by === 'stats' ? `counted from ${profile.source_count} replies`
+      : profile?.built_by === 'user' ? 'edited by you' : '';
 
-  return <section className="inbox-panel behavior-profile">
-    <div className="inbox-panel-head"><h2><UserRound size={19} /> How I handle my email <code>behavior.md</code></h2>
-      <div className="inbox-actions">
-        {!editing && <button type="button" className="inbox-button" disabled={!profile || profile.building} onClick={() => setEditing(true)}><PenLine size={15} /> Edit</button>}
-        <button type="button" className="inbox-button" disabled={!profile || profile.building} onClick={() => void rebuild()}>
-          <RefreshCw size={15} /> {profile?.building ? 'Reading your mail…' : 'Rebuild from my sent mail'}</button>
-        <button type="button" className="inbox-button" disabled={!draft} onClick={download} aria-label="Download behavior.md"><Download size={15} /></button>
-      </div></div>
-    <p>Siftvane reads the emails you replied to and writes down which mail you answer and how you write. Agents follow this file when they decide
-      what to reply to and how to word it. Change anything you like.</p>
-    {!profile ? <p>Loading…</p> : profile.building && !profile.markdown ? <p className="behavior-building">Reading the emails you’ve replied to and writing your file. This takes under a minute.</p> :
+  return <Section icon={<UserRound size={18} />} title="How I handle my email" className="behavior-profile"
+    intro="Learned from the emails you replied to. Agents follow it to decide what to answer and how to word it."
+    actions={<>
+      {!editing && <button type="button" className="inbox-button" disabled={!profile || profile.building} onClick={() => setEditing(true)}><PenLine size={15} /> Edit</button>}
+      <button type="button" className="inbox-button" disabled={!profile || profile.building} onClick={() => void rebuild()}>
+        <RefreshCw size={15} className={profile?.building ? 'spin' : undefined} /> {profile?.building ? 'Reading your mail…' : 'Rebuild'}</button>
+      <button type="button" className="inbox-button icon-only" disabled={!draft} onClick={download} aria-label="Download behavior.md" title="Download behavior.md"><Download size={15} /></button>
+    </>}>
+    {!profile ? <p className="block-note">Loading…</p> : profile.building && !profile.markdown
+      ? <div className="behavior-building"><RefreshCw size={16} className="spin" /> Reading the emails you’ve replied to and writing your file. This takes under a minute.</div> :
       editing ? <>
         <textarea className="behavior-editor" value={draft} rows={18} maxLength={12000} aria-label="behavior.md"
           onChange={(event) => { setDraft(event.target.value); setStatus(''); }} />
-        <div className="business-profile-actions">
-          <small>{draft.length}/12000 · Markdown: # headings, - bullets, &gt; quotes</small>
+        <div className="block-foot">
+          <small>{draft.length.toLocaleString()} / 12,000 characters. Use # for headings, - for points, &gt; for example replies.</small>
           <span className="inbox-actions">
             <button type="button" className="inbox-button" onClick={() => { setDraft(profile.markdown); setEditing(false); }}>Cancel</button>
-            <button type="button" className="inbox-button" data-tone="primary" disabled={draft.trim() === profile.markdown} onClick={() => void save()}>Save</button>
+            <button type="button" className="inbox-button" data-tone="primary" disabled={draft.trim() === profile.markdown} onClick={() => void save()}>Save file</button>
           </span>
         </div>
-      </> : profile.markdown ? <MarkdownView text={profile.markdown} /> : <p>No file yet.</p>}
-    {profile?.updated_at && !editing && <small className="behavior-origin">{origin}{origin && ' · '}{when(profile.updated_at)}</small>}
-    {status && <p role="status">{status}</p>}
-  </section>;
+      </> : profile.markdown ? <div className="doc-frame">
+        <div className="doc-frame-bar"><span>behavior.md</span>{profile.updated_at && <span>{origin}{origin && ', '}{when(profile.updated_at)}</span>}</div>
+        <MarkdownView text={profile.markdown} />
+      </div> : <p className="block-note">No file yet. Use Rebuild after you’ve replied to a few emails.</p>}
+    {status && <p className="block-status" role="status">{status}</p>}
+  </Section>;
 }

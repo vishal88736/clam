@@ -2,6 +2,7 @@
 
 import { BrainCircuit, CircleCheck, CircleX } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Section } from './Section';
 
 type Provider = 'off' | 'gemini' | 'openai' | 'anthropic' | 'groq' | 'ollama';
 type View = { source: 'website' | 'environment'; provider: Provider | 'local'; model: string | null; endpoint: string | null; has_key: boolean;
@@ -62,37 +63,39 @@ export function AiProvider() {
     finally { setBusy(false); }
   };
 
-  return <section className="inbox-panel ai-provider" id="ai">
-    <h2><BrainCircuit size={19} /> AI provider</h2>
-    <p>The AI that turns your plain-language requests into agents, reads your mail, and writes replies. Your key is stored encrypted and never shown again.</p>
-    {!view ? <p>Loading…</p> : <form className="ai-provider-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <label>Provider
+  const current = view ? (view.provider === 'local' || view.provider === 'off' ? 'No AI' : `${names[view.provider as Provider]}, ${view.model}`) : '';
+  return <Section id="ai" icon={<BrainCircuit size={18} />} title="AI provider" className="ai-provider"
+    intro="The AI that turns your requests into agents, reads your mail and writes replies. Keys are stored encrypted and never shown again."
+    actions={view && <span className="status-chip" data-tone={view.provider === 'local' || view.provider === 'off' ? 'neutral' : 'green'}>{current}</span>}>
+    {!view ? <p className="block-note">Loading…</p> : <form className="field-grid" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <label className="field">Provider
         <select value={provider} onChange={(event) => { const next = event.target.value as Provider; setProvider(next); setResult(null);
           setModel(next !== 'off' && next === (view.provider === 'local' ? 'off' : view.provider) ? view.model ?? '' : next === 'off' ? '' : view.suggestions[next][0]); }}>
           {(Object.keys(names) as Provider[]).map((item) => <option key={item} value={item}>{names[item]}</option>)}
         </select>
       </label>
-      {provider !== 'off' && <label>Model
+      {provider !== 'off' && <label className="field">Model
         <input value={model} list="ai-models" onChange={(event) => setModel(event.target.value)} placeholder={view.suggestions[provider][0]} />
         <datalist id="ai-models">{view.suggestions[provider].map((item) => <option key={item} value={item} />)}</datalist>
       </label>}
-      {provider !== 'off' && provider !== 'ollama' && <label>API key
+      {provider !== 'off' && provider !== 'ollama' && <label className="field">API key
         <input type="password" value={key} autoComplete="off" onChange={(event) => setKey(event.target.value)}
           placeholder={same && view.has_key ? 'Saved. Leave empty to keep it' : 'Paste your key'} />
         <small>{keyHelp[provider]}</small>
       </label>}
-      {provider === 'ollama' && <label>Ollama address
+      {provider === 'ollama' && <label className="field">Ollama address
         <input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder="http://127.0.0.1:11434" />
-        <small>Start it with <code>ollama serve</code>, and pull the model first (<code>ollama pull {model || 'qwen2.5:7b'}</code>).</small>
+        <small>Start it with <code>ollama serve</code>. Pull the model first: <code>ollama pull {model || 'qwen2.5:7b'}</code></small>
       </label>}
-      <div className="inbox-actions">
-        <button type="submit" className="inbox-button" data-tone="primary" disabled={busy || (needsKey && !key.trim())}>{busy ? 'Saving and testing…' : 'Save & test'}</button>
-        {view.source === 'website' && <button type="button" className="inbox-button" disabled={busy}
-          onClick={() => void call('DELETE').then((loaded) => { show(loaded as View); setResult({ ok: true, text: 'Back to the server’s .env settings.' }); })}>Use server default</button>}
+      <div className="block-foot field-span">
+        <small>{view.source === 'environment' ? 'Currently from the server’s .env file.' : 'Chosen here on the website.'}</small>
+        <span className="inbox-actions">
+          {view.source === 'website' && <button type="button" className="inbox-button" disabled={busy}
+            onClick={() => void call('DELETE').then((loaded) => { show(loaded as View); setResult({ ok: true, text: 'Back to the server’s .env settings.' }); })}>Use server default</button>}
+          <button type="submit" className="inbox-button" data-tone="primary" disabled={busy || (needsKey && !key.trim())}>{busy ? 'Saving and testing…' : 'Save and test'}</button>
+        </span>
       </div>
     </form>}
     {result && <p className="ai-provider-result" data-ok={result.ok} role="status">{result.ok ? <CircleCheck size={16} /> : <CircleX size={16} />} {result.text}</p>}
-    {view && <small>Now using: <strong>{view.provider === 'local' || view.provider === 'off' ? 'no AI' : `${names[view.provider as Provider]} · ${view.model}`}</strong>
-      {view.source === 'environment' ? ' (from the server’s .env)' : ''}</small>}
-  </section>;
+  </Section>;
 }

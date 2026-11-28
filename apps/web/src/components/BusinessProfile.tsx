@@ -2,6 +2,7 @@
 
 import { Store } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Section } from './Section';
 
 type Profile = { inbox_id: string; text: string; updated_at: string | null };
 
@@ -41,17 +42,16 @@ export function BusinessProfile() {
       setBusy(false);
     }
   };
-  return <section className="inbox-panel business-profile">
-    <h2><Store size={19} /> Business profile</h2>
-    <p>Agents that reply to customers use these facts: products, prices, hours, policies, links. They never state anything that isn't
-      written here, and every reply still waits for your approval.{profile && <> Applies to the <strong>{profile.inbox_id === 'sandbox' ? 'sandbox' : 'connected Gmail'}</strong> mailbox.</>}</p>
-    <textarea value={draft} onChange={(event) => { setDraft(event.target.value); setStatus(''); }} rows={8} maxLength={4000}
+  return <Section icon={<Store size={18} />} title="Business profile" className="business-profile"
+    intro={<>The only facts agents may state when replying to customers: products, prices, hours, policies, links.
+      {profile && <> Used for the {profile.inbox_id === 'sandbox' ? 'practice mailbox' : 'connected Gmail'}.</>}</>}>
+    <textarea value={draft} onChange={(event) => { setDraft(event.target.value); setStatus(''); }} rows={7} maxLength={4000}
       placeholder={example} aria-label="Business profile" disabled={!profile} />
-    <div className="business-profile-actions">
-      <small>{draft.length}/4000{profile?.updated_at && <> · last saved {new Date(profile.updated_at).toLocaleString()}</>}</small>
+    <div className="block-foot">
+      <small>{draft.length.toLocaleString()} / 4,000 characters{profile?.updated_at && <>, saved {new Date(profile.updated_at).toLocaleString()}</>}</small>
       <button type="button" className="inbox-button" data-tone="primary" disabled={busy || !profile || draft.trim() === profile.text}
         onClick={() => void save()}>Save profile</button>
     </div>
-    {status && <p role="status">{status}</p>}
-  </section>;
+    {status && <p className="block-status" role="status">{status}</p>}
+  </Section>;
 }

@@ -130,6 +130,14 @@ function ChangeList({ changes }: { changes: Change[] }) {
   </div>;
 }
 
+/** Why something waits for the user, in plain words (the rule id stays available as a tooltip). */
+const approvalReasons: Record<string, string> = {
+  AGENT_REPLY_APPROVAL: 'An agent wrote this reply. Read it, change anything, then approve to send it.',
+  RECIPIENT_NOT_ALLOWLISTED: 'This person isn’t on your trusted list, so the email waits for you.',
+  DUPLICATE_OR_SPOOFED_INVOICE: 'This invoice looks like a duplicate or came from an unverified sender.',
+  AGENT_LOOP_PREVENTED: 'An agent kept replying in this thread, so it was stopped to prevent a loop.',
+};
+
 function ApprovalEditor({ item, busy, onResolve }: {
   item: Approval; busy: boolean; onResolve: (id: string, approve: boolean, edit?: Snapshot, calendarEdit?: Snapshot,
     batchEdits?: Array<{ subject: string; text: string }>) => void;
@@ -151,11 +159,20 @@ function ApprovalEditor({ item, busy, onResolve }: {
   }, []);
   const seconds = Math.max(0, Math.floor((Date.parse(item.expires_at) - clock) / 1000));
   const expired = clock > 0 && seconds === 0;
-  return <article className="inbox-item">
-    <div className="inbox-row"><strong>{playbookName(item.proposed_action.playbook)}</strong>
-      <Tag tone={item.priority === 'high' ? 'red' : 'amber'}>{label(item.priority)} priority</Tag></div>
-    <p>{item.reason}</p><div className="inbox-source">{item.triggered_rule_id} · {clock ? expired ? 'Expired' :
-      `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}m ${seconds % 60}s left` : 'Loading expiry'}</div>
+  const contact = item.proposed_action.effectiveContact;
+  const kind = item.proposed_action.kind;
+  const title = kind === 'draft' && contact ? 'Reply to ' + contact : kind === 'send' && contact ? 'Email to ' + contact
+    : kind === 'calendar' ? 'Calendar change' : playbookName(item.proposed_action.playbook);
+  const why = approvalReasons[item.triggered_rule_id] ?? item.reason;
+  const hours = Math.floor(seconds / 3600);
+  const left = !clock ? '' : expired ? 'Expired' : hours >= 1 ? `Expires in ${hours} h` : `Expires in ${Math.max(1, Math.floor(seconds / 60))} min`;
+  return <article className="approval-card">
+    <header className="approval-head">
+      <span className="block-icon" aria-hidden="true">{kind === 'calendar' ? <CalendarDays size={18} /> : kind === 'review' ? <FileCheck2 size={18} /> : <Inbox size={18} />}</span>
+      <div className="block-title"><h3>{title}</h3><p title={item.triggered_rule_id}>{why}</p></div>
+      {left && <span className="status-chip" data-tone={expired ? 'neutral' : 'amber'}>{left}</span>}
+    </header>
+    <div className="approval-body">
     {canEditCalendar && <div className="inbox-two">
       <label>Start (UTC)<input type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label>
       <label>End (UTC)<input type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
@@ -168,24 +185,24 @@ function ApprovalEditor({ item, busy, onResolve }: {
         <label>Reply {index + 1}<textarea value={message.text} maxLength={2000} rows={3} onChange={(event) =>
           setBatchEdits(batchEdits.map((entry, row) => row === index ? { ...entry, text: event.target.value } : entry))} /></label>
       </li>)}
-    </ol> : canEditReply ? <div className="inbox-stack">
-      <p>To {item.proposed_action.effectiveContact}</p>
+    </ol> : canEditReply ? <>
       <label>Subject<input value={subject} onChange={(event) => setSubject(event.target.value)} /></label>
-      <label>Reply<textarea value={text} onChange={(event) => setText(event.target.value)} rows={3} /></label>
-    </div> : item.proposed_action.after && <dl className="inbox-fields">
+      <label>Message<textarea value={text} onChange={(event) => setText(event.target.value)} rows={6} /></label>
+    </> : item.proposed_action.after && <dl className="inbox-fields">
       {Object.entries(item.proposed_action.after).filter(([field]) => !['id', 'etag'].includes(field)).map(([field, value]) =>
         <div key={field}><dt>{label(field)}</dt><dd>{display(field, value)}</dd></div>)}
     </dl>}
-    <div className="inbox-actions">
-      <button className="inbox-button" type="button" disabled={busy || expired} onClick={() => onResolve(item.approval_id, false)}>Reject</button>
+    </div>
+    <footer className="approval-foot">
+      <button className="inbox-button" type="button" disabled={busy || expired} onClick={() => onResolve(item.approval_id, false)}>Decline</button>
       <button className="inbox-button" data-tone="primary" type="button" disabled={busy || expired || Boolean(canEditReply && (!subject.trim() || !text.trim())) ||
         (canEditCalendar && (!start || !end || start >= end)) || batchEdits?.some((message) => !message.subject.trim() || !message.text.trim())}
         onClick={() => onResolve(item.approval_id, true, canEditReply ? { subject, text } : undefined,
           canEditCalendar ? { start: start + ':00Z', end: end + ':00Z' } : undefined, batchEdits)}>
         {item.batch_actions?.length ? 'Approve batch' : item.triggered_rule_id === 'AGENT_LOOP_PREVENTED' ? 'Reset thread budget' :
-          item.proposed_action.kind === 'review' ? 'Acknowledge' : 'Approve'}
+          item.proposed_action.kind === 'review' ? 'Acknowledge' : canEditReply ? 'Approve and send' : 'Approve'}
       </button>
-    </div>
+    </footer>
   </article>;
 }
 
@@ -209,8 +226,8 @@ function ApprovalsView({ pending, busy, onResolve }: {
     return () => { active = false; };
   }, [priority, ids]);
   const items = priority ? filtered : pending;
-  return <Panel title="Pending approvals" icon={<ListChecks size={18} />} action={
-    <label>Priority <select value={priority} onChange={(event) => {
+  return <Panel title={`Waiting for you${items?.length ? ` (${items.length})` : ''}`} icon={<ListChecks size={18} />} action={
+    <label className="inline-field">Show <select value={priority} onChange={(event) => {
       setFiltered(null);
       setError('');
       setPriority(event.target.value);
@@ -220,8 +237,8 @@ function ApprovalsView({ pending, busy, onResolve }: {
     </select></label>}>
     {error ? <p role="alert" className="inbox-error">{error}</p> : !items
       ? <Empty>Loading approvals.</Empty>
-      : !items.length ? <Empty>No items waiting for approval.</Empty>
-      : <div className="inbox-two">{items.map((item) =>
+      : !items.length ? <Empty>Nothing is waiting for you. New replies and sends from your agents will appear here.</Empty>
+      : <div className="approval-list">{items.map((item) =>
         <ApprovalEditor key={item.approval_id} item={item} busy={busy} onResolve={onResolve} />)}</div>}
   </Panel>;
 }

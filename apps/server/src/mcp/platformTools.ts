@@ -71,7 +71,7 @@ export function registerPlatformTools(server: McpServer, args: {
       interval_seconds: z.number().int().min(60).max(604_800).optional(),
       auto_switch: z.boolean().default(true),
       source_cli: z.enum(['codex-cli', 'claude-code', 'cursor', 'cline']).optional(),
-      wait_seconds: z.number().int().min(0).max(60).default(0),
+      wait_seconds: z.number().int().min(0).max(180).default(0),
     }, (input) => workflow('provision_and_run_agent', 'agent:manage', async () => {
       const result = await missions.provision({
         userId: grant.userId, inboxId: grant.inboxId, instruction: input.user_instruction, agentName: input.agent_name, services: input.services,

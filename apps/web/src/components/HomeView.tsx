@@ -3,7 +3,8 @@
 import { ArrowRight, Bot, ListChecks, Pause, Play, Plug, Sparkles, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
-import { nice, platform, type Agent, type PlatformData } from './AgentConsole';
+import { nice, platform, serviceIcon, serviceLabel, type Agent, type PlatformData } from './AgentConsole';
+import { Section } from './Section';
 import type { OperatorSession } from './GoogleSession';
 
 const ideas = [
@@ -60,64 +61,79 @@ export function HomeView({ data, session, waiting, aiReady, onError }: {
   };
 
   return <div className="home">
-    {needsGoogle && <Link href="/settings" className="home-callout">
-      <Plug size={18} /><span><strong>Connect your Google account</strong> so agents can work on your real Gmail, Calendar and Drive. One click.</span><ArrowRight size={16} />
-    </Link>}
-    {!aiReady && <Link href="/settings#ai" className="home-callout" data-tone="amber">
-      <Sparkles size={18} /><span><strong>Choose an AI provider</strong> to make agents from plain language. Without one, only a few fixed workflows work.</span><ArrowRight size={16} />
-    </Link>}
-    <form className="home-ask" onSubmit={(event) => { event.preventDefault(); void create(); }}>
+    {(needsGoogle || !aiReady) && <div className="home-setup">
+      {needsGoogle && <Link href="/settings" className="callout">
+        <span className="callout-icon"><Plug size={17} /></span>
+        <span><strong>Connect your Google account</strong><small>So agents can work on your real Gmail, Calendar and Drive.</small></span>
+        <ArrowRight size={16} />
+      </Link>}
+      {!aiReady && <Link href="/settings#ai" className="callout" data-tone="amber">
+        <span className="callout-icon"><Sparkles size={17} /></span>
+        <span><strong>Choose an AI provider</strong><small>Needed to turn plain language into agents.</small></span>
+        <ArrowRight size={16} />
+      </Link>}
+    </div>}
+
+    <form className="composer" onSubmit={(event) => { event.preventDefault(); void create(); }}>
       <label htmlFor="home-instruction">What should your agent do?</label>
-      <textarea id="home-instruction" rows={3} maxLength={4000} value={instruction} disabled={creating}
-        placeholder="For example: when someone asks about pricing, reply with our plans and ask for a call"
-        onChange={(event) => setInstruction(event.target.value)}
-        onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && instruction.trim().length >= 4) void create(); }} />
-      <div className="home-ideas" aria-label="Ideas">
-        {ideas.map((idea) => <button key={idea} type="button" className="home-idea" disabled={creating} onClick={() => setInstruction(idea)}>{idea}</button>)}
+      <p>Describe it the way you’d ask a colleague. Siftvane plans the steps and keeps the agent running.</p>
+      <div className="composer-field">
+        <textarea id="home-instruction" rows={3} maxLength={4000} value={instruction} disabled={creating}
+          placeholder="When someone asks about pricing, reply with our plans and offer a call"
+          onChange={(event) => setInstruction(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && instruction.trim().length >= 4) void create(); }} />
+        <button type="submit" className="composer-send" disabled={creating || instruction.trim().length < 4}>
+          <Bot size={17} /> {creating ? 'Planning…' : 'Create agent'}</button>
       </div>
-      <div className="home-ask-foot">
-        <small>{creating ? 'Planning your agent. This can take up to a minute with a local AI.' : 'Agents keep running on their own. Anything they send waits for your approval unless your rules allow it.'}</small>
-        <button type="submit" className="inbox-button" data-tone="primary" disabled={creating || instruction.trim().length < 4}>
-          <Bot size={16} /> {creating ? 'Creating…' : 'Create agent'}</button>
+      <div className="composer-ideas" aria-label="Ideas to start from">
+        {ideas.map((idea) => <button key={idea} type="button" disabled={creating} onClick={() => setInstruction(idea)}>{idea}</button>)}
       </div>
+      <small className="composer-note">{creating ? 'Planning your agent. With a local AI this can take up to a minute.'
+        : 'Replies and sends wait for your approval unless your rules allow them.'}</small>
     </form>
 
-    {waiting > 0 && <a href="#approvals" className="home-callout" data-tone="amber">
-      <ListChecks size={18} /><span><strong>{waiting} {waiting === 1 ? 'item is' : 'items are'} waiting for your approval</strong>: replies, sends or changes your agents prepared.</span><ArrowRight size={16} />
+    {waiting > 0 && <a href="#approvals" className="callout" data-tone="amber">
+      <span className="callout-icon"><ListChecks size={17} /></span>
+      <span><strong>{waiting} {waiting === 1 ? 'thing needs' : 'things need'} your approval</strong><small>Replies, sends or changes your agents prepared.</small></span>
+      <ArrowRight size={16} />
     </a>}
 
-    <section className="home-agents" aria-label="Your agents">
-      <h2>Your agents</h2>
-      {!agents.length ? <p className="home-empty">No agents yet. Describe one above.</p> : <>
-      {!working.length && <p className="home-empty">None running right now.</p>}
-      <AgentList list={working} />
-      {resting.length > 0 && <details className="home-resting">
-        <summary>Finished or paused ({resting.length})</summary>
-        <AgentList list={resting} />
-      </details>}
+    <Section icon={<Bot size={18} />} title="Your agents" className="home-agents"
+      intro={agents.length ? `${working.length} running, ${resting.length} finished or paused.` : 'Agents you create appear here.'}
+      actions={agents.length > 0 && <a className="inbox-button" href="#agents">Logs and files</a>}>
+      {!agents.length ? <p className="block-note">No agents yet. Describe one above to get started.</p> : <>
+        {working.length ? <AgentList list={working} /> : <p className="block-note">Nothing is running right now.</p>}
+        {resting.length > 0 && <details className="home-resting">
+          <summary>Finished or paused <span className="count-pill">{resting.length}</span></summary>
+          <AgentList list={resting} />
+        </details>}
       </>}
-      {agents.length > 0 && <a className="inbox-text-link" href="#agents">See step-by-step logs and created files →</a>}
-    </section>
+    </Section>
   </div>;
 
   function AgentList({ list }: { list: Agent[] }) {
-    return <ul>
-        {list.map((agent) => {
-          const [sentence, tone] = agentSentence(agent);
-          const running = agent.status === 'active' || agent.status === 'input_required';
-          return <li key={agent.id} className="home-agent" data-testid="home-agent">
-            <div className="home-agent-main">
-              <strong>{agent.name}</strong>
-              <p>{agent.goal_prompt}</p>
-              <span className="home-agent-status" data-tone={tone}>{sentence}</span>
+    return <ul className="agent-rows">
+      {list.map((agent) => {
+        const [sentence, tone] = agentSentence(agent);
+        const running = agent.status === 'active' || agent.status === 'input_required';
+        return <li key={agent.id} className="agent-row" data-testid="home-agent">
+          <span className="agent-dot" data-tone={tone} aria-hidden="true" />
+          <div className="agent-row-main">
+            <strong>{agent.name}</strong>
+            <p>{agent.goal_prompt}</p>
+            <div className="agent-row-meta">
+              <span className="agent-status" data-tone={tone}>{sentence}</span>
+              <span className="agent-services">{agent.allowed_services.slice(0, 5).map((service) =>
+                <span key={service} title={serviceLabel[service] ?? service}>{serviceIcon(service, 14)}</span>)}</span>
             </div>
-            <div className="home-agent-actions">
-              {running ? <button type="button" className="inbox-button" disabled={busy === agent.id} onClick={() => void control(agent, 'pause')} aria-label={'Pause ' + agent.name}><Pause size={15} /> Pause</button>
-                : agent.status !== 'halted' && <button type="button" className="inbox-button" disabled={busy === agent.id} onClick={() => void control(agent, 'resume')} aria-label={'Resume ' + agent.name}><Play size={15} /> {agent.status === 'completed' ? 'Run again' : 'Resume'}</button>}
-              <button type="button" className="inbox-button" disabled={busy === agent.id} onClick={() => void control(agent, 'cancel')} aria-label={'Remove ' + agent.name}><Trash2 size={15} /></button>
-            </div>
-          </li>;
-        })}
-      </ul>;
+          </div>
+          <div className="agent-row-actions">
+            {running ? <button type="button" className="inbox-button" disabled={busy === agent.id} onClick={() => void control(agent, 'pause')} aria-label={'Pause ' + agent.name}><Pause size={15} /> Pause</button>
+              : agent.status !== 'halted' && <button type="button" className="inbox-button" disabled={busy === agent.id} onClick={() => void control(agent, 'resume')} aria-label={'Resume ' + agent.name}><Play size={15} /> {agent.status === 'completed' ? 'Run again' : 'Resume'}</button>}
+            <button type="button" className="inbox-button icon-only" disabled={busy === agent.id} onClick={() => void control(agent, 'cancel')} aria-label={'Remove ' + agent.name} title="Remove"><Trash2 size={15} /></button>
+          </div>
+        </li>;
+      })}
+    </ul>;
   }
 }

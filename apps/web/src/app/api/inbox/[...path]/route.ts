@@ -14,6 +14,23 @@ const allowed = [
   /^platform\/recipes\/[a-f\d-]{36}\/items\/[\w.:@-]{1,160}\/(?:approve|decline|escalate)$/, /^platform\/sandbox\/messages$/,
 ];
 
+/** Long-lived streams (live events) end cleanly when the API restarts, instead of surfacing a socket error. */
+function endQuietly(source: ReadableStream<Uint8Array>) {
+  const reader = source.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch {
+        controller.close();
+      }
+    },
+    cancel(reason) { return reader.cancel(reason).catch(() => undefined); },
+  });
+}
+
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const incomingOrigin = request.headers.get('origin');
   const host = request.headers.get('host');
@@ -41,7 +58,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
       const value = upstream.headers.get(name);
       if (value) resultHeaders.set(name, value);
     }
-    return new Response(upstream.body, { status: upstream.status, headers: resultHeaders });
+    return new Response(upstream.body ? endQuietly(upstream.body) : null, { status: upstream.status, headers: resultHeaders });
   } catch {
     return Response.json({ error: 'INBOX_BACKEND_UNAVAILABLE' }, { status: 502 });
   }

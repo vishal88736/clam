@@ -78,15 +78,16 @@ export default function SettingsPage() {
     finally { setBusy(false); }
   }
   return <main className="inbox-main settings-page">
-    <Link className="inbox-text-link" href="/#home"><ArrowLeft size={16} /> Home</Link>
-    <header className="inbox-title"><h1>Profile</h1><p>Your Google account, how you handle email, your business, and the AI behind your agents.</p></header>
+    <Link className="back-link" href="/#home"><ArrowLeft size={16} /> Home</Link>
+    <header className="page-head"><h1>Profile</h1><p>Your Google account, how you handle email, your business, and the AI behind your agents.</p></header>
     {(error || accountError) && <p className="inbox-error" role="alert">{error || accountError}</p>}
     <GoogleConnect session={session} refresh={refresh} />
     <BehaviorProfile />
     <BusinessProfile />
     <AiProvider />
     <details className="profile-advanced" id="developer">
-      <summary><Wrench size={17} /> Advanced: linked accounts, MCP tokens for AI tools (Claude Code, Antigravity, Cursor…)</summary>
+      <summary><span className="block-icon" aria-hidden="true"><Wrench size={18} /></span>
+        <span className="block-title"><strong>Advanced</strong><small>Linked accounts, and MCP tokens for AI tools like Claude Code, Antigravity and Cursor.</small></span></summary>
     <GoogleAccountBar session={session} />
     <section className="inbox-panel">
       <h2><Plug size={19} /> Google accounts</h2>
